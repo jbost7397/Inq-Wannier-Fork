@@ -252,34 +252,30 @@ namespace operations {
 				int xblock = real_basis.cubic_dist(0).block_size();
 				int zblock = fourier_basis.cubic_dist(2).block_size();
 					
-				math::array<complex, 4> buffer({fphi.basis_comm().size(), xblock, real_basis.local_sizes()[1], zblock});
+				std::vector<int> counts(fphi.basis_comm().size());
+				std::vector<int> displs(fphi.basis_comm().size());
 
-				int dest = 0;
-				for(int ixb = 0; ixb < fourier_basis.local_sizes()[0]; ixb += xblock){
-
-					for(int ix = 0; ix < std::min(xblock, fourier_basis.local_sizes()[0] - ixb); ix++){
-						
-						for(int iy = 0; iy < fourier_basis.local_sizes()[1]; iy++){
-							for(int iz = 0; iz < fourier_basis.local_sizes()[2]; iz++){
-								buffer[dest][ix][iy][iz] = tmp[ixb + ix][iy][iz];
-							}
-						}
+				for(int irank = 0; irank < fphi.basis_comm().size(); irank++){
+					counts[irank] = std::min(xblock, fourier_basis.sizes()[0] - irank*xblock)*fourier_basis.local_sizes()[1]*fourier_basis.local_sizes()[2];
+					if(irank == 0){
+						displs[irank] = 0;
+					} else {
+						displs[irank] = displs[irank - 1] + counts[irank - 1];
 					}
-
-					dest++;
 				}
+
+				math::array<complex, 4> buffer({fphi.basis_comm().size(), xblock, real_basis.local_sizes()[1], zblock});
+				
+				MPI_Alltoallv(static_cast<complex *>(tmp.data()), counts.data(), displs.data(), MPI_CXX_DOUBLE_COMPLEX, static_cast<complex *>(buffer.data()), counts.data(), displs.data(), MPI_CXX_DOUBLE_COMPLEX, &fphi.basis_comm());
 
 				tmp.clear();
 				tmp.reextent(extensions(phi.cubic()));
 				
-				MPI_Alltoall(MPI_IN_PLACE, buffer[0].num_elements(), MPI_CXX_DOUBLE_COMPLEX, static_cast<complex *>(buffer.data()), buffer[0].num_elements(), MPI_CXX_DOUBLE_COMPLEX, &fphi.basis_comm());
-								
 				for(int ix = 0; ix < real_basis.local_sizes()[0]; ix++){
 					for(int iy = 0; iy < real_basis.local_sizes()[1]; iy++){
 
 						int src = 0;
 						for(int izb = 0; izb < real_basis.local_sizes()[2]; izb += zblock){
-							
 							for(int iz = 0; iz < std::min(zblock, real_basis.local_sizes()[2] - izb); iz++){
 								tmp[ix][iy][izb + iz] = buffer[src][ix][iy][iz];
 							}
