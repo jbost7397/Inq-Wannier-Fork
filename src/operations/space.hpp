@@ -206,9 +206,21 @@ namespace operations {
 
 				tmp.clear();
 				tmp.reextent(extensions(fphi.cubic()));
+
+				std::vector<int> counts(fphi.basis_comm().size());
+				std::vector<int> displs(fphi.basis_comm().size());
 				
-				MPI_Alltoall(MPI_IN_PLACE, buffer[0].num_elements(), MPI_CXX_DOUBLE_COMPLEX, static_cast<complex *>(buffer.data()), buffer[0].num_elements(), MPI_CXX_DOUBLE_COMPLEX, &phi.basis_comm());
-										 
+				for(int irank = 0; irank < fphi.basis_comm().size(); irank++){
+					counts[irank] = std::min(xblock, fourier_basis.sizes()[0] - irank*xblock)*fourier_basis.local_sizes()[1]*fourier_basis.local_sizes()[2];
+					if(irank == 0){
+						displs[irank] = 0;
+					} else {
+						displs[irank] = displs[irank - 1] + counts[irank - 1];
+					}
+				}
+
+				MPI_Alltoallv(static_cast<complex *>(buffer.data()), counts.data(), displs.data(), MPI_CXX_DOUBLE_COMPLEX, static_cast<complex *>(tmp.data()), counts.data(), displs.data(), MPI_CXX_DOUBLE_COMPLEX, &fphi.basis_comm());
+				/*
 				int src = 0;
 				for(int ixb = 0; ixb < fourier_basis.local_sizes()[0]; ixb += xblock){
 
@@ -222,7 +234,7 @@ namespace operations {
 					
 					src++;
 				}
-				
+				*/
 				fphi.cubic() = fftw::dft({true, false, false}, tmp, fftw::forward);
 				
 			}
