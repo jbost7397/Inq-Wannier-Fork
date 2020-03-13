@@ -99,7 +99,7 @@ namespace basis {
 			);
 		}
 
-		slate::Matrix<type> as_slate_matrix() const{
+		slate::Matrix<type> as_slate_matrix(){
 			return as_slate_matrix_aux(matrix_.data_elements());
 		}
 
