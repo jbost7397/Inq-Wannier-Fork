@@ -24,6 +24,9 @@
 #include <utils/partition.hpp>
 #include <math/array.hpp>
 #include <algorithm>
+
+#include <slate/slate.hh>
+
 #ifdef HAVE_CUDA
 #include <thrust/fill.h>
 #endif
@@ -80,6 +83,24 @@ namespace basis {
 
 		internal_array_type const & matrix() const{
 			return matrix_;
+		}
+
+		template<class P>
+		slate::Matrix<type> as_slate_matrix_aux(P* p){
+			using std::get; // get<1>(matrix_.sizes()), get<0>(matrix_.sizes()),
+			return slate::Matrix<type>::fromScaLAPACK(
+				num_vectors_, basis_.size(),
+				matrix_.data_elements(), 
+				get<0>(matrix_.strides()), 
+				set_part_.block_size(), 
+				basis_.part().block_size, 
+				full_comm_.shape()[1], full_comm_.shape()[0],
+				&full_comm_
+			);
+		}
+
+		slate::Matrix<type> as_slate_matrix() const{
+			return as_slate_matrix_aux(matrix_.data_elements());
 		}
 
 		auto data() const {
