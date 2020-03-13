@@ -35,9 +35,9 @@
 namespace basis {
 	
 	template<class Basis, class type>
-  class field_set {
+	class field_set {
 
-  public:
+	public:
 
 		typedef Basis basis_type;
 		typedef math::array<type, 2> internal_array_type;
@@ -53,7 +53,7 @@ namespace basis {
 			 basis_(basis)
 		{
 			assert(basis_.part().comm_size() == basis_comm_.size());
-    }
+		}
 
 		field_set(const basis_type & basis, const int num_vectors, boost::mpi3::communicator & comm = boost::mpi3::environment::get_self_instance())
 			:field_set(basis, num_vectors, boost::mpi3::cartesian_communicator<2>(comm))
@@ -148,7 +148,7 @@ namespace basis {
 		int num_vectors_;
 		basis_type basis_;
 
-  };
+	};
 
 }
 
