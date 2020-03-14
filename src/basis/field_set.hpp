@@ -86,7 +86,7 @@ namespace basis {
 		}
 
 		template<class P>
-		slate::Matrix<type> as_slate_matrix_aux(P* p){
+		slate::Matrix<type> as_slate_matrix_aux(P* p) const {
 			using std::get;
 			
 			return slate::Matrix<type>::fromScaLAPACK(
@@ -99,7 +99,7 @@ namespace basis {
 			);
 		}
 
-		slate::Matrix<type> as_slate_matrix(){
+		slate::Matrix<type> as_slate_matrix() const {
 			return as_slate_matrix_aux(matrix_.data_elements());
 		}
 
