@@ -87,13 +87,13 @@ namespace basis {
 
 		template<class P>
 		slate::Matrix<type> as_slate_matrix_aux(P* p){
-			using std::get; // get<1>(matrix_.sizes()), get<0>(matrix_.sizes()),
+			using std::get;
+			
 			return slate::Matrix<type>::fromScaLAPACK(
 				num_vectors_, basis_.size(),
 				matrix_.data_elements(), 
 				get<0>(matrix_.strides()), 
-				set_part_.block_size(), 
-				basis_.part().block_size, 
+				set_part_.block_size(), basis_.part().block_size(), 
 				full_comm_.shape()[1], full_comm_.shape()[0],
 				&full_comm_
 			);
@@ -230,6 +230,12 @@ TEST_CASE("Class basis::field_set", "[basis::field_set]"){
 			REQUIRE(ff.matrix()[ii][jj] == 12.2244_a);
 		}
 	}
+
+	auto slate_matrix = ff.as_slate_matrix();
+
+	REQUIRE(slate_matrix.mt() == ff.set_part().comm_size());
+	REQUIRE(slate_matrix.nt() == rs.part().comm_size());
+
 	
 }
 
