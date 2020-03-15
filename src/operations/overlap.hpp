@@ -74,13 +74,13 @@ namespace operations {
 	template <class field_set_type>
 	auto overlap_slate(const field_set_type & phi){
 		
-		slate::SymmetricMatrix<typename field_set_type::element_type> overlap_matrix(slate::Uplo::Lower, phi.set_size(), phi.set_part().block_size(), phi.full_comm().shape()[1], phi.full_comm().shape()[0], &phi.full_comm());
+		slate::HermitianMatrix<typename field_set_type::element_type> overlap_matrix(slate::Uplo::Lower, phi.set_size(), phi.set_part().block_size(), phi.full_comm().shape()[1], phi.full_comm().shape()[0], &phi.full_comm());
 		
     overlap_matrix.insertLocalTiles();
 		
 		auto phi_slate = phi.as_slate_matrix();
 		
-		slate::syrk(phi.basis().volume_element(), phi_slate, 0.0, overlap_matrix);
+		slate::herk(phi.basis().volume_element(), phi_slate, 0.0, overlap_matrix);
 		
 		return overlap_matrix;
 		
@@ -304,6 +304,15 @@ TEST_CASE("function operations::overlap", "[operations::overlap]") {
 					}
 				}
 			}
+
+			{
+				auto cc = operations::overlap_slate(aa);
+				
+				REQUIRE(cc.m() == nvec);
+				REQUIRE(cc.n() == nvec);
+
+			}
+			
 
 			{
 				auto dd = operations::overlap_diagonal(aa);
