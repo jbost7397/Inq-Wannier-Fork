@@ -44,55 +44,14 @@ namespace operations {
 	template <class field_set_type>
   void orthogonalize(field_set_type & phi){
 
-		auto olap = overlap(phi);
+		auto olap = overlap_slate(phi);
 
-		const int nst = phi.set_size();
+		slate::potrf(olap);
+
+		auto olap_triangular = slate::TriangularMatrix<typename field_set_type::element_type>(slate::Diag::NonUnit, olap);
+		auto phi_matrix = phi.as_slate_matrix();
 		
-		//DATAOPERATIONS RAWLAPACK zpotrf
-#ifdef HAVE_CUDA
-		{
-			cusolverDnHandle_t cusolver_handle;
-			
-			auto cusolver_status = cusolverDnCreate(&cusolver_handle);
-			assert(CUSOLVER_STATUS_SUCCESS == cusolver_status);
-			
-			//query the work size
-			int lwork;
-			cusolver_status = cusolverDnZpotrf_bufferSize(cusolver_handle, CUBLAS_FILL_MODE_UPPER, nst, (cuDoubleComplex *) raw_pointer_cast(olap.data()), nst, &lwork);
-			assert(cusolver_status == CUSOLVER_STATUS_SUCCESS);
-			assert(lwork >= 0);
-			
-			//allocate the work array
-			cuDoubleComplex * work;
-			auto cuda_status = cudaMalloc((void**)&work, sizeof(cuDoubleComplex)*lwork);
-			assert(cudaSuccess == cuda_status);
-
-			//finaly do the decomposition
-			int * devInfo;
-			cuda_status = cudaMallocManaged((void**)&devInfo, sizeof(int));
-			assert(cudaSuccess == cuda_status);
-
-			cusolver_status = cusolverDnZpotrf(cusolver_handle, CUBLAS_FILL_MODE_UPPER, nst, (cuDoubleComplex *) raw_pointer_cast(olap.data()), nst, work, lwork, devInfo);
-			assert(cusolver_status == CUSOLVER_STATUS_SUCCESS);
-			cudaDeviceSynchronize();
-			assert(*devInfo == 0);
-
-			cudaFree(work);
-			cudaFree(devInfo);
-			cusolverDnDestroy(cusolver_handle);
-			
-		}
-#else
-		int info;
-		zpotrf("U", &nst, olap.data(), &nst, &info);
-		assert(info == 0);
-#endif
-
-		//DATAOPERATIONS trsm
-		using boost::multi::blas::hermitized;
-		using boost::multi::blas::filling;
-		
-		trsm(filling::lower, olap, hermitized(phi.matrix()));
+		slate::trsm(slate::Side::Left, (typename field_set_type::element_type) 1.0, olap_triangular, phi_matrix);
 
   }
 	
