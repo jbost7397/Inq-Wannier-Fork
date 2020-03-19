@@ -27,18 +27,6 @@
 #include <cstdlib>
 #include <multi/adaptors/blas/trsm.hpp>
 
-#ifdef HAVE_CUDA
-#include <cusolverDn.h>
-#endif
-
-#define zpotrf FC_FUNC(zpotrf, ZPOTRF) 
-extern "C" void zpotrf(const char * uplo, const int * n, complex * a, const int * lda, int * info);
-
-//#define blas_ztrsm FC_FUNC(ztrsm, ZTRSM) 
-//extern "C" void blas_ztrsm(const char& side, const char& uplo, const char& transa, const char& diag,
-//											const long& m, const long& n, const complex& alpha, const complex * a, const long& lda, complex * B, const long& ldb);
-
-
 namespace operations {
 
 	template <class field_set_type>
@@ -108,11 +96,16 @@ TEST_CASE("function operations::orthogonalize", "[operations::orthogonalize]") {
 	double ecut = 25.0;
 	double ll = 6.3;
 
+	auto comm = boost::mpi3::environment::get_world_instance();
+	boost::mpi3::cartesian_communicator<2> cart_comm(comm, {1, comm.size()});
+	
+	auto basis_comm = cart_comm.axis(1);
+		
 	ions::UnitCell cell(vec3d(ll, 0.0, 0.0), vec3d(0.0, ll, 0.0), vec3d(0.0, 0.0, ll));
-	basis::real_space pw(cell, input::basis::cutoff_energy(ecut));
+	basis::real_space basis(cell, input::basis::cutoff_energy(ecut), basis_comm);
 
 	SECTION("Dimension 3"){
-		basis::field_set<basis::real_space, complex> phi(pw, 3);
+		basis::field_set<basis::real_space, complex> phi(basis, 3, cart_comm);
 		
 		operations::randomize(phi);
 		
@@ -140,7 +133,7 @@ TEST_CASE("function operations::orthogonalize", "[operations::orthogonalize]") {
 	}
 
 	SECTION("Dimension 100"){
-		basis::field_set<basis::real_space, complex> phi(pw, 100);
+		basis::field_set<basis::real_space, complex> phi(basis, 100, cart_comm);
 		
 		operations::randomize(phi);
 		
@@ -162,7 +155,7 @@ TEST_CASE("function operations::orthogonalize", "[operations::orthogonalize]") {
 
 
 	SECTION("Dimension 37 - double orthogonalize"){
-		basis::field_set<basis::real_space, complex> phi(pw, 37);
+		basis::field_set<basis::real_space, complex> phi(basis, 37, cart_comm);
 		
 		operations::randomize(phi);
 		
@@ -182,10 +175,10 @@ TEST_CASE("function operations::orthogonalize", "[operations::orthogonalize]") {
 			}
 		}
 	}
-	
+	/*
 	SECTION("single -- Dimension 3"){
-		basis::field_set<basis::real_space, complex> phi(pw, 3);
-		basis::field_set<basis::real_space, complex> vec(pw, 1);
+		basis::field_set<basis::real_space, complex> phi(basis, 3, cart_comm);
+		basis::field_set<basis::real_space, complex> vec(basis, 1, cart_comm);
 		
 		operations::randomize(phi);
 		operations::orthogonalize(phi);
@@ -198,7 +191,7 @@ TEST_CASE("function operations::orthogonalize", "[operations::orthogonalize]") {
 		
 		operations::orthogonalize_single(vec, phi);
 		
-	}
+		}*/
 }
 
 
