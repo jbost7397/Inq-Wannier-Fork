@@ -33,47 +33,55 @@ namespace operations {
   void orthogonalize(field_set_type & phi){
 
 		auto olap = overlap_slate(phi);
-
+		/*
 		slate::potrf(olap);
 
 		auto olap_triangular = slate::TriangularMatrix<typename field_set_type::element_type>(slate::Diag::NonUnit, olap);
 		auto phi_matrix = phi.as_slate_matrix();
 		
 		slate::trsm(slate::Side::Left, (typename field_set_type::element_type) 1.0, olap_triangular, phi_matrix);
-
+		*/
   }
 	
 	template <class field_set_type>
   void orthogonalize_single(field_set_type & vec, field_set_type const & phi, int num_states = -1){
 
+		assert(not phi.set_part().parallel());
+		
 		if(num_states == -1) num_states = phi.set_size();
 		
 		assert(num_states <= phi.set_size());
 		
 		for(int ist = 0; ist < num_states; ist++){
 
-
 			typename field_set_type::element_type olap = 0.0;
 			typename field_set_type::element_type norm = 0.0;
-			for(long ip = 0; ip < phi.basis().size(); ip++){
+			for(long ip = 0; ip < phi.basis().part().local_size(); ip++){
 				olap += conj(phi.matrix()[ip][ist])*vec.matrix()[ip][0];
 				norm += conj(phi.matrix()[ip][ist])*phi.matrix()[ip][ist];
 			}
 
 			//reduce olap, norm
-
-			for(long ip = 0; ip < phi.basis().size(); ip++)	vec.matrix()[ip][0] -= olap/real(norm)*phi.matrix()[ip][ist];
-
+			if(phi.basis().part().parallel()){
+				phi.basis_comm().all_reduce_in_place_n(&olap, 1, std::plus<>{});
+				phi.basis_comm().all_reduce_in_place_n(&norm, 1, std::plus<>{});
+			}
+		
+			for(long ip = 0; ip < phi.basis().part().local_size(); ip++)	vec.matrix()[ip][0] -= olap/real(norm)*phi.matrix()[ip][ist];
+			
 #if 0
 			{
 				typename field_set_type::element_type olap = 0.0;
 				
-				for(long ip = 0; ip < phi.basis().size(); ip++){
+				for(long ip = 0; ip < phi.basis().part().local_size(); ip++){
 					olap += conj(phi.matrix()[ip][ist])*vec.matrix()[ip][0];
 				}
 				
 				//reduce olap, norm
-				
+				if(phi.basis().part().parallel()){
+					phi.basis_comm().all_reduce_in_place_n(&olap, 1, std::plus<>{});
+					phi.basis_comm().all_reduce_in_place_n(&norm, 1, std::plus<>{});
+				}
 				std::cout << ist << '\t' << num_states << '\t' << fabs(olap) << std::endl;
 			}
 #endif
@@ -103,7 +111,7 @@ TEST_CASE("function operations::orthogonalize", "[operations::orthogonalize]") {
 		
 	ions::UnitCell cell(vec3d(ll, 0.0, 0.0), vec3d(0.0, ll, 0.0), vec3d(0.0, 0.0, ll));
 	basis::real_space basis(cell, input::basis::cutoff_energy(ecut), basis_comm);
-
+	
 	SECTION("Dimension 3"){
 		basis::field_set<basis::real_space, complex> phi(basis, 3, cart_comm);
 		
@@ -131,6 +139,7 @@ TEST_CASE("function operations::orthogonalize", "[operations::orthogonalize]") {
 			}
 		}
 	}
+	
 
 	SECTION("Dimension 100"){
 		basis::field_set<basis::real_space, complex> phi(basis, 100, cart_comm);
@@ -138,7 +147,7 @@ TEST_CASE("function operations::orthogonalize", "[operations::orthogonalize]") {
 		operations::randomize(phi);
 		
 		operations::orthogonalize(phi);
-		
+
 		auto olap = operations::overlap(phi);
 		
 		for(int ii = 0; ii < phi.set_size(); ii++){
@@ -151,8 +160,9 @@ TEST_CASE("function operations::orthogonalize", "[operations::orthogonalize]") {
 				}
 			}
 		}
-	}
 
+	}
+#endif
 
 	SECTION("Dimension 37 - double orthogonalize"){
 		basis::field_set<basis::real_space, complex> phi(basis, 37, cart_comm);
@@ -175,7 +185,7 @@ TEST_CASE("function operations::orthogonalize", "[operations::orthogonalize]") {
 			}
 		}
 	}
-	/*
+
 	SECTION("single -- Dimension 3"){
 		basis::field_set<basis::real_space, complex> phi(basis, 3, cart_comm);
 		basis::field_set<basis::real_space, complex> vec(basis, 1, cart_comm);
@@ -191,7 +201,7 @@ TEST_CASE("function operations::orthogonalize", "[operations::orthogonalize]") {
 		
 		operations::orthogonalize_single(vec, phi);
 		
-		}*/
+		}
 }
 
 
