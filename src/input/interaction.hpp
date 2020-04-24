@@ -32,7 +32,8 @@ namespace input {
 
     enum class electronic_theory { NON_INTERACTING,
                                    DENSITY_FUNCTIONAL,
-																	 HARTREE_FOCK
+																	 HARTREE_FOCK,
+																	 INVALID
     };
 
     // these numbers match the libxc definition

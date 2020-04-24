@@ -40,7 +40,7 @@ namespace hamiltonian {
 		}
 		
 		template <class density_type, class exc_type, class vxc_type>
-		void unpolarized(long size, density_type const & density, exc_type & exc, vxc_type & vxc){
+		void unpolarized(long size, density_type const & density, exc_type & exc, vxc_type & vxc) const {
 			
 			switch(func_.info->family) {
 				case XC_FAMILY_LDA:

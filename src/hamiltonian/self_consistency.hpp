@@ -41,8 +41,11 @@ namespace hamiltonian {
 		}
 		
 		template <class vexternal_type, class density_type, class energy_type>
-		auto ks_potential(const vexternal_type & vexternal, const density_type & electronic_density, const density_type & ionic_density, energy_type & energy){
+		auto ks_potential(const vexternal_type & vexternal, const density_type & electronic_density, const density_type & ionic_density, energy_type & energy,
+											input::interaction::electronic_theory theory = input::interaction::electronic_theory::INVALID) const {
 
+			if(theory == input::interaction::electronic_theory::INVALID) theory = theory_;
+			
 			assert(vexternal.basis() == electronic_density.basis()); //for the moment they must be equal
 
 			energy.external = operations::integral_product(electronic_density, vexternal);
@@ -105,7 +108,10 @@ namespace hamiltonian {
 					
 					break;
 				}
-				
+
+			default:
+				assert(false);
+				break;
 			}
 			
 			return vks;
