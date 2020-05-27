@@ -65,7 +65,7 @@ AC_DEFUN([AX_CXX_COMPILE_STDCXX], [dnl
   m4_if([$2], [noext], [], [dnl
   if test x$ac_success = xno; then
     for alternative in ${ax_cxx_compile_alternatives}; do
-      switch="-std=gnu++${alternative}"
+      switch="-std=c++${alternative}"
       cachevar=AS_TR_SH([ax_cv_cxx_compile_cxx$1_$switch])
       AC_CACHE_CHECK(whether $CXX supports C++$1 features with $switch,
                      $cachevar,
