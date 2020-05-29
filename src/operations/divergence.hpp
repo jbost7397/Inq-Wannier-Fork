@@ -167,7 +167,7 @@ TEST_CASE("function operations::divergence", "[operations::divergence]") {
 			for(int iy = 0; iy < rs.sizes()[1]; iy++){
 				for(int iz = 0; iz < rs.sizes()[2]; iz++){
 					auto vec = rs.rvector(ix, iy, iz);
-					diff2 += abs(g_test2.cubic()[ix][iy][iz] - g_analytic2 (kvec, vec));
+					diff2 += abs(g_test2.cubic()[ix][iy][iz] - dg_analytic2 (kvec, vec));
 				}
 			}
 		}
