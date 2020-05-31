@@ -143,7 +143,7 @@ TEST_CASE("function operations::divergence", "[operations::divergence]") {
 			for(int iy = 0; iy < rs.sizes()[1]; iy++){
 				for(int iz = 0; iz < rs.sizes()[2]; iz++){
 					auto vec = rs.rvector(ix, iy, iz);
-					diff3 += std::abs(df_test3.cubic()[ix][iy][iz] - d_analytic3 (kvec, vec));
+					diff3 += fabs(df_test3.cubic()[ix][iy][iz] - d_analytic3 (kvec, vec));
 				}
 			}
 		}
@@ -174,7 +174,7 @@ TEST_CASE("function operations::divergence", "[operations::divergence]") {
 			for(int iy = 0; iy < rs.sizes()[1]; iy++){
 				for(int iz = 0; iz < rs.sizes()[2]; iz++){
 					auto vec = rs.rvector(ix, iy, iz);
-					diff4 += std::abs(df_test4.cubic()[ix][iy][iz] - d_analytic4 (kvec, vec));
+					diff4 += fabs(df_test4.cubic()[ix][iy][iz] - d_analytic4 (kvec, vec));
 				}
 			}
 		}
