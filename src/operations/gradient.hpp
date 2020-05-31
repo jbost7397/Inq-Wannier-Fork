@@ -132,7 +132,7 @@ TEST_CASE("function operations::gradient", "[operations::gradient]") {
 			for(int iy = 0; iy < rs.sizes()[1]; iy++){
 				for(int iz = 0; iz < rs.sizes()[2]; iz++){
 					auto vec = rs.rvector(ix, iy, iz);
-					for(int idir = 0; idir < 3 ; idir++) diff += abs(g_test.cubic()[ix][iy][iz][idir] - g_analytic (kvec, vec)[idir]);
+					for(int idir = 0; idir < 3 ; idir++) diff += fabs(g_test.cubic()[ix][iy][iz][idir] - g_analytic (kvec, vec)[idir]);
 				}
 			}
 		}
@@ -161,7 +161,7 @@ TEST_CASE("function operations::gradient", "[operations::gradient]") {
 			for(int iy = 0; iy < rs.sizes()[1]; iy++){
 				for(int iz = 0; iz < rs.sizes()[2]; iz++){
 					auto vec = rs.rvector(ix, iy, iz);
-					for(int idir = 0; idir < 3 ; idir++) diff2 += abs(g_test2.cubic()[ix][iy][iz][idir] - g_analytic2 (kvec, vec)[idir]);
+					for(int idir = 0; idir < 3 ; idir++) diff2 += fabs(g_test2.cubic()[ix][iy][iz][idir] - g_analytic2 (kvec, vec)[idir]);
 				}
 			}
 		}

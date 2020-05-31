@@ -27,6 +27,7 @@
 namespace operations {
 	auto divergence(basis::field_set<basis::fourier_space, complex> const & ff){ // Divergence function for the field-set type defined in the Fourier space which return a filed 'diverg'
 		basis::field<basis::fourier_space, complex> diverg(ff.basis());
+		diverg = 0.0;
 		for(int ix = 0; ix < ff.basis().sizes()[0]; ix++){		// Iterating over x-,y- and z- components of the input field 
 			for(int iy = 0; iy < ff.basis().sizes()[1]; iy++){
 				for(int iz = 0; iz < ff.basis().sizes()[2]; iz++){
@@ -61,40 +62,45 @@ namespace operations {
 #include <catch2/catch.hpp>
 #include <math/vec3d.hpp>
 
-        //Define test function 1
+        //Define test function 3
         complex f_analytic3 (math::vec3d k , math::vec3d r , int idir){
                 using math::vec3d;
-                complex f;
+		// Some random number to initialize the test function.
+		//It ensures that the function will not clash with 0-values and will not give a false-positive test result
+		complex f = complex(30.30, 70.30); 
 		if ( idir == 0){f = 1.0 * exp(complex(0.0, 1.0) * (k | r ));}
-		if ( idir == 1){f = -2.0 * exp(complex(0.0, 1.0) * (k | r ));}
-		if ( idir == 2){f = 3.0 * exp(complex(0.0, 1.0) * (k | r ));}
+		if ( idir == 1){f = -2.3 * exp(complex(0.0, 1.0) * (k | r ));}
+		if ( idir == 2){f = 3.4 * exp(complex(0.0, 1.0) * (k | r ));}
                 return f;
         }
 
-        //Define analytic form of the divergence of the test function 1
+        //Define analytic form of the divergence of the test function 3
         complex d_analytic3 (math::vec3d k , math::vec3d r) {
                 using math::vec3d;
-                complex g;
+		// Some random number 
+                complex g = complex(70.30, 100.30);
                 complex factor = complex(0.0, 1.0)*exp(complex(0.0,1.0)*(k | r ));
-                g = (1.0 * factor * k[0]) +(-2.0 * factor * k[1]) + (3.0 * factor * k[2]);
+                g = factor * (1.0*k[0] - 2.3*k[1] + 3.4*k[2]);
                 return g;
         }
 
-        //Define test function 2
+        //Define test function 4
         double f_analytic4 (math::vec3d k , math::vec3d r, int idir){
                 using math::vec3d;
-                double f;
+		// Some random number 
+                double f = 30.90;
 		if ( idir == 0){f = 1.0 * sin(k | r );}
-		if ( idir == 1){f = -2.0 * cos(k | r );}
-		if ( idir == 2){f = 3.0 * sin(k | r );}
+		if ( idir == 1){f = -2.5 * cos(k | r );}
+		if ( idir == 2){f = 3.3 * sin(k | r );}
                 return f;
         }
 
-        //Define analytic form of the divergence of the test function 1
+        //Define analytic form of the divergence of the test function 4
         double d_analytic4 (math::vec3d k , math::vec3d r) {
                 using math::vec3d;
-                double g;
-                g = (1.0 * k [0] * cos (k | r)) + (2.0 * k [1] * sin (k | r)) + (3.0 * k [2] * cos (k | r));
+		// Some random number 
+                double g =-80.03;
+                g = (1.0 * k [0] * cos (k | r)) + (2.5 * k [1] * sin (k | r)) + (3.3 * k [2] * cos (k | r));
                 return g;
         }
 
@@ -116,7 +122,7 @@ TEST_CASE("function operations::divergence", "[operations::divergence]") {
 	basis::real_space rs(cell, input::basis::cutoff_energy(20.0));
 
 	SECTION("Vectored plane-wave"){ 
-		basis::field_set<basis::real_space, complex> f_test(rs, 3);
+		basis::field_set<basis::real_space, complex> f_test3(rs, 3);
 	
 		//Define k-vector for test function
 		vec3d kvec = 2.0 * M_PI * vec3d(1.0/lx, 1.0/ly, 1.0/lz);
@@ -125,49 +131,50 @@ TEST_CASE("function operations::divergence", "[operations::divergence]") {
 			for(int iy = 0; iy < rs.sizes()[1]; iy++){
 				for(int iz = 0; iz < rs.sizes()[2]; iz++){
 					auto vec = rs.rvector(ix, iy, iz);
-					for(int idir = 0; idir < 3 ; idir++) f_test.cubic()[ix][iy][iz][idir] = f_analytic3 (kvec, vec, idir);
+					for(int idir = 0; idir < 3 ; idir++) f_test3.cubic()[ix][iy][iz][idir] = f_analytic3 (kvec, vec, idir);
 				}
 			}
 		}
 
-		auto g_test = divergence(f_test);
+		auto df_test3 = divergence(f_test3);
 
 		double diff3 = 0.0;
 		for(int ix = 0; ix < rs.sizes()[0]; ix++){ 			// Iterating over each x-,y- and z- components of the input field-set 
 			for(int iy = 0; iy < rs.sizes()[1]; iy++){
 				for(int iz = 0; iz < rs.sizes()[2]; iz++){
 					auto vec = rs.rvector(ix, iy, iz);
-					diff3 += abs(g_test.cubic()[ix][iy][iz] - d_analytic3 (kvec, vec));
+					diff3 += std::abs(df_test3.cubic()[ix][iy][iz] - d_analytic3 (kvec, vec));
 				}
 			}
 		}
 		CHECK( diff3 < 1.0e-10 ); 
 	}
-	
+
 	SECTION("Vectored real function"){
 
-		basis::field_set<basis::real_space, double> f_test2(rs , 3);
-	
+		basis::field_set<basis::real_space, double> f_test4(rs , 3);
+
 		//Define k-vector for test function
+
 		vec3d kvec = 2.0 * M_PI * vec3d(1.0/lx, 1.0/ly, 1.0/lz);
 
 		for(int ix = 0; ix < rs.sizes()[0]; ix++){ 			// Iterating over each x-,y- and z- components of the input field 
 			for(int iy = 0; iy < rs.sizes()[1]; iy++){
 				for(int iz = 0; iz < rs.sizes()[2]; iz++){
 					auto vec = rs.rvector(ix, iy, iz);
-					for(int idir = 0; idir < 3 ; idir++) f_test2.cubic()[ix][iy][iz][idir] = f_analytic4 (kvec, vec, idir);
+					for(int idir = 0; idir < 3 ; idir++) f_test4.cubic()[ix][iy][iz][idir] = f_analytic4 (kvec, vec, idir);
 				}
 			}
 		}
 		
-		auto g_test2 = divergence(f_test2);
+		auto df_test4 = divergence(f_test4);
 
 		double diff4 = 0.0;
 		for(int ix = 0; ix < rs.sizes()[0]; ix++){ 			// Iterating over each x-,y- and z- components of the input field-set 
 			for(int iy = 0; iy < rs.sizes()[1]; iy++){
 				for(int iz = 0; iz < rs.sizes()[2]; iz++){
 					auto vec = rs.rvector(ix, iy, iz);
-					diff4 += abs(g_test2.cubic()[ix][iy][iz] - d_analytic4 (kvec, vec));
+					diff4 += std::abs(df_test4.cubic()[ix][iy][iz] - d_analytic4 (kvec, vec));
 				}
 			}
 		}
