@@ -81,24 +81,28 @@ namespace basis {
 			return matrix_;
 		}
 
-		template<class P>
-		slate::Matrix<type> as_slate_matrix_aux(P* p) const {
-			using std::get;
-			
+		slate::Matrix<type> as_slate_matrix() const {
 			return slate::Matrix<type>::fromScaLAPACK(
 				num_vectors_, basis_.size(),
-				matrix_.data_elements(), 
-				get<0>(matrix_.strides()), 
+				const_cast<type *>(matrix_.data_elements()), 
+				std::get<0>(matrix_.strides()), 
 				set_part_.block_size(), basis_.part().block_size(), 
 				full_comm_.shape()[1], full_comm_.shape()[0],
 				full_comm_.get()
 			);
 		}
-
-		slate::Matrix<type> as_slate_matrix() const {
-			return as_slate_matrix_aux(matrix_.data_elements());
+		
+		slate::Matrix<type> as_slate_matrix() {
+			return slate::Matrix<type>::fromScaLAPACK(
+				num_vectors_, basis_.size(),
+				matrix_.data_elements(), 
+				std::get<0>(matrix_.strides()), 
+				set_part_.block_size(), basis_.part().block_size(), 
+				full_comm_.shape()[1], full_comm_.shape()[0],
+				full_comm_.get()
+			);
 		}
-
+		
 		auto data() const {
 			return matrix_.data();
 		}
