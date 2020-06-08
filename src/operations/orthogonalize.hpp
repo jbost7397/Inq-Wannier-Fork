@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef OPERATIONS__ORTHOGONALIZE
-#define OPERATIONS__ORTHOGONALIZE
+#ifndef INQ__OPERATIONS__ORTHOGONALIZE
+#define INQ__OPERATIONS__ORTHOGONALIZE
 
 /*
  Copyright (C) 2019 Xavier Andrade, Alfredo A. Correa
@@ -27,77 +27,146 @@
 #include <cstdlib>
 #include <multi/adaptors/blas/trsm.hpp>
 
+#include <operations/overlap.hpp>
+
+#ifdef HAVE_CUDA
+#include <cusolverDn.h>
+#endif
+
+#define zpotrf FC_FUNC(zpotrf, ZPOTRF) 
+extern "C" void zpotrf(const char * uplo, const int * n, inq::complex * a, const int * lda, int * info);
+
+//#define blas_ztrsm FC_FUNC(ztrsm, ZTRSM) 
+//extern "C" void blas_ztrsm(const char& side, const char& uplo, const char& transa, const char& diag,
+//											const long& m, const long& n, const complex& alpha, const complex * a, const long& lda, complex * B, const long& ldb);
+
+namespace inq {
 namespace operations {
 
-	template <class field_set_type>
-  void orthogonalize(field_set_type & phi){
+template <class field_set_type>
+void orthogonalize(field_set_type & phi){
 
+	/*
 		auto olap = overlap_slate(phi);
-		/*
+	
 		slate::potrf(olap);
-
+		
 		auto olap_triangular = slate::TriangularMatrix<typename field_set_type::element_type>(slate::Diag::NonUnit, olap);
 		auto phi_matrix = phi.as_slate_matrix();
 		
 		slate::trsm(slate::Side::Left, (typename field_set_type::element_type) 1.0, olap_triangular, phi_matrix);
-		*/
-  }
+	*/
+
+	auto olap = overlap(phi);
+
+	const int nst = phi.set_size();
+		
+	//DATAOPERATIONS RAWLAPACK zpotrf
+#ifdef HAVE_CUDA
+	{
+		cusolverDnHandle_t cusolver_handle;
+			
+		[[maybe_unused]] auto cusolver_status = cusolverDnCreate(&cusolver_handle);
+		assert(CUSOLVER_STATUS_SUCCESS == cusolver_status);
+			
+		//query the work size
+		int lwork;
+		cusolver_status = cusolverDnZpotrf_bufferSize(cusolver_handle, CUBLAS_FILL_MODE_UPPER, nst, (cuDoubleComplex *) raw_pointer_cast(olap.data()), nst, &lwork);
+		assert(cusolver_status == CUSOLVER_STATUS_SUCCESS);
+		assert(lwork >= 0);
+			
+		//allocate the work array
+		cuDoubleComplex * work;
+		[[maybe_unused]] auto cuda_status = cudaMalloc((void**)&work, sizeof(cuDoubleComplex)*lwork);
+		assert(cudaSuccess == cuda_status);
+
+		//finaly do the decomposition
+		int * devInfo;
+		cuda_status = cudaMallocManaged((void**)&devInfo, sizeof(int));
+		assert(cudaSuccess == cuda_status);
+
+		cusolver_status = cusolverDnZpotrf(cusolver_handle, CUBLAS_FILL_MODE_UPPER, nst, (cuDoubleComplex *) raw_pointer_cast(olap.data()), nst, work, lwork, devInfo);
+		assert(cusolver_status == CUSOLVER_STATUS_SUCCESS);
+		cudaDeviceSynchronize();
+		assert(*devInfo == 0);
+
+		cudaFree(work);
+		cudaFree(devInfo);
+		cusolverDnDestroy(cusolver_handle);
+			
+	}
+#else
+	int info;
+	zpotrf("U", &nst, olap.data(), &nst, &info);
+	assert(info == 0);
+#endif
+
+	//DATAOPERATIONS trsm
+	using boost::multi::blas::hermitized;
+	using boost::multi::blas::filling;
+		
+	trsm(filling::lower, olap, hermitized(phi.matrix()));
+
+}
 	
-	template <class field_set_type>
-  void orthogonalize_single(field_set_type & vec, field_set_type const & phi, int num_states = -1){
+template <class field_set_type>
+void orthogonalize_single(field_set_type & vec, field_set_type const & phi, int num_states = -1){
 
-		assert(not phi.set_part().parallel());
+	assert(not phi.set_part().parallel());
+	
+	if(num_states == -1) num_states = phi.set_size();
 		
-		if(num_states == -1) num_states = phi.set_size();
+	assert(num_states <= phi.set_size());
 		
-		assert(num_states <= phi.set_size());
-		
-		for(int ist = 0; ist < num_states; ist++){
+	for(int ist = 0; ist < num_states; ist++){
 
+		typename field_set_type::element_type olap = 0.0;
+		typename field_set_type::element_type norm = 0.0;
+		for(long ip = 0; ip < phi.basis().part().local_size(); ip++){
+			olap += conj(phi.matrix()[ip][ist])*vec.matrix()[ip][0];
+			norm += conj(phi.matrix()[ip][ist])*phi.matrix()[ip][ist];
+		}
+		
+		//reduce olap, norm
+		if(phi.basis().part().parallel()){
+			phi.basis_comm().all_reduce_in_place_n(&olap, 1, std::plus<>{});
+			phi.basis_comm().all_reduce_in_place_n(&norm, 1, std::plus<>{});
+		}
+		
+		for(long ip = 0; ip < phi.basis().part().local_size(); ip++)	vec.matrix()[ip][0] -= olap/real(norm)*phi.matrix()[ip][ist];
+		
+#if 0
+		{
 			typename field_set_type::element_type olap = 0.0;
-			typename field_set_type::element_type norm = 0.0;
+				
 			for(long ip = 0; ip < phi.basis().part().local_size(); ip++){
 				olap += conj(phi.matrix()[ip][ist])*vec.matrix()[ip][0];
-				norm += conj(phi.matrix()[ip][ist])*phi.matrix()[ip][ist];
 			}
-
+			
 			//reduce olap, norm
 			if(phi.basis().part().parallel()){
 				phi.basis_comm().all_reduce_in_place_n(&olap, 1, std::plus<>{});
 				phi.basis_comm().all_reduce_in_place_n(&norm, 1, std::plus<>{});
 			}
-		
-			for(long ip = 0; ip < phi.basis().part().local_size(); ip++)	vec.matrix()[ip][0] -= olap/real(norm)*phi.matrix()[ip][ist];
-			
-#if 0
-			{
-				typename field_set_type::element_type olap = 0.0;
-				
-				for(long ip = 0; ip < phi.basis().part().local_size(); ip++){
-					olap += conj(phi.matrix()[ip][ist])*vec.matrix()[ip][0];
-				}
-				
-				//reduce olap, norm
-				if(phi.basis().part().parallel()){
-					phi.basis_comm().all_reduce_in_place_n(&olap, 1, std::plus<>{});
-					phi.basis_comm().all_reduce_in_place_n(&norm, 1, std::plus<>{});
-				}
-				std::cout << ist << '\t' << num_states << '\t' << fabs(olap) << std::endl;
-			}
+			std::cout << ist << '\t' << num_states << '\t' << fabs(olap) << std::endl;
+		}
 #endif
 			
-		}
-		
 	}
+		
 }
 
-#ifdef UNIT_TEST
+}
+}
+
+#ifdef INQ_UNIT_TEST
 #include <catch2/catch.hpp>
 
 #include <operations/randomize.hpp>
 
 TEST_CASE("function operations::orthogonalize", "[operations::orthogonalize]") {
 
+	using namespace inq;
 	using namespace Catch::literals;
 	using math::vec3d;
 
@@ -131,10 +200,10 @@ TEST_CASE("function operations::orthogonalize", "[operations::orthogonalize]") {
 		for(int ii = 0; ii < phi.set_size(); ii++){
 			for(int jj = 0; jj < phi.set_size(); jj++){
 				if(ii == jj) {
-					REQUIRE(real(olap[ii][ii]) == 1.0_a);
-					REQUIRE(fabs(imag(olap[ii][ii])) < 1e-14);
+					CHECK(real(olap[ii][ii]) == 1.0_a);
+					CHECK(fabs(imag(olap[ii][ii])) < 1e-14);
 			} else {
-					REQUIRE(fabs(olap[ii][jj]) < 1e-14);
+					CHECK(fabs(olap[ii][jj]) < 1e-14);
 				}
 			}
 		}
@@ -153,16 +222,15 @@ TEST_CASE("function operations::orthogonalize", "[operations::orthogonalize]") {
 		for(int ii = 0; ii < phi.set_size(); ii++){
 			for(int jj = 0; jj < phi.set_size(); jj++){
 				if(ii == jj) {
-					REQUIRE(real(olap[ii][ii]) == 1.0_a);
-					REQUIRE(fabs(imag(olap[ii][ii])) < 1e-14);
+					CHECK(real(olap[ii][ii]) == 1.0_a);
+					CHECK(fabs(imag(olap[ii][ii])) < 1e-14);
 				} else {
-					REQUIRE(fabs(olap[ii][jj]) < 1e-13);
+					CHECK(fabs(olap[ii][jj]) < 1e-13);
 				}
 			}
 		}
 
 	}
-#endif
 
 	SECTION("Dimension 37 - double orthogonalize"){
 		basis::field_set<basis::real_space, complex> phi(basis, 37, cart_comm);
@@ -177,10 +245,10 @@ TEST_CASE("function operations::orthogonalize", "[operations::orthogonalize]") {
 		for(int ii = 0; ii < phi.set_size(); ii++){
 			for(int jj = 0; jj < phi.set_size(); jj++){
 				if(ii == jj) {
-					REQUIRE(real(olap[ii][ii]) == 1.0_a);
-					REQUIRE(fabs(imag(olap[ii][ii])) < 1e-16);
+					CHECK(real(olap[ii][ii]) == 1.0_a);
+					CHECK(fabs(imag(olap[ii][ii])) < 1e-16);
 				} else {
-					REQUIRE(fabs(olap[ii][jj]) < 5e-16);
+					CHECK(fabs(olap[ii][jj]) < 5e-16);
 				}
 			}
 		}

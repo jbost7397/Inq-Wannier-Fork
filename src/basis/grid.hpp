@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef PLANE_WAVE_HPP
-#define PLANE_WAVE_HPP
+#ifndef INQ__BASIS__GRID
+#define INQ__BASIS__GRID
 
 /*
  Copyright (C) 2019 Xavier Andrade
@@ -21,12 +21,15 @@
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#include "../math/vec3d.hpp"
+
+#include <basis/base.hpp>
+#include <math/vec3d.hpp>
+#include <math/vector3.hpp>
+
 #include <cassert>
 #include <array>
 
-#include <basis/base.hpp>
-
+namespace inq {
 namespace basis {
 
   class grid : public base {
@@ -37,7 +40,7 @@ namespace basis {
 		
 		grid(const ions::UnitCell & cell, std::array<int, 3> nr, bool spherical_grid, int periodic_dimensions, boost::mpi3::communicator & comm) :
 			base(nr[0], comm),
-			cubic_dist_({base::part_, utils::partition(nr[1]), utils::partition(nr[2])}),
+			cubic_dist_({base::part_, inq::utils::partition(nr[1]), inq::utils::partition(nr[2])}),
 			cell_(cell),
 			nr_(nr),
 			spherical_g_grid_(spherical_grid),
@@ -113,10 +116,25 @@ namespace basis {
 		auto & cubic_dist(int dim) const {
 			return cubic_dist_[dim];
 		}
-		
+
+		GPU_FUNCTION auto to_symmetric_range(const int ix, const int iy, const int iz) const {
+			math::vector3<int> ii{ix, iy, iz};
+			for(int idir = 0; idir < 3; idir++) {
+				if(ii[idir] >= (nr_[idir] + 1)/2) ii[idir] -= nr_[idir];
+			}
+			return ii;
+		}
+
+		GPU_FUNCTION auto from_symmetric_range(math::vector3<int> ii) const {
+			for(int idir = 0; idir < 3; idir++) {
+				if(ii[idir] < 0) ii[idir] += nr_[idir];
+			}
+			return ii;
+		}
+
 	protected:
 
-		std::array<utils::partition, 3> cubic_dist_;
+		std::array<inq::utils::partition, 3> cubic_dist_;
 		ions::UnitCell cell_;
 
     std::array<int, 3> nr_;
@@ -138,16 +156,19 @@ namespace basis {
 		int periodic_dimensions_;
 		
   };
+
+}
 }
 
-#ifdef UNIT_TEST
+#ifdef INQ_UNIT_TEST
 
 #include <catch2/catch.hpp>
 #include <ions/unitcell.hpp>
 
 TEST_CASE("class basis::grid", "[basis::grid]") {
   
-  using namespace Catch::literals;
+	using namespace inq;
+	using namespace Catch::literals;
   using math::vec3d;
 
   ions::UnitCell cell(vec3d(10.0, 0.0, 0.0), vec3d(0.0, 4.0, 0.0), vec3d(0.0, 0.0, 7.0));
@@ -156,21 +177,35 @@ TEST_CASE("class basis::grid", "[basis::grid]") {
 	
 	basis::grid gr(cell, {120, 45, 77}, true, 3, comm);
 
-	REQUIRE(gr.sizes()[0] == 120);
-	REQUIRE(gr.sizes()[1] == 45);
-	REQUIRE(gr.sizes()[2] == 77);
+	CHECK(gr.sizes()[0] == 120);
+	CHECK(gr.sizes()[1] == 45);
+	CHECK(gr.sizes()[2] == 77);
 
-	if(comm.size() == 1) REQUIRE(gr.cubic_dist(0).local_size() == 120);
-	if(comm.size() == 2) REQUIRE(gr.cubic_dist(0).local_size() == 60);
-	if(comm.size() == 3) REQUIRE(gr.cubic_dist(0).local_size() == 40);
-	if(comm.size() == 4) REQUIRE(gr.cubic_dist(0).local_size() == 30);
-	if(comm.size() == 5) REQUIRE(gr.cubic_dist(0).local_size() == 24);
-	if(comm.size() == 6) REQUIRE(gr.cubic_dist(0).local_size() == 20);
-	if(comm.size() == 8) REQUIRE(gr.cubic_dist(0).local_size() == 15);
-	if(comm.size() == 10) REQUIRE(gr.cubic_dist(0).local_size() == 12);
-	if(comm.size() == 12) REQUIRE(gr.cubic_dist(0).local_size() == 10);
-	REQUIRE(gr.cubic_dist(1).local_size() == 45);
-	REQUIRE(gr.cubic_dist(2).local_size() == 77);
+	if(comm.size() == 1) CHECK(gr.cubic_dist(0).local_size() == 120);
+	if(comm.size() == 2) CHECK(gr.cubic_dist(0).local_size() == 60);
+	if(comm.size() == 3) CHECK(gr.cubic_dist(0).local_size() == 40);
+	if(comm.size() == 4) CHECK(gr.cubic_dist(0).local_size() == 30);
+	if(comm.size() == 5) CHECK(gr.cubic_dist(0).local_size() == 24);
+	if(comm.size() == 6) CHECK(gr.cubic_dist(0).local_size() == 20);
+	if(comm.size() == 8) CHECK(gr.cubic_dist(0).local_size() == 15);
+	if(comm.size() == 10) CHECK(gr.cubic_dist(0).local_size() == 12);
+	if(comm.size() == 12) CHECK(gr.cubic_dist(0).local_size() == 10);
+	CHECK(gr.cubic_dist(1).local_size() == 45);
+	CHECK(gr.cubic_dist(2).local_size() == 77);
+
+	for(int ix = 0; ix < gr.local_sizes()[0]; ix++){
+		for(int iy = 0; iy < gr.local_sizes()[1]; iy++){
+			for(int iz = 0; iz < gr.local_sizes()[2]; iz++){
+
+				auto ii = gr.from_symmetric_range(gr.to_symmetric_range(ix, iy, iz));
+
+				CHECK(ii[0] == ix);
+				CHECK(ii[1] == iy);
+				CHECK(ii[2] == iz);
+				
+			}
+		}
+	}
 	
 }
 #endif

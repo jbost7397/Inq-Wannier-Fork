@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef HAMILTONIAN__XC_FUNCTIONAL
-#define HAMILTONIAN__XC_FUNCTIONAL
+#ifndef INQ__HAMILTONIAN__XC_FUNCTIONAL
+#define INQ__HAMILTONIAN__XC_FUNCTIONAL
 
 /*
  Copyright (C) 2019 Xavier Andrade
@@ -23,6 +23,7 @@
 
 #include <xc.h>
 
+namespace inq {
 namespace hamiltonian {
 	class xc_functional {
 
@@ -38,9 +39,21 @@ namespace hamiltonian {
 		~xc_functional(){
 			xc_func_end(&func_);
 		}
+
+		template <class field_type>
+		void operator()(field_type const & density, double & xc_energy, field_type & vxc) const {
+
+			field_type exc(vxc.skeleton());
+			unpolarized(density.linear().size(), density, exc, vxc);
+
+			xc_energy = operations::integral_product(density, exc);
+				
+		}
+
+	private:
 		
 		template <class density_type, class exc_type, class vxc_type>
-		void unpolarized(long size, density_type const & density, exc_type & exc, vxc_type & vxc){
+		void unpolarized(long size, density_type const & density, exc_type & exc, vxc_type & vxc) const{
 			
 			switch(func_.info->family) {
 				case XC_FAMILY_LDA:
@@ -48,6 +61,7 @@ namespace hamiltonian {
 					break;
 				case XC_FAMILY_GGA:
 				case XC_FAMILY_HYB_GGA:
+					assert(false);
 					break;
 				}
 		}
@@ -58,6 +72,7 @@ namespace hamiltonian {
 			
 	};
 
+}
 }
 
 #endif

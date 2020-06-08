@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef KS_STATES
-#define KS_STATES
+#ifndef INQ__STATES__KS_STATES
+#define INQ__STATES__KS_STATES
 
 /*
  Copyright (C) 2019 Xavier Andrade
@@ -25,88 +25,99 @@
 #include <math/array.hpp>
 #include <basis/real_space.hpp>
 
+namespace inq {
 namespace states {
-  class ks_states {
 
-  public:
+class ks_states {
 
-    typedef complex coeff_type;
+public:
+
+	typedef complex coeff_type;
     
-    enum class spin_config {
-      UNPOLARIZED,
-      POLARIZED,
-      NON_COLLINEAR
-    };
+	enum class spin_config {
+													UNPOLARIZED,
+													POLARIZED,
+													NON_COLLINEAR
+	};
         
-    ks_states(const spin_config spin, const double nelectrons, const int extra_states = 0){
+	ks_states(const spin_config spin, const double nelectrons, const int extra_states = 0){
 
-      if(spin == spin_config::NON_COLLINEAR){
-				nstates_ = ceil(nelectrons);
-      } else {
-				nstates_ = ceil(0.5*nelectrons);
-      }
-
-			nstates_ += extra_states;
-			
-      nquantumnumbers_ = 1;
-      if(spin == spin_config::POLARIZED) nquantumnumbers_ = 2;
-
-			occs_.reextent({nstates_});
-
-			auto rem_electrons = nelectrons;
-			for(int ist = 0; ist < nstates_; ist++){
-				occs_[ist] = std::min(2.0, rem_electrons);
-				rem_electrons -= occs_[ist];
-			}
-			
-    }
-
-    int num_states() const {
-      return nstates_;
-    }
-
-    int num_quantum_numbers() const {
-      return nquantumnumbers_;
-    }
-
-    template <class array_type>
-    std::array<long int, 4> cubic_dims(const array_type & basis_dims) const {
-      return {basis_dims[0], basis_dims[1], basis_dims[2], nstates_};
-    }
-
-    template <class array_type>
-    std::array<long int, 2> linear_dims(const array_type & basis_dims) const {
-      return {basis_dims[0]*basis_dims[1]*basis_dims[2], nstates_};
-    }
-    
-    template <class output_stream>
-    void info(output_stream & out) const {
-      out << "KOHN-SHAM STATES:" << std::endl;
-      out << "  Number of states = " << num_states() << std::endl;
-      out << std::endl;
-    }
-
-		auto & occupations() const {
-			return occs_;
+		if(spin == spin_config::NON_COLLINEAR){
+			nstates_ = ceil(nelectrons);
+		} else {
+			nstates_ = ceil(0.5*nelectrons);
 		}
+
+		nstates_ += extra_states;
+			
+		nquantumnumbers_ = 1;
+		if(spin == spin_config::POLARIZED) nquantumnumbers_ = 2;
+
+		occs_.reextent({nstates_});
+
+		auto rem_electrons = nelectrons;
+		for(int ist = 0; ist < nstates_; ist++){
+			occs_[ist] = std::min(2.0, rem_electrons);
+			rem_electrons -= occs_[ist];
+		}
+
+		total_charge_ = nelectrons;
+			
+	}
+
+	int num_states() const {
+		return nstates_;
+	}
+
+	int num_quantum_numbers() const {
+		return nquantumnumbers_;
+	}
+
+	template <class array_type>
+	std::array<long int, 4> cubic_dims(const array_type & basis_dims) const {
+		return {basis_dims[0], basis_dims[1], basis_dims[2], nstates_};
+	}
+
+	template <class array_type>
+	std::array<long int, 2> linear_dims(const array_type & basis_dims) const {
+		return {basis_dims[0]*basis_dims[1]*basis_dims[2], nstates_};
+	}
+    
+	template <class output_stream>
+	void info(output_stream & out) const {
+		out << "KOHN-SHAM STATES:" << std::endl;
+		out << "  Number of states = " << num_states() << std::endl;
+		out << std::endl;
+	}
+
+	auto & occupations() const {
+		return occs_;
+	}
+
+	auto total_charge() const {
+		return total_charge_;
+	}
 		
-  private:
+private:
 
-    int nstates_;
-    int nquantumnumbers_;
-		math::array<double, 1> occs_;
+	double total_charge_;
+	int nstates_;
+	int nquantumnumbers_;
+	math::array<double, 1> occs_;
 
-  };
+};
 
 }
+}
 
-#ifdef UNIT_TEST
+#ifdef INQ_UNIT_TEST
 
 #include <ions/unitcell.hpp>
 #include <catch2/catch.hpp>
 
 TEST_CASE("Class states::ks_states", "[ks_states]"){
 
+	using namespace inq;
   using math::vec3d;
   
   double ecut = 30.0;
@@ -119,19 +130,19 @@ TEST_CASE("Class states::ks_states", "[ks_states]"){
     
     states::ks_states st(states::ks_states::spin_config::UNPOLARIZED, 11.0);
     
-    REQUIRE(st.num_states() == 6);
-    REQUIRE(st.num_quantum_numbers() == 1);
-		REQUIRE(st.cubic_dims(pw.sizes())[0] == pw.sizes()[0]);
-		REQUIRE(st.cubic_dims(pw.sizes())[1] == pw.sizes()[1]);
-		REQUIRE(st.cubic_dims(pw.sizes())[2] == pw.sizes()[2]);
-		REQUIRE(st.cubic_dims(pw.sizes())[3] == st.num_states());
+    CHECK(st.num_states() == 6);
+    CHECK(st.num_quantum_numbers() == 1);
+		CHECK(st.cubic_dims(pw.sizes())[0] == pw.sizes()[0]);
+		CHECK(st.cubic_dims(pw.sizes())[1] == pw.sizes()[1]);
+		CHECK(st.cubic_dims(pw.sizes())[2] == pw.sizes()[2]);
+		CHECK(st.cubic_dims(pw.sizes())[3] == st.num_states());
 
-		REQUIRE(st.occupations()[0] == 2.0);
-		REQUIRE(st.occupations()[1] == 2.0);
-		REQUIRE(st.occupations()[2] == 2.0);
-		REQUIRE(st.occupations()[3] == 2.0);
-		REQUIRE(st.occupations()[4] == 2.0);
-		REQUIRE(st.occupations()[5] == 1.0);
+		CHECK(st.occupations()[0] == 2.0);
+		CHECK(st.occupations()[1] == 2.0);
+		CHECK(st.occupations()[2] == 2.0);
+		CHECK(st.occupations()[3] == 2.0);
+		CHECK(st.occupations()[4] == 2.0);
+		CHECK(st.occupations()[5] == 1.0);
 		
   }
 
@@ -139,24 +150,24 @@ TEST_CASE("Class states::ks_states", "[ks_states]"){
     
     states::ks_states st(states::ks_states::spin_config::POLARIZED, 11.0);
     
-    REQUIRE(st.num_states() == 6);
-    REQUIRE(st.num_quantum_numbers() == 2);
-    REQUIRE(st.cubic_dims(pw.sizes())[0] == pw.sizes()[0]);
-    REQUIRE(st.cubic_dims(pw.sizes())[1] == pw.sizes()[1]);
-    REQUIRE(st.cubic_dims(pw.sizes())[2] == pw.sizes()[2]);
-    REQUIRE(st.cubic_dims(pw.sizes())[3] == st.num_states());
+    CHECK(st.num_states() == 6);
+    CHECK(st.num_quantum_numbers() == 2);
+    CHECK(st.cubic_dims(pw.sizes())[0] == pw.sizes()[0]);
+    CHECK(st.cubic_dims(pw.sizes())[1] == pw.sizes()[1]);
+    CHECK(st.cubic_dims(pw.sizes())[2] == pw.sizes()[2]);
+    CHECK(st.cubic_dims(pw.sizes())[3] == st.num_states());
   }
 
   SECTION("Non-collinear spin"){
     
     states::ks_states st(states::ks_states::spin_config::NON_COLLINEAR, 11.0);
     
-    REQUIRE(st.num_states() == 11);
-    REQUIRE(st.num_quantum_numbers() == 1);
-    REQUIRE(st.cubic_dims(pw.sizes())[0] == pw.sizes()[0]);
-    REQUIRE(st.cubic_dims(pw.sizes())[1] == pw.sizes()[1]);
-    REQUIRE(st.cubic_dims(pw.sizes())[2] == pw.sizes()[2]);
-    REQUIRE(st.cubic_dims(pw.sizes())[3] == st.num_states());
+    CHECK(st.num_states() == 11);
+    CHECK(st.num_quantum_numbers() == 1);
+    CHECK(st.cubic_dims(pw.sizes())[0] == pw.sizes()[0]);
+    CHECK(st.cubic_dims(pw.sizes())[1] == pw.sizes()[1]);
+    CHECK(st.cubic_dims(pw.sizes())[2] == pw.sizes()[2]);
+    CHECK(st.cubic_dims(pw.sizes())[3] == st.num_states());
   }
 
   

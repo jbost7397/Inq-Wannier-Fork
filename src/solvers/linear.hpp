@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef SOLVERS__LINEAR
-#define SOLVERS__LINEAR
+#ifndef INQ__SOLVERS__LINEAR
+#define INQ__SOLVERS__LINEAR
 
 /*
  Copyright (C) 2019 Xavier Andrade
@@ -29,36 +29,38 @@ extern "C" void dpotrf(const char * uplo, const int * n, double * a, const int *
 
 #define dtrsv FC_FUNC(dtrsv, DTRSV) 
 
+namespace inq {
 namespace solvers {
 
   /* This function calculates the inverse of a matrix by
      diagonalization, it is slow but accurate. */
   
-  template <class matrix_type, class vector_type>
-  void linear_symmetric(matrix_type && matrix, vector_type & vector){
+template <class matrix_type, class vector_type>
+void linear_symmetric(matrix_type && matrix, vector_type & vector){
 
-    // the matrix must be square
-    assert(std::get<0>(sizes(matrix)) == std::get<1>(sizes(matrix)));
+	// the matrix must be square
+	assert(std::get<0>(sizes(matrix)) == std::get<1>(sizes(matrix)));
 
-    int nn = std::get<0>(sizes(matrix));
+	int nn = std::get<0>(sizes(matrix));
     
-		//DATAOPERATIONS RAWLAPACK dpotrf
-		int info;
-		dpotrf("U", &nn, matrix.data(), &nn, &info);
+	//DATAOPERATIONS RAWLAPACK dpotrf
+	int info;
+	dpotrf("U", &nn, matrix.data(), &nn, &info);
 		
-		const int one = 1;
-		//DATAOPERATIONS RAWLAPACK dtrsv
-		dtrsv('U', 'T', 'N', nn, matrix.data(), nn, vector.data(), one);
-		//DATAOPERATIONS RAWLAPACK dtrsv
-		dtrsv('U', 'N', 'N', nn, matrix.data(), nn, vector.data(), one);
+	const int one = 1;
+	//DATAOPERATIONS RAWLAPACK dtrsv
+	dtrsv('U', 'T', 'N', nn, matrix.data(), nn, vector.data(), one);
+	//DATAOPERATIONS RAWLAPACK dtrsv
+	dtrsv('U', 'N', 'N', nn, matrix.data(), nn, vector.data(), one);
 		
-  }
+}
 
+}
 }
 
 ///////////////////////////////////////////////////////////////////
 
-#ifdef UNIT_TEST
+#ifdef INQ_UNIT_TEST
 #include <catch2/catch.hpp>
 
 #include <math/array.hpp>
@@ -67,7 +69,8 @@ TEST_CASE("function solvers::linear", "[solvers::linear]") {
 
 	SECTION("Diagonal real 2x2"){
 	
-		using namespace Catch::literals;
+		using namespace inq;
+	using namespace Catch::literals;
 		
 		math::array<double, 2> matrix({2, 2});
 		
@@ -80,14 +83,15 @@ TEST_CASE("function solvers::linear", "[solvers::linear]") {
 		
 		solvers::linear_symmetric(matrix, vector);
 
-		REQUIRE(vector[0] == 0.0_a);
-		REQUIRE(vector[1] == 0.5_a);
+		CHECK(vector[0] == 0.0_a);
+		CHECK(vector[1] == 0.5_a);
 
   }
 	
 	SECTION("Symmetric real 2x2 -- 1"){
 	
-		using namespace Catch::literals;
+		using namespace inq;
+	using namespace Catch::literals;
 		
 		math::array<double, 2> matrix({2, 2});
 		
@@ -100,14 +104,15 @@ TEST_CASE("function solvers::linear", "[solvers::linear]") {
 		
 		solvers::linear_symmetric(matrix, vector);
 
-		REQUIRE(vector[0] == -0.0327899021_a);
-		REQUIRE(vector[1] == 0.596579_a);
+		CHECK(vector[0] == -0.0327899021_a);
+		CHECK(vector[1] == 0.596579_a);
 		
   }
 	
 	SECTION("Symmetric real 2x2 -- 2"){
 	
-		using namespace Catch::literals;
+		using namespace inq;
+	using namespace Catch::literals;
 		
 		math::array<double, 2> matrix({2, 2});
 		
@@ -120,8 +125,8 @@ TEST_CASE("function solvers::linear", "[solvers::linear]") {
 		
 		solvers::linear_symmetric(matrix, vector);
 
-		REQUIRE(vector[0] == -30.882245351_a);
-		REQUIRE(vector[1] ==  44.1177546523_a);
+		CHECK(vector[0] == -30.882245351_a);
+		CHECK(vector[1] ==  44.1177546523_a);
 		
   }
 }

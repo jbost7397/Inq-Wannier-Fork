@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef BASIS_FOURIER_SPACE
-#define BASIS_FOURIER_SPACE
+#ifndef INQ__BASIS__FOURIER_SPACE
+#define INQ__BASIS__FOURIER_SPACE
 
 /*
  Copyright (C) 2019 Xavier Andrade
@@ -31,6 +31,7 @@
 #include <cassert>
 #include <array>
 
+namespace inq {
 namespace basis {
 
   class fourier_space : public grid{
@@ -40,7 +41,7 @@ namespace basis {
     fourier_space(const grid & grid_basis, boost::mpi3::communicator & comm = boost::mpi3::environment::get_self_instance()):
 			grid(grid_basis){
 			
-			cubic_dist_ = {utils::partition(nr_[0]), utils::partition(nr_[1]), utils::partition(nr_[2], comm)};
+			cubic_dist_ = {inq::utils::partition(nr_[0]), inq::utils::partition(nr_[1]), inq::utils::partition(nr_[2], comm)};
 
 			base::part_ = cubic_dist_[2];
 			base::part_ *= nr_[0]*long(nr_[1]);
@@ -49,15 +50,12 @@ namespace basis {
     }
 
 		GPU_FUNCTION math::vec3d gvector(const int ix, const int iy, const int iz) const {
-
+						
 			//FFTW generates a grid from 0 to 2pi/h, so we convert it to a
 			//grid from -pi/h to pi/h
-			
-			math::vec3d g{ix*gspacing()[0], iy*gspacing()[1], iz*gspacing()[2]};
-			for(int idir = 0; idir < 3; idir++) {
-				if(g[idir] >= 0.5*glength()[idir]) g[idir] -= glength()[idir];
-			}
-			return g;
+
+			auto ii = this->to_symmetric_range(ix, iy, iz);
+			return math::vec3d{ii[0]*gspacing()[0], ii[1]*gspacing()[1], ii[2]*gspacing()[2]};
 		}
 
     GPU_FUNCTION const math::vec3d & glength() const{
@@ -96,9 +94,11 @@ namespace basis {
 	private:
 		
   };
+
+}
 }
 
-#ifdef UNIT_TEST
+#ifdef INQ_UNIT_TEST
 #include <catch2/catch.hpp>
 #include <ions/unitcell.hpp>
 

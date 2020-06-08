@@ -28,70 +28,70 @@
 #include <cstdlib>
 #include <gpu/run.hpp>
 #include <algorithm>
-#ifdef HAVE_CUDA
-#include <thrust/transform.h>
-#endif
 
+namespace inq {
 namespace operations {
 
-	/*
-
-		Returns a field that has the sum of the values of t1 and t2.
-
-	*/
-	template <class field_type>
-	auto add(const field_type & t1, const field_type & t2){
-		assert(t1.basis() == t2.basis());
-		
-		field_type tadd(t1.basis(), t1.basis_comm());
-
-		using type = typename field_type::element_type;
-
-		//DATAOPERATIONS STL TRANSFORM
-		std::transform(t1.linear().begin(), t1.linear().end(), t2.linear().begin(), tadd.linear().begin(), std::plus<type>());
-		
-		return tadd;
-	}
+/*
 	
-	/*
-
-		Returns a field that has the sum of the values of t1, t2 and t3.
-
-	*/
-	template <class field_type>
-	field_type add(const field_type & t1, const field_type & t2, const field_type & t3){
-		assert(t1.basis() == t2.basis());
-		assert(t1.basis() == t3.basis());
+	Returns a field that has the sum of the values of t1 and t2.
+	
+*/
+template <class field_type>
+auto add(const field_type & t1, const field_type & t2){
+	assert(t1.basis() == t2.basis());
 		
-		field_type tadd(t1.basis(), t1.basis_comm());
+	field_type tadd(t1.basis(), t1.basis_comm());
 
-		//DATAOPERATIONS LOOP + GPU::RUN 1D
+	using type = typename field_type::element_type;
+
+	//DATAOPERATIONS STL TRANSFORM
+	std::transform(t1.linear().begin(), t1.linear().end(), t2.linear().begin(), tadd.linear().begin(), std::plus<type>());
+		
+	return tadd;
+}
+	
+/*
+
+	Returns a field that has the sum of the values of t1, t2 and t3.
+
+*/
+template <class field_type>
+field_type add(const field_type & t1, const field_type & t2, const field_type & t3){
+	assert(t1.basis() == t2.basis());
+	assert(t1.basis() == t3.basis());
+		
+	field_type tadd(t1.basis(), t1.basis_comm());
+
+	//DATAOPERATIONS LOOP + GPU::RUN 1D
 #ifdef HAVE_CUDA
 
-		auto t1p = t1.linear().begin();
-		auto t2p = t2.linear().begin();
-		auto t3p = t3.linear().begin();
-		auto taddp = tadd.linear().begin();
+	auto t1p = t1.linear().begin();
+	auto t2p = t2.linear().begin();
+	auto t3p = t3.linear().begin();
+	auto taddp = tadd.linear().begin();
 		
-		gpu::run(t1.linear().size(),
-						 [=] __device__ (long ii){
-							 taddp[ii] = t1p[ii] + t2p[ii] + t3p[ii];
-						 });
+	gpu::run(t1.linear().size(),
+					 [=] __device__ (long ii){
+						 taddp[ii] = t1p[ii] + t2p[ii] + t3p[ii];
+					 });
 #else
-		for(long ii = 0; ii < t1.linear().size(); ii++) tadd.linear()[ii] = t1.linear()[ii] + t2.linear()[ii] + t3.linear()[ii];
+	for(long ii = 0; ii < t1.linear().size(); ii++) tadd.linear()[ii] = t1.linear()[ii] + t2.linear()[ii] + t3.linear()[ii];
 #endif
 		
-		return tadd;
-	}
-
+	return tadd;
 }
 
-#ifdef UNIT_TEST
+}
+}
+
+#ifdef INQ_UNIT_TEST
 #include <catch2/catch.hpp>
 #include <basis/trivial.hpp>
 
 TEST_CASE("function operations::add", "[operations::add]") {
 
+	using namespace inq;
 	using namespace Catch::literals;
 
 	const int N = 100;
@@ -111,7 +111,7 @@ TEST_CASE("function operations::add", "[operations::add]") {
 
 		cc = operations::add(aa, bb);
 		
-		for(int ii = 0; ii < cc.linear().size(); ii++) REQUIRE(cc.linear()[ii] == 3.5_a);
+		for(int ii = 0; ii < cc.linear().size(); ii++) CHECK(cc.linear()[ii] == 3.5_a);
 
 	}
 	
@@ -127,8 +127,8 @@ TEST_CASE("function operations::add", "[operations::add]") {
 		cc = operations::add(aa, bb);
 		
 		for(int ii = 0; ii < cc.linear().size(); ii++){
-			REQUIRE(real(cc.linear()[ii]) == 3.5_a);
-			REQUIRE(imag(cc.linear()[ii]) == -19.0_a);
+			CHECK(real(cc.linear()[ii]) == 3.5_a);
+			CHECK(imag(cc.linear()[ii]) == -19.0_a);
 		}
 
 	}
@@ -146,7 +146,7 @@ TEST_CASE("function operations::add", "[operations::add]") {
 
 		dd = operations::add(aa, bb, cc);
 		
-		for(int ii = 0; ii < cc.linear().size(); ii++) REQUIRE(dd.linear()[ii] == -0.5_a);
+		for(int ii = 0; ii < cc.linear().size(); ii++) CHECK(dd.linear()[ii] == -0.5_a);
 
 	}
 	
@@ -164,8 +164,8 @@ TEST_CASE("function operations::add", "[operations::add]") {
 		dd = operations::add(aa, bb, cc);
 		
 		for(int ii = 0; ii < cc.linear().size(); ii++){
-			REQUIRE(real(dd.linear()[ii]) == 0.8_a);
-			REQUIRE(imag(dd.linear()[ii]) == -10.4_a);
+			CHECK(real(dd.linear()[ii]) == 0.8_a);
+			CHECK(imag(dd.linear()[ii]) == -10.4_a);
 		}
 
 	}	

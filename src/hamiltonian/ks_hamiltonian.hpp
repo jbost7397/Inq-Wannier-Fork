@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef HAMILTONIAN_KS_HAMILTONIAN
-#define HAMILTONIAN_KS_HAMILTONIAN
+#ifndef INQ__HAMILTONIAN__KS_HAMILTONIAN
+#define INQ__HAMILTONIAN__KS_HAMILTONIAN
 
 /*
  Copyright (C) 2019 Xavier Andrade
@@ -25,9 +25,12 @@
 #include <states/ks_states.hpp>
 #include <multi/adaptors/fftw.hpp>
 #include <hamiltonian/projector.hpp>
+#include <hamiltonian/projector_fourier.hpp>
 #include <hamiltonian/exchange_operator.hpp>
 #include <operations/space.hpp>
+#include <operations/laplacian.hpp>
 
+namespace inq {
 namespace hamiltonian {
   template <class basis_type>
   class ks_hamiltonian {
@@ -37,94 +40,77 @@ namespace hamiltonian {
 		basis::field<basis::real_space, double> scalar_potential;
 		exchange_operator exchange;
 		
-    ks_hamiltonian(const basis_type & basis, const ions::UnitCell & cell, const atomic_potential & pot, const ions::geometry & geo,
+    ks_hamiltonian(const basis_type & basis, const ions::UnitCell & cell, const atomic_potential & pot, bool fourier_pseudo, const ions::geometry & geo,
 									 const int num_hf_orbitals, const double exchange_coefficient):
 			scalar_potential(basis),
-			exchange(basis, num_hf_orbitals, exchange_coefficient){
+			exchange(basis, num_hf_orbitals, exchange_coefficient),
+			non_local_in_fourier_(fourier_pseudo)
+		{
 
 			scalar_potential = pot.local_potential(basis, cell, geo);
 			
 			for(int iatom = 0; iatom < geo.num_atoms(); iatom++){
-				projectors_.push_back(projector(basis, cell, pot.pseudo_for_element(geo.atoms()[iatom]), geo.coordinates()[iatom]));
+				if(non_local_in_fourier_){
+					auto insert = projectors_fourier_map_.emplace(geo.atoms()[iatom].symbol(),
+																												projector_fourier(basis, cell, pot.pseudo_for_element(geo.atoms()[iatom])));
+					insert.first->second.add_coord(geo.coordinates()[iatom]);
+				} else {
+					projectors_.push_back(projector(basis, cell, pot.pseudo_for_element(geo.atoms()[iatom]), geo.coordinates()[iatom]));
+				}
 			}
 
     }
 
+		////////////////////////////////////////////////////////////////////////////////////////////
+		
 		void non_local(const basis::field_set<basis::real_space, complex> & phi, basis::field_set<basis::real_space, complex> & vnlphi) const {
 			for(unsigned iproj = 0; iproj < projectors_.size(); iproj++) projectors_[iproj](phi, vnlphi);
 		}
 
-		auto non_local(const basis::field_set<basis::real_space, complex> & phi) const {
-			basis::field_set<basis::real_space, complex> vnlphi(phi.skeleton());
-			vnlphi = 0.0;
-			non_local(phi, vnlphi);
-			return vnlphi;
+		////////////////////////////////////////////////////////////////////////////////////////////
+		
+		void non_local(const basis::field_set<basis::fourier_space, complex> & phi, basis::field_set<basis::fourier_space, complex> & vnlphi) const {
+			for(auto it = projectors_fourier_map_.cbegin(); it != projectors_fourier_map_.cend(); ++it){
+				it->second(phi, vnlphi);
+			}
 		}
+		
+		////////////////////////////////////////////////////////////////////////////////////////////
+		
+		auto non_local(const basis::field_set<basis::real_space, complex> & phi) const {
+
+			if(non_local_in_fourier_) {
+
+				auto phi_fs = operations::space::to_fourier(phi);
+				basis::field_set<basis::fourier_space, complex> vnlphi_fs(phi_fs.skeleton());
+
+				vnlphi_fs = 0.0;
+				non_local(phi_fs, vnlphi_fs);
+				return operations::space::to_real(vnlphi_fs);
+					
+			} else {
+
+				basis::field_set<basis::real_space, complex> vnlphi(phi.skeleton());
+				vnlphi = 0.0;
+				non_local(phi, vnlphi);
+				return vnlphi;
+							
+			}
+			
+		}
+
+		////////////////////////////////////////////////////////////////////////////////////////////
 		
 		void fourier_space_terms(const basis::field_set<basis::fourier_space, complex> & phi, basis::field_set<basis::fourier_space, complex> & hphi) const {
-
-			//DATAOPERATIONS LOOP + GPU::RUN 4D
-#ifdef HAVE_CUDA
-
-			gpu::run(hphi.set_size(), hphi.basis().sizes()[2], hphi.basis().sizes()[1], hphi.basis().sizes()[0],
-							 [basis = hphi.basis(),
-								hphicub = begin(hphi.cubic()),
-								phicub = begin(phi.cubic())]
-							 __device__ (auto ist, auto iz, auto iy, auto ix){
-								 
-								 double lapl = -0.5*(-basis.g2(ix, iy, iz));
-								 hphicub[ix][iy][iz][ist] += lapl*phicub[ix][iy][iz][ist];
-
-							 });
-
-#else
-			
-			for(int ix = 0; ix < hphi.basis().sizes()[0]; ix++){
-				for(int iy = 0; iy < hphi.basis().sizes()[1]; iy++){
-					for(int iz = 0; iz < hphi.basis().sizes()[2]; iz++){
-						double lapl = -0.5*(-hphi.basis().g2(ix, iy, iz));
-						for(int ist = 0; ist < hphi.set_size(); ist++) hphi.cubic()[ix][iy][iz][ist] += lapl*phi.cubic()[ix][iy][iz][ist];
-					}
-				}
-			}
-
-#endif
-			
+			operations::laplacian_add(phi, hphi);
+			if(non_local_in_fourier_) non_local(phi, hphi);
 		}
-		
-		void fourier_space_terms(basis::field_set<basis::fourier_space, complex> & hphi) const {
 
-			//DATAOPERATIONS LOOP + GPU::RUN 4D
-#ifdef HAVE_CUDA
-
-			gpu::run(hphi.set_size(), hphi.basis().sizes()[2], hphi.basis().sizes()[1], hphi.basis().sizes()[0],
-							 [basis = hphi.basis(),
-								hphicub = begin(hphi.cubic())]
-							 __device__ (auto ist, auto iz, auto iy, auto ix){
-								 
-								 double lapl = -0.5*(-basis.g2(ix, iy, iz));
-								 hphicub[ix][iy][iz][ist] = hphicub[ix][iy][iz][ist]*lapl;
-								 
-							 });
-
-#else
-
-			for(int ix = 0; ix < hphi.basis().sizes()[0]; ix++){
-				for(int iy = 0; iy < hphi.basis().sizes()[1]; iy++){
-					for(int iz = 0; iz < hphi.basis().sizes()[2]; iz++){
-						double lapl = -0.5*(-hphi.basis().g2(ix, iy, iz));
-						for(int ist = 0; ist < hphi.set_size(); ist++) hphi.cubic()[ix][iy][iz][ist] *= lapl;
-					}
-				}
-			}
-
-#endif
-			
-		}
+		////////////////////////////////////////////////////////////////////////////////////////////
 		
 		void real_space_terms(const basis::field_set<basis::real_space, complex> & phi, basis::field_set<basis::real_space, complex> & hphi) const {
 			//the non local potential in real space
-			non_local(phi, hphi);
+			if(not non_local_in_fourier_) non_local(phi, hphi);
 
 			//the scalar local potential in real space
 			//DATAOPERATIONS LOOP + GPU:RUN 2D
@@ -145,11 +131,17 @@ namespace hamiltonian {
 			exchange(phi, hphi);
 		}
 
+		////////////////////////////////////////////////////////////////////////////////////////////
+
     auto operator()(const basis::field_set<basis::real_space, complex> & phi) const{
       
-			auto hphi_fs = operations::space::to_fourier(phi);
-
-			fourier_space_terms(hphi_fs);
+			auto phi_fs = operations::space::to_fourier(phi);
+			
+			basis::field_set<basis::fourier_space, complex> hphi_fs(phi_fs.skeleton());
+			
+			hphi_fs = 0.0;
+			
+			fourier_space_terms(phi_fs, hphi_fs);
 	
 			auto hphi = operations::space::to_real(hphi_fs);
 
@@ -158,6 +150,8 @@ namespace hamiltonian {
 			return hphi;
 			
 		}
+
+		////////////////////////////////////////////////////////////////////////////////////////////
 		
     auto operator()(const basis::field_set<basis::fourier_space, complex> & phi) const{
 
@@ -176,6 +170,8 @@ namespace hamiltonian {
 			return hphi;
 			
 		}
+
+		////////////////////////////////////////////////////////////////////////////////////////////
 		
 		int num_projectors() const {
 			int nn = 0;
@@ -184,6 +180,8 @@ namespace hamiltonian {
 			}
 			return nn;			
 		}
+
+		////////////////////////////////////////////////////////////////////////////////////////////
 
     template <class output_stream>
     void info(output_stream & out) const {
@@ -195,12 +193,20 @@ namespace hamiltonian {
   private:
 
 		std::vector<projector> projectors_;
-
+		bool non_local_in_fourier_;
+		std::unordered_map<std::string, projector_fourier> projectors_fourier_map_;
+		std::vector<std::unordered_map<std::string, projector_fourier>::iterator> projectors_fourier_;
+		
   };
 
 }
+}
 
-#ifdef UNIT_TEST
+////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////
+
+#ifdef INQ_UNIT_TEST
 
 #include <ions/unitcell.hpp>
 #include <catch2/catch.hpp>
@@ -208,7 +214,8 @@ namespace hamiltonian {
 
 TEST_CASE("Class hamiltonian::ks_hamiltonian", "[hamiltonian::ks_hamiltonian]"){
 
-  using namespace Catch::literals;
+	using namespace inq;
+	using namespace Catch::literals;
   using math::vec3d;
   
   double ecut = 20.0;
@@ -220,21 +227,21 @@ TEST_CASE("Class hamiltonian::ks_hamiltonian", "[hamiltonian::ks_hamiltonian]"){
 
 	SECTION("Basis"){
 		
-		REQUIRE(rs.size() == 8000);
-		REQUIRE(rs.rspacing()[0] == 0.5_a);
-		REQUIRE(rs.rspacing()[1] == 0.5_a);	
-		REQUIRE(rs.rspacing()[2] == 0.5_a);
-		REQUIRE(rs.volume_element() == 0.125_a);
+		CHECK(rs.size() == 8000);
+		CHECK(rs.rspacing()[0] == 0.5_a);
+		CHECK(rs.rspacing()[1] == 0.5_a);	
+		CHECK(rs.rspacing()[2] == 0.5_a);
+		CHECK(rs.volume_element() == 0.125_a);
 	}
 	
-	hamiltonian::atomic_potential pot(geo.num_atoms(), geo.atoms());
+	hamiltonian::atomic_potential pot(geo.num_atoms(), geo.atoms(), rs.gcutoff());
 	
 	states::ks_states st(states::ks_states::spin_config::UNPOLARIZED, 11.0);
 
   basis::field_set<basis::real_space, complex> phi(rs, st.num_states());
 	basis::field_set<basis::real_space, complex> hphi(rs, st.num_states());
 	
-	hamiltonian::ks_hamiltonian<basis::real_space> ham(rs, cell, pot, geo, st.num_states(), 0.0);
+	hamiltonian::ks_hamiltonian<basis::real_space> ham(rs, cell, pot, false, geo, st.num_states(), 0.0);
 
 	SECTION("Constant function"){
 		
@@ -263,7 +270,7 @@ TEST_CASE("Class hamiltonian::ks_hamiltonian", "[hamiltonian::ks_hamiltonian]"){
 
 		diff /= hphi.cubic().num_elements();
 		
-		REQUIRE(diff < 1e-14);
+		CHECK(diff < 1e-14);
 		
 	}
 	
@@ -297,7 +304,7 @@ TEST_CASE("Class hamiltonian::ks_hamiltonian", "[hamiltonian::ks_hamiltonian]"){
 
 		diff /= hphi.cubic().num_elements();
 
-		REQUIRE(diff < 1e-14);
+		CHECK(diff < 1e-14);
 		
 	}
 
@@ -335,7 +342,7 @@ TEST_CASE("Class hamiltonian::ks_hamiltonian", "[hamiltonian::ks_hamiltonian]"){
 
 		diff /= hphi.cubic().num_elements();
 
-		REQUIRE(diff == 0.0055687279_a);
+		CHECK(diff == 0.0055687279_a);
 		
 	}
 
@@ -370,7 +377,7 @@ TEST_CASE("Class hamiltonian::ks_hamiltonian", "[hamiltonian::ks_hamiltonian]"){
 
 		diff /= hphi.cubic().num_elements();
 
-		REQUIRE(diff < 1e-14);
+		CHECK(diff < 1e-14);
 		
 	}
 
@@ -408,7 +415,7 @@ TEST_CASE("Class hamiltonian::ks_hamiltonian", "[hamiltonian::ks_hamiltonian]"){
 
 		diff /= hphi.cubic().num_elements();
 
-		REQUIRE(diff == 0.0055687279_a);
+		CHECK(diff == 0.0055687279_a);
 		
 	}
 
@@ -446,7 +453,7 @@ TEST_CASE("Class hamiltonian::ks_hamiltonian", "[hamiltonian::ks_hamiltonian]"){
 
 		diff /= hphi.cubic().num_elements();
 
-		REQUIRE(diff == 0.0055687279_a);
+		CHECK(diff == 0.0055687279_a);
 		
 	}
 	

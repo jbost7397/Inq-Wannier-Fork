@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef BASIS_REAL_SPACE
-#define BASIS_REAL_SPACE
+#ifndef INQ__BASIS__REAL_SPACE
+#define INQ__BASIS__REAL_SPACE
 
 /*
  Copyright (C) 2019 Xavier Andrade
@@ -29,6 +29,7 @@
 #include <input/basis.hpp>
 #include <gpu/run.hpp>
 
+namespace inq {
 namespace basis {
 
   class real_space : public grid {
@@ -42,7 +43,7 @@ namespace basis {
 		real_space(const grid & grid_basis, boost::mpi3::communicator & comm = boost::mpi3::environment::get_self_instance()):
 			grid(grid_basis){
 			
-			cubic_dist_ = {utils::partition(nr_[0], comm), utils::partition(nr_[1]), utils::partition(nr_[2])};
+			cubic_dist_ = {inq::utils::partition(nr_[0], comm), inq::utils::partition(nr_[1]), inq::utils::partition(nr_[2])};
 
 			base::part_ = cubic_dist_[0];
 			base::part_ *= nr_[1]*long(nr_[2]);
@@ -51,11 +52,8 @@ namespace basis {
     }
 
 		GPU_FUNCTION math::vec3d rvector(const int ix, const int iy, const int iz) const {
-			math::vec3d rr{ix*rspacing()[0], iy*rspacing()[1], iz*rspacing()[2]};
-			for(int idir = 0; idir < 3; idir++) {
-				if(rr[idir] >= 0.5*rlength()[idir]) rr[idir] -= rlength()[idir];
-			}
-			return rr;
+			auto ii = this->to_symmetric_range(ix, iy, iz);
+			return math::vec3d{ii[0]*rspacing()[0], ii[1]*rspacing()[1], ii[2]*rspacing()[2]};
 		}
 		
 		template <class int_array>
@@ -79,8 +77,19 @@ namespace basis {
 			return real_space(grid(cell_.enlarge(factor), {factor*nr_[0], factor*nr_[1], factor*nr_[2]}, spherical_g_grid_, periodic_dimensions_, comm));
 		}
 
+		auto refine(double factor, boost::mpi3::communicator & comm = boost::mpi3::environment::get_self_instance()) const {
+			assert(factor > 0.0);
+			return real_space(grid(cell_, {(int) round(factor*nr_[0]), (int) round(factor*nr_[1]), (int) round(factor*nr_[2])}, spherical_g_grid_, periodic_dimensions_, comm));
+		}
+		
 		auto volume_element() const {
 			return rspacing_[0]*rspacing_[1]*rspacing_[2];
+		}
+
+		auto gcutoff() const {
+			auto max_spacing = std::max({rspacing_[0], rspacing_[1],rspacing_[2]});
+
+			return M_PI/max_spacing;
 		}
 		
 	private:
@@ -100,17 +109,20 @@ namespace basis {
 		}
 		
   };
+
+}
 }
 
-#ifdef UNIT_TEST
+#ifdef INQ_UNIT_TEST
 #include <catch2/catch.hpp>
 #include <ions/unitcell.hpp>
 
-TEST_CASE("class basis::real_space", "[real_space]") {
+TEST_CASE("class basis::real_space", "[basis::real_space]") {
   
-  using namespace Catch::literals;
+	using namespace inq;
+	using namespace Catch::literals;
   using math::vec3d;
-  
+
   {
     
     SECTION("Cubic cell"){
@@ -121,15 +133,15 @@ TEST_CASE("class basis::real_space", "[real_space]") {
       
       basis::real_space rs(cell, input::basis::cutoff_energy(ecut));
 
-      REQUIRE(rs.size() == 8000);
+      CHECK(rs.size() == 8000);
       
-      REQUIRE(rs.rspacing()[0] == 0.5_a);
-      REQUIRE(rs.rspacing()[1] == 0.5_a);
-      REQUIRE(rs.rspacing()[2] == 0.5_a);
+      CHECK(rs.rspacing()[0] == 0.5_a);
+      CHECK(rs.rspacing()[1] == 0.5_a);
+      CHECK(rs.rspacing()[2] == 0.5_a);
       
-      REQUIRE(rs.sizes()[0] == 20);
-      REQUIRE(rs.sizes()[1] == 20);
-      REQUIRE(rs.sizes()[2] == 20);
+      CHECK(rs.sizes()[0] == 20);
+      CHECK(rs.sizes()[1] == 20);
+      CHECK(rs.sizes()[2] == 20);
 
     }
 
@@ -141,26 +153,48 @@ TEST_CASE("class basis::real_space", "[real_space]") {
       
       basis::real_space rs(cell, input::basis::cutoff_energy(ecut));
 
-      REQUIRE(rs.size() == 536640);
+      CHECK(rs.size() == 536640);
 	    
-      REQUIRE(rs.rspacing()[0] == 0.3613953488_a);
-      REQUIRE(rs.rspacing()[1] == 0.3625641026_a);
-      REQUIRE(rs.rspacing()[2] == 0.36328125_a);
+      CHECK(rs.rspacing()[0] == 0.3613953488_a);
+      CHECK(rs.rspacing()[1] == 0.3625641026_a);
+      CHECK(rs.rspacing()[2] == 0.36328125_a);
       
-      REQUIRE(rs.sizes()[0] == 215);
-      REQUIRE(rs.sizes()[1] == 39);
-			REQUIRE(rs.sizes()[2] == 64);
+      CHECK(rs.sizes()[0] == 215);
+      CHECK(rs.sizes()[1] == 39);
+			CHECK(rs.sizes()[2] == 64);
 
 			auto rs3x = rs.enlarge(3);
 			
-      REQUIRE(rs3x.rspacing()[0] == 0.3613953488_a);
-      REQUIRE(rs3x.rspacing()[1] == 0.3625641026_a);
-      REQUIRE(rs3x.rspacing()[2] == 0.36328125_a);
+      CHECK(rs3x.rspacing()[0] == 0.3613953488_a);
+      CHECK(rs3x.rspacing()[1] == 0.3625641026_a);
+      CHECK(rs3x.rspacing()[2] == 0.36328125_a);
       
-      REQUIRE(rs3x.sizes()[0] == 3*215);
-      REQUIRE(rs3x.sizes()[1] == 3*39);
-			REQUIRE(rs3x.sizes()[2] == 3*64);
+      CHECK(rs3x.sizes()[0] == 3*215);
+      CHECK(rs3x.sizes()[1] == 3*39);
+			CHECK(rs3x.sizes()[2] == 3*64);
+
+			auto rs_fine = rs.refine(2);
 			
+      CHECK(rs_fine.rspacing()[0] == Approx(0.5*0.3613953488));
+      CHECK(rs_fine.rspacing()[1] == Approx(0.5*0.3625641026));
+      CHECK(rs_fine.rspacing()[2] == Approx(0.5*0.36328125));
+      
+      CHECK(rs_fine.sizes()[0] == 2*215);
+      CHECK(rs_fine.sizes()[1] == 2*39);
+			CHECK(rs_fine.sizes()[2] == 2*64);
+
+			CHECK(rs == rs.refine(1));
+			
+			auto rs_155 = rs.refine(1.55);
+			
+      CHECK(rs_155.rspacing()[0] == Approx(0.2333333333));
+      CHECK(rs_155.rspacing()[1] == Approx(0.2356666667));
+      CHECK(rs_155.rspacing()[2] == Approx(0.2348484848));
+      
+      CHECK(rs_155.sizes()[0] == 333);
+      CHECK(rs_155.sizes()[1] == 60);
+			CHECK(rs_155.sizes()[2] == 99);
+
     }
 
   }

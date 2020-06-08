@@ -32,6 +32,7 @@
 
 #include <mpi3/environment.hpp>
 
+namespace inq {
 namespace hamiltonian {
 
   class atomic_potential {
@@ -43,13 +44,14 @@ namespace hamiltonian {
     };
 
     template <class atom_array>
-    atomic_potential(const int natoms, const atom_array & atom_list, boost::mpi3::communicator & comm = boost::mpi3::environment::get_self_instance()):
+    atomic_potential(const int natoms, const atom_array & atom_list, double gcutoff, boost::mpi3::communicator & comm = boost::mpi3::environment::get_self_instance()):
 			sep_(0.625), //this is the default from octopus
       pseudo_set_("pseudopotentials/pseudo-dojo.org/nc-sr-04_pbe_standard/"),
 			comm_(comm),
 			part_(natoms, comm_)
 		{
 
+			has_nlcc_ = false;
       nelectrons_ = 0.0;
       for(int iatom = 0; iatom < natoms; iatom++){
 				if(!pseudo_set_.has(atom_list[iatom])) throw error::PSEUDOPOTENTIAL_NOT_FOUND; 
@@ -57,11 +59,12 @@ namespace hamiltonian {
 				auto file_path = pseudo_set_.file_path(atom_list[iatom]);
 				if(atom_list[iatom].has_file()) file_path = atom_list[iatom].file_path();
 
-				auto insert = pseudopotential_list_.emplace(atom_list[iatom].symbol(), pseudo::pseudopotential(file_path, sep_));
+				auto insert = pseudopotential_list_.emplace(atom_list[iatom].symbol(), pseudo::pseudopotential(file_path, sep_, gcutoff, atom_list[iatom].filter_pseudo()));
 				
 				auto & pseudo = insert.first->second;
 				
 				nelectrons_ += pseudo.valence_charge();
+				has_nlcc_ = has_nlcc_ or pseudo.has_nlcc_density();
 				
       }
       
@@ -151,6 +154,79 @@ namespace hamiltonian {
 			return density;			
     }
     
+    template <class basis_type, class cell_type, class geo_type>
+    auto atomic_electronic_density(const basis_type & basis, const cell_type & cell, const geo_type & geo) const {
+
+      basis::field<basis_type, double> density(basis);
+
+			for(long ii = 0; ii < density.basis().size(); ii++) density.linear()[ii] = 0.0;
+			
+      for(auto iatom = part_.start(); iatom < part_.end(); iatom++){
+				
+				auto atom_position = geo.coordinates()[iatom];
+				
+				auto & ps = pseudo_for_element(geo.atoms()[iatom]);
+
+				//TODO: implement the case when the pseudo does not have the density
+				assert(ps.has_electronic_density());
+
+				basis::spherical_grid sphere(basis, cell, atom_position, ps.electronic_density_radius());
+
+				//DATAOPERATIONS LOOP + GPU::RUN 1D (random access output)
+				for(int ipoint = 0; ipoint < sphere.size(); ipoint++){
+					auto rr = sphere.distance()[ipoint];
+					auto density_val = ps.electronic_density().value(rr);
+					density.cubic()[sphere.points()[ipoint][0]][sphere.points()[ipoint][1]][sphere.points()[ipoint][2]] += density_val;
+				}
+				
+      }
+
+			if(part_.parallel()){
+				comm_.all_reduce_in_place_n(static_cast<double *>(density.linear().data()), density.linear().size(), std::plus<>{});
+			}
+
+			return density;			
+    }
+
+		auto has_nlcc() const {
+			return has_nlcc_;
+		}
+
+		template <class basis_type, class cell_type, class geo_type>
+    auto nlcc_density(const basis_type & basis, const cell_type & cell, const geo_type & geo) const {
+
+      basis::field<basis_type, double> density(basis);
+
+			for(long ii = 0; ii < density.basis().size(); ii++) density.linear()[ii] = 0.0;
+			
+      for(auto iatom = part_.start(); iatom < part_.end(); iatom++){
+				
+				auto atom_position = geo.coordinates()[iatom];
+				
+				auto & ps = pseudo_for_element(geo.atoms()[iatom]);
+
+				if(not ps.has_nlcc_density()) continue;
+
+				assert(has_nlcc());
+				
+				basis::spherical_grid sphere(basis, cell, atom_position, ps.nlcc_density_radius());
+
+				//DATAOPERATIONS LOOP + GPU::RUN 1D (random access output)
+				for(int ipoint = 0; ipoint < sphere.size(); ipoint++){
+					auto rr = sphere.distance()[ipoint];
+					auto density_val = ps.nlcc_density().value(rr);
+					density.cubic()[sphere.points()[ipoint][0]][sphere.points()[ipoint][1]][sphere.points()[ipoint][2]] += density_val;
+				}
+				
+      }
+
+			if(part_.parallel()){
+				comm_.all_reduce_in_place_n(static_cast<double *>(density.linear().data()), density.linear().size(), std::plus<>{});
+			}
+
+			return density;			
+    }
+		
     template <class output_stream>
     void info(output_stream & out) const {
       out << "ATOMIC POTENTIAL:" << std::endl;
@@ -165,91 +241,114 @@ namespace hamiltonian {
     
   private:
 
-		const math::erf_range_separation sep_;
+		pseudo::math::erf_range_separation const sep_;
     double nelectrons_;
     pseudo::set pseudo_set_;
     std::unordered_map<std::string, pseudo::pseudopotential> pseudopotential_list_;
 		mutable boost::mpi3::communicator comm_;
-		utils::partition part_;
+		inq::utils::partition part_;
+		bool has_nlcc_;
         
   };
 
 }
+}
 
-#ifdef UNIT_TEST
+#ifdef INQ_UNIT_TEST
 #include <catch2/catch.hpp>
 #include <ions/geometry.hpp>
 #include <basis/real_space.hpp>
 
 TEST_CASE("Class hamiltonian::atomic_potential", "[hamiltonian::atomic_potential]") {
 
-  using namespace Catch::literals;
+	using namespace inq;
+	using namespace Catch::literals;
 	using pseudo::element;
   using input::species;
+
+	double const gcut = 0.785;
 
 	auto comm = boost::mpi3::environment::get_world_instance();
 	
 	SECTION("Non-existing element"){
     std::vector<species> el_list({element("P"), element("X")});
 
-    REQUIRE_THROWS(hamiltonian::atomic_potential(el_list.size(), el_list));
+    CHECK_THROWS(hamiltonian::atomic_potential(el_list.size(), el_list, gcut));
   }
   
   SECTION("Duplicated element"){
     std::vector<species> el_list({element("N"), element("N")});
 
-    hamiltonian::atomic_potential pot(el_list.size(), el_list.begin());
+    hamiltonian::atomic_potential pot(el_list.size(), el_list.begin(), gcut);
 
-    REQUIRE(pot.num_species() == 1);
-    REQUIRE(pot.num_electrons() == 10.0_a);
+    CHECK(pot.num_species() == 1);
+    CHECK(pot.num_electrons() == 10.0_a);
     
   }
 
   SECTION("Empty list"){
     std::vector<species> el_list;
     
-    hamiltonian::atomic_potential pot(el_list.size(), el_list);
+    hamiltonian::atomic_potential pot(el_list.size(), el_list, gcut);
 
-    REQUIRE(pot.num_species() == 0);
-    REQUIRE(pot.num_electrons() == 0.0_a);
+    CHECK(pot.num_species() == 0);
+    CHECK(pot.num_electrons() == 0.0_a);
+
+		CHECK(not pot.has_nlcc());
+		
   }
 
   SECTION("CNOH"){
     species el_list[] = {element("C"), element("N"), element("O"), element("H")};
 
-    hamiltonian::atomic_potential pot(4, el_list);
+    hamiltonian::atomic_potential pot(4, el_list, gcut);
 
-    REQUIRE(pot.num_species() == 4);
-    REQUIRE(pot.num_electrons() == 16.0_a);
+    CHECK(pot.num_species() == 4);
+    CHECK(pot.num_electrons() == 16.0_a);
   }
 
   SECTION("Construct from a geometry"){
 
     ions::geometry geo(config::path::unit_tests_data() + "benzene.xyz");
 
-    hamiltonian::atomic_potential pot(geo.num_atoms(), geo.atoms(), comm);
-
-    REQUIRE(pot.num_species() == 2);
-    REQUIRE(pot.num_electrons() == 30.0_a);
-
 		double ll = 20.0;
 		auto cell = input::cell::cubic(ll, ll, ll);
 		basis::real_space rs(cell, input::basis::cutoff_energy(20.0));
+
+    hamiltonian::atomic_potential pot(geo.num_atoms(), geo.atoms(), rs.gcutoff(), comm);
+		
+    CHECK(pot.num_species() == 2);
+    CHECK(pot.num_electrons() == 30.0_a);
 
 		rs.info(std::cout);
 		
 		auto vv = pot.local_potential(rs, cell, geo);
 
-		REQUIRE(operations::integral(vv) == -45.5544154295_a);
+		CHECK(operations::integral(vv) == -45.5744357466_a);
 
-		REQUIRE(vv.cubic()[5][3][0] == -1.574376555_a);
-		REQUIRE(vv.cubic()[3][1][0] == -0.258229883_a);
+		CHECK(vv.cubic()[5][3][0] == -1.6226427555_a);
+		CHECK(vv.cubic()[3][1][0] == -0.2739253316_a);
 							 
-		auto nn = pot.ionic_density(rs, cell, geo);
+		auto id = pot.ionic_density(rs, cell, geo);
 
-		REQUIRE(operations::integral(nn) == -30.0000000746_a);
-		REQUIRE(nn.cubic()[5][3][0] == -0.9448936487_a);
-		REQUIRE(nn.cubic()[3][1][0] == -0.2074502252_a);
+		CHECK(operations::integral(id) == -30.0000000746_a);
+		CHECK(id.cubic()[5][3][0] == -0.9448936487_a);
+		CHECK(id.cubic()[3][1][0] == -0.2074502252_a);
+
+		auto nn = pot.atomic_electronic_density(rs, cell, geo);
+		
+		CHECK(operations::integral(nn) == 29.9562520003_a);
+		CHECK(nn.cubic()[5][3][0] == 0.1330589609_a);
+		CHECK(nn.cubic()[3][1][0] == 0.1846004508_a);
+
+		CHECK(pot.has_nlcc());
+		
+		auto nlcc = pot.nlcc_density(rs, cell, geo);
+		
+		CHECK(operations::integral(nlcc) == 3.0083012065_a);
+		CHECK(nlcc.cubic()[5][3][0] == 0.6248217151_a);
+		CHECK(nlcc.cubic()[3][1][0] == 0.0007040027_a);
+		
   }
   
 }

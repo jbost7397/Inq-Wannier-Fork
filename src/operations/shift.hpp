@@ -1,10 +1,10 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef OPERATIONS__SHIFT
-#define OPERATIONS__SHIFT
+#ifndef INQ__OPERATIONS__SHIFT
+#define INQ__OPERATIONS__SHIFT
 
 /*
- Copyright (C) 2019 Xavier Andrade, Alfredo Correa.
+ Copyright (C) 2019 Xavier Andrade, Alfredo A. Correa.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
@@ -25,35 +25,50 @@
 #include <basis/field_set.hpp>
 #include <cassert>
 
+namespace inq {
 namespace operations {
 
-	template <class array_1d, class field_set_type>
-  void shift(const array_1d & factor, const field_set_type & shift, field_set_type & phi, double scale = 1.0){
+template <class array_1d, class field_set_type>
+void shift(double scale, const array_1d & factor, const field_set_type & shift, field_set_type & phi){
     
-    assert(size(factor) == phi.set_part().local_size());
+	assert(size(factor) == phi.set_part().local_size());
 
-		//DATAOPERATIONS GPU::RUN 2D 
-		gpu::run(phi.set_part().local_size(), phi.basis().part().local_size(),
-						 [factorp = begin(factor), shiftp = begin(shift.matrix()), phip = begin(phi.matrix()), scale]
-						 GPU_LAMBDA (auto ist, auto ipoint){
-							 phip[ipoint][ist] += scale*(factorp[ist]*shiftp[ipoint][ist]);
-						 });
-  }
-  
+	//DATAOPERATIONS GPU::RUN 2D 
+	gpu::run(phi.set_part().local_size(), phi.basis().part().local_size(),
+					 [factorp = begin(factor), shiftp = begin(shift.matrix()), phip = begin(phi.matrix()), scale]
+					 GPU_LAMBDA (auto ist, auto ipoint){
+						 phip[ipoint][ist] += scale*(factorp[ist]*shiftp[ipoint][ist]);
+					 });
 }
 
-#ifdef UNIT_TEST
+template <class field_set_type>
+void shift(typename field_set_type::element_type const & factor, const field_set_type & shift, field_set_type & phi){
+	
+	//this could be done with axpy
+	//DATAOPERATIONS GPU::RUN 2D
+	gpu::run(phi.set_part().local_size(), phi.basis().part().local_size(),
+					 [factor, shiftp = begin(shift.matrix()), phip = begin(phi.matrix())]
+					 GPU_LAMBDA (auto ist, auto ipoint){
+						 phip[ipoint][ist] += factor*shiftp[ipoint][ist];
+					 });
+}
+
+}
+}
+
+#ifdef INQ_UNIT_TEST
 #include <catch2/catch.hpp>
 
 TEST_CASE("function operations::shift", "[operations::shift]") {
 
+	using namespace inq;
 	using namespace Catch::literals;
 	const int npoint = 185193;
 	const int nvec = 7;
 
 	auto comm = boost::mpi3::environment::get_world_instance();
 	
-	boost::mpi3::cartesian_communicator<2> cart_comm(comm);
+	boost::mpi3::cartesian_communicator<2> cart_comm(comm, {});
 
 	auto basis_comm = cart_comm.axis(1);
 	
@@ -76,10 +91,10 @@ TEST_CASE("function operations::shift", "[operations::shift]") {
 			factor[jj] = 2.0*0.765*jjg;
 		}
 
-		operations::shift(factor, bb, aa, -0.5);
+		operations::shift(-0.5, factor, bb, aa);
 				
 		for(int ii = 0; ii < bas.part().local_size(); ii++){
-			for(int jj = 0; jj < aa.set_part().local_size(); jj++) REQUIRE(aa.matrix()[ii][jj] == Approx(1.0));
+			for(int jj = 0; jj < aa.set_part().local_size(); jj++) CHECK(aa.matrix()[ii][jj] == Approx(1.0));
 		}
 	}
 	
@@ -100,12 +115,12 @@ TEST_CASE("function operations::shift", "[operations::shift]") {
 			factor[jj] = complex(0.0, 2.0*0.765*jjg);
 		}
 
-		operations::shift(factor, bb, aa, -0.5);
+		operations::shift(-0.5, factor, bb, aa);
 				
 		for(int ii = 0; ii < bas.part().local_size(); ii++){
 			auto iig = bas.part().local_to_global(ii);
-			for(int jj = 0; jj < aa.set_part().local_size(); jj++) REQUIRE(real(aa.matrix()[ii][jj]) == Approx(iig));
-			for(int jj = 0; jj < aa.set_part().local_size(); jj++) REQUIRE(imag(aa.matrix()[ii][jj]) == Approx(1.0));
+			for(int jj = 0; jj < aa.set_part().local_size(); jj++) CHECK(real(aa.matrix()[ii][jj]) == Approx(iig));
+			for(int jj = 0; jj < aa.set_part().local_size(); jj++) CHECK(imag(aa.matrix()[ii][jj]) == Approx(1.0));
 		}
 	}	
 	
@@ -126,13 +141,13 @@ TEST_CASE("function operations::shift", "[operations::shift]") {
 			factor[jj] = 2.0*0.765*jjg;
 		}
 
-		operations::shift(factor, bb, aa, -0.5);
+		operations::shift(-0.5, factor, bb, aa);
 				
 		for(int ii = 0; ii < bas.part().local_size(); ii++){
 			for(int jj = 0; jj < aa.set_part().local_size(); jj++) {
 				auto iig = bas.part().local_to_global(ii);
-				REQUIRE(real(aa.matrix()[ii][jj]) == Approx(iig));
-				REQUIRE(imag(aa.matrix()[ii][jj]) == Approx(1.0));
+				CHECK(real(aa.matrix()[ii][jj]) == Approx(iig));
+				CHECK(imag(aa.matrix()[ii][jj]) == Approx(1.0));
 			}
 		}
 	}

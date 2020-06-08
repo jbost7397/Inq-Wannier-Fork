@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef INPUT__ATOM
-#define INPUT__ATOM
+#ifndef INQ__INPUT__ATOM
+#define INQ__INPUT__ATOM
 
 /*
  Copyright (C) 2019 Xavier Andrade
@@ -26,113 +26,115 @@
 #include <vector>
 #include <cmath>
 
+namespace inq {
 namespace input {
 
-	class atom {
+class atom {
 
-	public:
+public:
 		
-		atom(const input::species & arg_spec, const math::vec3d & arg_position):
-			species_(arg_spec),
-			position_(arg_position){
-		}
+	atom(const input::species & arg_spec, const math::vec3d & arg_position):
+		species_(arg_spec),
+		position_(arg_position){
+	}
 
-		const auto & species() const {
-			return species_;
-		}
+	const auto & species() const {
+		return species_;
+	}
 
-		const auto & position() const {
-			return position_;
-		}
+	const auto & position() const {
+		return position_;
+	}
 		
-	private:
+private:
 
-		input::species species_;
-		math::vec3d position_;
+	input::species species_;
+	math::vec3d position_;
 		
-  };
+};
+}
 }
 
-auto operator|(const input::species & arg_spec, const math::vec3d & arg_position){
-	return input::atom(arg_spec, arg_position);
+auto operator|(const inq::input::species & arg_spec, const inq::math::vec3d & arg_position){
+	return inq::input::atom(arg_spec, arg_position);
 }
 
-auto operator|(const pseudo::element & arg_element, const math::vec3d & arg_position){
-	return input::atom(arg_element, arg_position);
+auto operator|(const pseudo::element & arg_element, const inq::math::vec3d & arg_position){
+	return inq::input::atom(arg_element, arg_position);
 }
 
-auto operator|(const std::string & arg_symbol, const math::vec3d & arg_position){
-	return input::atom(pseudo::element(arg_symbol), arg_position);
+auto operator|(const std::string & arg_symbol, const inq::math::vec3d & arg_position){
+	return inq::input::atom(pseudo::element(arg_symbol), arg_position);
 }
 
-#ifdef UNIT_TEST
+#ifdef INQ_UNIT_TEST
 #include <catch2/catch.hpp>
 
-TEST_CASE("class ions::atom", "[input::atom]") {
+TEST_CASE("class ions::atom", "[inq::input::atom]") {
   
-  using namespace Catch::literals;
+	using namespace Catch::literals;
 
 	SECTION("Constructor"){
-		input::atom at(pseudo::element("H"), math::vec3d(1.0, 2.0, 3.0));
+		inq::input::atom at(pseudo::element("H"), inq::math::vec3d(1.0, 2.0, 3.0));
 
-		REQUIRE(at.species().atomic_number() == 1);
-		REQUIRE(at.position()[0] == 1.0_a);
-		REQUIRE(at.position()[1] == 2.0_a);
-		REQUIRE(at.position()[2] == 3.0_a);
+		CHECK(at.species().atomic_number() == 1);
+		CHECK(at.position()[0] == 1.0_a);
+		CHECK(at.position()[1] == 2.0_a);
+		CHECK(at.position()[2] == 3.0_a);
 		
 	}
 	
 	SECTION("Species composition"){
-		input::atom at = input::species(pseudo::element("C")) | math::vec3d(1.0, 2.0, 3.0);
+		auto at = inq::input::species(pseudo::element("C")) | inq::math::vec3d(1.0, 2.0, 3.0);
 
-		REQUIRE(at.species().symbol() == "C");
-		REQUIRE(at.position()[0] == 1.0_a);
-		REQUIRE(at.position()[1] == 2.0_a);
-		REQUIRE(at.position()[2] == 3.0_a);
+		CHECK(at.species().symbol() == "C");
+		CHECK(at.position()[0] == 1.0_a);
+		CHECK(at.position()[1] == 2.0_a);
+		CHECK(at.position()[2] == 3.0_a);
 
 	}
 	
 	SECTION("Species option composition"){
 		
-		input::atom at = pseudo::element("C") | input::species::symbol("C1") | math::vec3d(1.0, 2.0, 3.0);
+		auto at = pseudo::element("C") | inq::input::species::symbol("C1") | inq::math::vec3d(1.0, 2.0, 3.0);
 		
-		REQUIRE(at.species().symbol() == "C1");
-		REQUIRE(at.position()[0] == 1.0_a);
-		REQUIRE(at.position()[1] == 2.0_a);
-		REQUIRE(at.position()[2] == 3.0_a);
+		CHECK(at.species().symbol() == "C1");
+		CHECK(at.position()[0] == 1.0_a);
+		CHECK(at.position()[1] == 2.0_a);
+		CHECK(at.position()[2] == 3.0_a);
 
 	}
 
 	SECTION("Element composition"){
 		
-		input::atom at = pseudo::element("W") | math::vec3d(1.0, 2.0, 3.0);
+		auto at = pseudo::element("W") | inq::math::vec3d(1.0, 2.0, 3.0);
 		
-		REQUIRE(at.species().symbol() == "W");
-		REQUIRE(at.position()[0] == 1.0_a);
-		REQUIRE(at.position()[1] == 2.0_a);
-		REQUIRE(at.position()[2] == 3.0_a);
+		CHECK(at.species().symbol() == "W");
+		CHECK(at.position()[0] == 1.0_a);
+		CHECK(at.position()[1] == 2.0_a);
+		CHECK(at.position()[2] == 3.0_a);
 
 	}
 
 	SECTION("String composition"){
 		
-		input::atom at = std::string("Xe") | math::vec3d(1.0, 2.0, 3.0);
+		auto at = std::string("Xe") | inq::math::vec3d(1.0, 2.0, 3.0);
 		
-		REQUIRE(at.species().symbol() == "Xe");
-		REQUIRE(at.position()[0] == 1.0_a);
-		REQUIRE(at.position()[1] == 2.0_a);
-		REQUIRE(at.position()[2] == 3.0_a);
+		CHECK(at.species().symbol() == "Xe");
+		CHECK(at.position()[0] == 1.0_a);
+		CHECK(at.position()[1] == 2.0_a);
+		CHECK(at.position()[2] == 3.0_a);
 		
 	}
 	
 	SECTION("Char * composition"){
 		
-		input::atom at = "Tc" | math::vec3d(1.0, 2.0, 3.0);
+		inq::input::atom at = "Tc" | inq::math::vec3d(1.0, 2.0, 3.0);
 		
-		REQUIRE(at.species().symbol() == "Tc");
-		REQUIRE(at.position()[0] == 1.0_a);
-		REQUIRE(at.position()[1] == 2.0_a);
-		REQUIRE(at.position()[2] == 3.0_a);
+		CHECK(at.species().symbol() == "Tc");
+		CHECK(at.position()[0] == 1.0_a);
+		CHECK(at.position()[1] == 2.0_a);
+		CHECK(at.position()[2] == 3.0_a);
 		
 	}
 	

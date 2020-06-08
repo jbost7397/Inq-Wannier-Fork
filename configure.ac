@@ -1,9 +1,27 @@
+#    
+#    Copyright (C) 2020 Xavier Andrade <xavier@llnl.gov>
+#
+#    This program is free software: you can redistribute it and/or
+#    modify it under the terms of the GNU Lesser General Public
+#    License as published by the Free Software Foundation, either
+#    version 3 of the License, or (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+#    Lesser General Public License for more details.
+#
+#    You should have received a copy of the GNU Lesser General Public
+#    License along with this program. If not, see
+#    <https://www.gnu.org/licenses/>.
+#
+
 #                                               -*- Autoconf -*-
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.63])
 AC_INIT(inq, alpha, xavier@llnl.gov)
-AM_INIT_AUTOMAKE([subdir-objects])
+AM_INIT_AUTOMAKE([subdir-objects tar-ustar])
 AC_CONFIG_SRCDIR([src/hamiltonian/ks_hamiltonian.hpp])
 AC_CONFIG_HEADERS([config.h])
 
@@ -15,7 +33,7 @@ AC_ARG_ENABLE(cuda, AS_HELP_STRING([--enable-cuda], [Cuda support (experimental)
 # Checks for programs.
 AC_PROG_AWK
 AC_PROG_CXX(mpic++)
-AX_CXX_COMPILE_STDCXX([14], [], [])
+AX_CXX_COMPILE_STDCXX([14], [noext], [])
 
 #we may need to set the linker for the cuda case, so pass that to automake
 if test x"$CXXLD" == x ; then
@@ -116,6 +134,17 @@ AC_LANG_POP
 
 AC_MSG_NOTICE([
 ================================================================================
+  CHECKING FOR BOOST LIBRARIES
+================================================================================])
+AC_LANG_PUSH([C++])
+
+AX_BOOST_BASE([], [], [AC_MSG_ERROR([could not find the required Boost library])])
+AX_BOOST_SERIALIZATION([], [], [AC_MSG_ERROR([could not find the required Boost library])])
+
+AC_LANG_POP
+
+AC_MSG_NOTICE([
+================================================================================
   CONFIGURATION DONE, GENERATING MAKEFILES
 ================================================================================])
 
@@ -129,7 +158,11 @@ AC_CONFIG_FILES([Makefile
                  external_libs/pcg-cpp/Makefile
                  share/Makefile
                  share/unit_tests_data/Makefile
-                 src/Makefile])
+                 src/Makefile
+                 scripts/Makefile
+                 scripts/inc++.bash
+                 tests/Makefile
+                 ])
 
 AC_OUTPUT
 

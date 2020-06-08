@@ -1,0 +1,42 @@
+#!/bin/bash
+#    
+#    Copyright (C) 2020 Xavier Andrade <xavier@llnl.gov>
+#
+#    This program is free software: you can redistribute it and/or
+#    modify it under the terms of the GNU Lesser General Public
+#    License as published by the Free Software Foundation, either
+#    version 3 of the License, or (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+#    Lesser General Public License for more details.
+
+#    You should have received a copy of the GNU Lesser General Public
+#    License along with this program. If not, see
+#    <https://www.gnu.org/licenses/>.
+                             
+if [[ "$*" == *-c* ]]
+then
+    #we are just compiling
+    cxx="@CXX@"
+    ldflags=""
+    libs=""
+else
+    #we are linking too
+    cxx="@CXXLD@"
+    ldflags="@LDFLAGS@ @BOOST_LDFLAGS@ -L@abs_builddir@/../src/"
+    libs="-linq @LIBS_LAPACK@ @LIBS_BLAS@ @LIBS_CUDA@ @BOOST_SERIALIZATION_LIB@ @LIBS@"
+fi
+
+cxxflags="@CXXFLAGS@                         \
+  @BOOST_CPPFLAGS@                           \
+	-I@abs_builddir@/../                       \
+	-I@abs_top_srcdir@/src/                    \
+	-I@abs_top_srcdir@/external_libs/          \
+	-DSHARE_DIR=\"@abs_top_srcdir@/share/\"         \
+	-DPREFIX_DIR=\"@prefix@\""
+
+command_line="$cxx $cxxflags $ldflags $* $libs"
+
+echo $command_line && $command_line

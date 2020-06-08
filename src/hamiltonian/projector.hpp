@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef HAMILTONIAN_PROJECTOR
-#define HAMILTONIAN_PROJECTOR
+#ifndef INQ__HAMILTONIAN__PROJECTOR
+#define INQ__HAMILTONIAN__PROJECTOR
 
 /*
  Copyright (C) 2019-2020 Xavier Andrade, Alfredo Correa.
@@ -35,6 +35,7 @@
 #endif
 #include <multi/adaptors/blas.hpp>
 
+namespace inq {
 namespace hamiltonian {
 
   class projector {
@@ -58,7 +59,7 @@ namespace hamiltonian {
 				// now construct the projector with the spherical harmonics
 				for(int m = -l; m <= l; m++){
 					for(int ipoint = 0; ipoint < sphere_.size(); ipoint++){
-						matrix_[iproj_lm][ipoint] = proj[ipoint]*math::spherical_harmonic(l, m, sphere_.point_pos()[ipoint]);
+						matrix_[iproj_lm][ipoint] = proj[ipoint]*pseudo::math::spherical_harmonic(l, m, sphere_.point_pos()[ipoint]);
 					}
 					kb_coeff_[iproj_lm]	= ps.kb_coeff(iproj_l); 
 					iproj_lm++;
@@ -116,18 +117,19 @@ namespace hamiltonian {
   };
   
 }
+}
 
-#ifdef UNIT_TEST
+#ifdef INQ_UNIT_TEST
 #include <catch2/catch.hpp>
 
 TEST_CASE("class hamiltonian::projector", "[hamiltonian::projector]") {
   
-  using namespace Catch::literals;
+	using namespace inq;
+	using namespace Catch::literals;
   using math::vec3d;
 	
-	const math::erf_range_separation sep(0.625);
+	pseudo::math::erf_range_separation const sep(0.625);
 	
-	pseudo::pseudopotential ps(config::path::unit_tests_data() + "N.upf", sep);
 
   double ecut = 20.0;
   double ll = 10.0;
@@ -136,18 +138,20 @@ TEST_CASE("class hamiltonian::projector", "[hamiltonian::projector]") {
   ions::UnitCell cell(vec3d(ll, 0.0, 0.0), vec3d(0.0, ll, 0.0), vec3d(0.0, 0.0, ll));
   basis::real_space rs(cell, input::basis::cutoff_energy(ecut));
 
+	pseudo::pseudopotential ps(config::path::unit_tests_data() + "N.upf", sep, rs.gcutoff());
+	
 	hamiltonian::projector proj(rs, cell, ps, vec3d(0.0, 0.0, 0.0));
 
-	REQUIRE(proj.num_projectors() == 8);
+	CHECK(proj.num_projectors() == 8);
 	
-	REQUIRE(proj.kb_coeff(0) ==  7.494508815_a);
-	REQUIRE(proj.kb_coeff(1) ==  0.6363049519_a);
-	REQUIRE(proj.kb_coeff(2) == -4.2939052122_a);
-	REQUIRE(proj.kb_coeff(3) == -4.2939052122_a);
-	REQUIRE(proj.kb_coeff(4) == -4.2939052122_a);
-	REQUIRE(proj.kb_coeff(5) == -1.0069878791_a);
-	REQUIRE(proj.kb_coeff(6) == -1.0069878791_a);
-	REQUIRE(proj.kb_coeff(7) == -1.0069878791_a);
+	CHECK(proj.kb_coeff(0) ==  7.494508815_a);
+	CHECK(proj.kb_coeff(1) ==  0.6363049519_a);
+	CHECK(proj.kb_coeff(2) == -4.2939052122_a);
+	CHECK(proj.kb_coeff(3) == -4.2939052122_a);
+	CHECK(proj.kb_coeff(4) == -4.2939052122_a);
+	CHECK(proj.kb_coeff(5) == -1.0069878791_a);
+	CHECK(proj.kb_coeff(6) == -1.0069878791_a);
+	CHECK(proj.kb_coeff(7) == -1.0069878791_a);
 	
 }
 #endif

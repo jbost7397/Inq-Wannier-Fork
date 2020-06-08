@@ -18,13 +18,18 @@
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#include <catch2/catch.hpp>
 #include <systems/ions.hpp>
 #include <systems/electrons.hpp>
+#include <utils/match.hpp>
+#include <ground_state/calculate.hpp>
 
-TEST_CASE("Test non interacting electron gas", "[test::non_interacting_electron_gas]") {
+int main(int argc, char ** argv){
 
-	using namespace Catch::literals;
+	using namespace inq;
+		
+	boost::mpi3::environment env(argc, argv);
+
+	utils::match energy_match(1.0e-6);
 
 	systems::ions ions(input::cell::cubic(10.0, 10.0, 10.0));
 
@@ -34,13 +39,15 @@ TEST_CASE("Test non interacting electron gas", "[test::non_interacting_electron_
 		
 	systems::electrons electrons(ions, input::basis::cutoff_energy(40.0), conf);
 
-	auto energy = electrons.calculate_ground_state(input::interaction::non_interacting());
+	auto result = ground_state::calculate(ions, electrons, input::interaction::non_interacting());
 
 	//Octopus results are:
 	// Energy: 2.36870506
 	// Eigenvalues: 0.000000 0.197392 0.394784
-	REQUIRE(energy.total() == 2.3687083213_a);
-	REQUIRE(energy.kinetic() == 2.3687083213_a);
-	REQUIRE(energy.eigenvalues == 2.3687083213_a);
-	
+	energy_match.check("total energy",   result.energy.total(),     2.3687083213);
+	energy_match.check("kinetic energy", result.energy.kinetic(),   2.3687083213);
+	energy_match.check("eigenvalues",    result.energy.eigenvalues, 2.3687083213);
+
+	return energy_match.fail();
+
 }

@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef SPHERICAL_GRID_HPP
-#define SPHERICAL_GRID_HPP
+#ifndef INQ__BASIS__SPHERICAL_GRID
+#define INQ__BASIS__SPHERICAL_GRID
 
 /*
  Copyright (C) 2019 Xavier Andrade
@@ -29,6 +29,7 @@
 #include <array>
 #include <math/array.hpp>
 
+namespace inq {
 namespace basis {
 
   class spherical_grid {
@@ -168,9 +169,11 @@ namespace basis {
 		double volume_element_;
 		
   };
+
+}
 }
 
-#ifdef UNIT_TEST
+#ifdef INQ_UNIT_TEST
 #include <catch2/catch.hpp>
 #include <ions/unitcell.hpp>
 #include <math/array.hpp>
@@ -178,7 +181,8 @@ namespace basis {
 
 TEST_CASE("class basis::spherical_grid", "[basis::spherical_grid]") {
 	
-  using namespace Catch::literals;
+	using namespace inq;
+	using namespace Catch::literals;
   using math::vec3d;
 
   double ll = 10.0;
@@ -193,7 +197,7 @@ TEST_CASE("class basis::spherical_grid", "[basis::spherical_grid]") {
     
     basis::spherical_grid sphere(pw, cell, {0.0, 0.0, 0.0}, 2.0);
 						       
-    REQUIRE(sphere.size() == 257);
+    CHECK(sphere.size() == 257);
 
     math::array<complex, 3> grid(pw.sizes());
     std::vector<complex> subgrid(sphere.size());
@@ -209,7 +213,7 @@ TEST_CASE("class basis::spherical_grid", "[basis::spherical_grid]") {
     double sum = 0.0;
     for(long ii = 0; ii < grid.num_elements(); ii++) sum += real(grid.data()[ii]);
 
-    REQUIRE(sum == 257.0_a);
+    CHECK(sum == 257.0_a);
     
   }
 
@@ -217,7 +221,7 @@ TEST_CASE("class basis::spherical_grid", "[basis::spherical_grid]") {
     
     basis::spherical_grid sphere(pw, cell, {-ll/2.0, 0.0, 0.0}, 2.0);
     
-    REQUIRE(sphere.size() == 257);
+    CHECK(sphere.size() == 257);
     
     math::array<complex, 4> grid({pw.sizes()[0], pw.sizes()[1], pw.sizes()[2], 20}, 0.0);
     math::array<complex, 2> subgrid({sphere.size(), 20}, 0.0);
@@ -229,7 +233,7 @@ TEST_CASE("class basis::spherical_grid", "[basis::spherical_grid]") {
     double sum = 0.0;
     for(long ii = 0; ii < subgrid.num_elements(); ii++) sum += real(subgrid.data()[ii]);
 
-    REQUIRE(sum == Approx(20.0*257.0));
+    CHECK(sum == Approx(20.0*257.0));
     
     for(long ii = 0; ii < subgrid.num_elements(); ii++) subgrid.data()[ii] = 0.0;
     
@@ -238,7 +242,7 @@ TEST_CASE("class basis::spherical_grid", "[basis::spherical_grid]") {
     sum = 0.0;
     for(long ii = 0; ii < grid.num_elements(); ii++) sum += real(grid.data()[ii]);
 
-    REQUIRE(sum == Approx(20.0*(pw.size() - sphere.size())));
+    CHECK(sum == Approx(20.0*(pw.size() - sphere.size())));
     
   }
 
@@ -246,7 +250,7 @@ TEST_CASE("class basis::spherical_grid", "[basis::spherical_grid]") {
     
     basis::spherical_grid sphere(pw, cell, {ll/2.0, 0.0, 0.0}, 2.0);
     
-    REQUIRE(sphere.size() == 257);
+    CHECK(sphere.size() == 257);
 
     math::array<complex, 6> grid({1, pw.sizes()[0], pw.sizes()[1], pw.sizes()[2], 2, 20}, 0.0);
     math::array<complex, 3> subgrid({sphere.size(), 2, 20}, 0.0);
@@ -261,7 +265,7 @@ TEST_CASE("class basis::spherical_grid", "[basis::spherical_grid]") {
     
     basis::spherical_grid sphere(pw, cell, {-ll/2.0, -ll/2.0, -ll/2.0}, 2.0);
     
-    REQUIRE(sphere.size() == 257);
+    CHECK(sphere.size() == 257);
     
   }
 
@@ -269,7 +273,7 @@ TEST_CASE("class basis::spherical_grid", "[basis::spherical_grid]") {
     
     basis::spherical_grid sphere(pw, cell, {ll/2.0, ll/2.0, ll/2.0}, 2.0);
     
-    REQUIRE(sphere.size() == 257);
+    CHECK(sphere.size() == 257);
     
   }
 
@@ -277,7 +281,7 @@ TEST_CASE("class basis::spherical_grid", "[basis::spherical_grid]") {
     
     basis::spherical_grid sphere(pw, cell, {ll/2.0, ll/2.0, ll/2.0}, 2.0);
     
-    REQUIRE(sphere.size() == 257);
+    CHECK(sphere.size() == 257);
     
   }
 
@@ -285,7 +289,7 @@ TEST_CASE("class basis::spherical_grid", "[basis::spherical_grid]") {
     
     basis::spherical_grid sphere(pw, cell, {ll/4.0, ll/4.0, ll/4.0}, 2.0);
     
-    REQUIRE(sphere.size() == 257);
+    CHECK(sphere.size() == 257);
     
   }
   

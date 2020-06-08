@@ -18,14 +18,19 @@
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#include <catch2/catch.hpp>
 #include <systems/ions.hpp>
 #include <systems/electrons.hpp>
+#include <utils/match.hpp>
+#include <ground_state/calculate.hpp>
 
-TEST_CASE("Test non interacting electron gas", "[test::non_interacting_electron_gas]") {
+int main(int argc, char ** argv){
 
-	using namespace Catch::literals;
+	using namespace inq;
+	
+	boost::mpi3::environment env(argc, argv);
 
+	utils::match energy_match(1.0e-6);
+		
 	systems::ions ions(input::cell::cubic(10.0, 10.0, 10.0));
 
 	input::config conf;
@@ -34,7 +39,7 @@ TEST_CASE("Test non interacting electron gas", "[test::non_interacting_electron_
 		
 	systems::electrons electrons(ions, input::basis::cutoff_energy(40.0), conf);
 
-	auto energy = electrons.calculate_ground_state(input::interaction::dft());
+	auto result = ground_state::calculate(ions, electrons, input::interaction::dft());
 
 	/* OCTOPUS RESULTS (Spacing = 0.2):
 
@@ -68,10 +73,12 @@ TEST_CASE("Test non interacting electron gas", "[test::non_interacting_electron_
 		 Non-local   =         0.00000000
 	*/
 
-	REQUIRE(energy.total()         == -0.6848531681_a);
-	REQUIRE(energy.kinetic()       == 2.368793_a);
-	REQUIRE(energy.eigenvalues     == -1.6053918367_a);
-	REQUIRE(energy.xc              == -3.0536456687_a);
-	REQUIRE(energy.nvxc            == -3.9741843374_a);
+	energy_match.check("total energy",        result.energy.total()    , -0.6848531681);
+	energy_match.check("kinetic energy",      result.energy.kinetic()  , 2.368793);
+	energy_match.check("eigenvalues",         result.energy.eigenvalues, -1.6053918367);
+	energy_match.check("XC energy",           result.energy.xc         , -3.0536456687);
+	energy_match.check("XC density integral", result.energy.nvxc       , -3.9741843374);
+
+	return energy_match.fail();
 	
 }

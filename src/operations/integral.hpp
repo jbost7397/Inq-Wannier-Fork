@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef OPERATIONS__INTEGRAL
-#define OPERATIONS__INTEGRAL
+#ifndef INQ__OPERATIONS__INTEGRAL
+#define INQ__OPERATIONS__INTEGRAL
 
 /*
  Copyright (C) 2019 Xavier Andrade
@@ -25,50 +25,53 @@
 #include <numeric>
 #include <operations/sum.hpp>
 
+namespace inq {
 namespace operations {
 
-  template <class field_type>
-  auto integral(const field_type & phi){
-		auto integral_value = phi.basis().volume_element()*sum(phi.linear());
+template <class field_type>
+auto integral(const field_type & phi){
+	auto integral_value = phi.basis().volume_element()*sum(phi.linear());
 
-		if(phi.basis().part().parallel()){
-			phi.basis_comm().all_reduce_in_place_n(&integral_value, 1, std::plus<>{});
-		}
-
-		return integral_value;
+	if(phi.basis().part().parallel()){
+		phi.basis_comm().all_reduce_in_place_n(&integral_value, 1, std::plus<>{});
 	}
 
-  template <class field_type, class binary_op>
-  auto integral(const field_type & phi1, const field_type & phi2, const binary_op op){
-		assert(phi1.basis() == phi2.basis());
-
-		auto integral_value = phi1.basis().volume_element()*operations::sum(phi1.linear(), phi2.linear(), op);
-		
-		if(phi1.basis().part().parallel()){
-			phi1.basis_comm().all_reduce_in_place_n(&integral_value, 1, std::plus<>{});
-		}
-
-		return integral_value;
-	}
-	
-  template <class field_type>
-  auto integral_product(const field_type & phi1, const field_type & phi2){
-		return integral(phi1, phi2, std::multiplies<>());
-	}
-	
-  template <class field_type>
-  auto integral_absdiff(const field_type & phi1, const field_type & phi2){
-		return real(integral(phi1, phi2, [](auto t1, auto t2){return fabs(t1 - t2);}));
-	}
-	
+	return integral_value;
 }
 
-#ifdef UNIT_TEST
+template <class field_type, class binary_op>
+auto integral(const field_type & phi1, const field_type & phi2, const binary_op op){
+	assert(phi1.basis() == phi2.basis());
+
+	auto integral_value = phi1.basis().volume_element()*operations::sum(phi1.linear(), phi2.linear(), op);
+		
+	if(phi1.basis().part().parallel()){
+		phi1.basis_comm().all_reduce_in_place_n(&integral_value, 1, std::plus<>{});
+	}
+
+	return integral_value;
+}
+	
+template <class field_type>
+auto integral_product(const field_type & phi1, const field_type & phi2){
+	return integral(phi1, phi2, std::multiplies<>());
+}
+	
+template <class field_type>
+auto integral_absdiff(const field_type & phi1, const field_type & phi2){
+	return real(integral(phi1, phi2, [](auto t1, auto t2){return fabs(t1 - t2);}));
+}
+
+}
+}
+
+#ifdef INQ_UNIT_TEST
 #include <catch2/catch.hpp>
 #include <basis/trivial.hpp>
 
 TEST_CASE("function operations::integral", "[operations::integral]") {
 
+	using namespace inq;
 	using namespace Catch::literals;
 	
 	const int N = 1000;
@@ -83,11 +86,11 @@ TEST_CASE("function operations::integral", "[operations::integral]") {
 
 		aa = 1.0;
 
-		REQUIRE(operations::integral(aa) == 1.0_a);
+		CHECK(operations::integral(aa) == 1.0_a);
 
 		for(int ii = 0; ii < aa.basis().part().local_size(); ii++)	aa.linear()[ii] = aa.basis().part().local_to_global(ii);
 
-		REQUIRE(operations::integral(aa) == Approx(0.5*N*(N - 1.0)*bas.volume_element()));
+		CHECK(operations::integral(aa) == Approx(0.5*N*(N - 1.0)*bas.volume_element()));
 
 	}
 
@@ -97,16 +100,16 @@ TEST_CASE("function operations::integral", "[operations::integral]") {
 
 		aa = complex(1.0, 1.0);
 
-		REQUIRE(real(operations::integral(aa)) == 1.0_a);
-		REQUIRE(imag(operations::integral(aa)) == 1.0_a);
+		CHECK(real(operations::integral(aa)) == 1.0_a);
+		CHECK(imag(operations::integral(aa)) == 1.0_a);
 
 		for(int ii = 0; ii < aa.basis().part().local_size(); ii++) {
 			auto iig = aa.basis().part().local_to_global(ii);
 			aa.linear()[ii] = complex(iig, -3.0*iig);
 		}
 
-		REQUIRE(real(operations::integral(aa)) == Approx(0.5*N*(N - 1.0)*bas.volume_element()));
-		REQUIRE(imag(operations::integral(aa)) == Approx(-1.5*N*(N - 1.0)*bas.volume_element()));
+		CHECK(real(operations::integral(aa)) == Approx(0.5*N*(N - 1.0)*bas.volume_element()));
+		CHECK(imag(operations::integral(aa)) == Approx(-1.5*N*(N - 1.0)*bas.volume_element()));
 
 	}
 
@@ -118,7 +121,7 @@ TEST_CASE("function operations::integral", "[operations::integral]") {
 		aa = 2.0;
 		bb = 0.8;
 		
-		REQUIRE(operations::integral_product(aa, bb) == 1.6_a);
+		CHECK(operations::integral_product(aa, bb) == 1.6_a);
 		
 		for(int ii = 0; ii < aa.basis().part().local_size(); ii++)	{
 			auto iig = aa.basis().part().local_to_global(ii);
@@ -126,7 +129,7 @@ TEST_CASE("function operations::integral", "[operations::integral]") {
 			bb.linear()[ii] = 1.0/(iig + 1);
 		}
 		
-		REQUIRE(operations::integral_product(aa, bb) == Approx(0.5*N*(N + 1.0)*bas.volume_element()));
+		CHECK(operations::integral_product(aa, bb) == Approx(0.5*N*(N + 1.0)*bas.volume_element()));
 		
 	}
 	
@@ -138,8 +141,8 @@ TEST_CASE("function operations::integral", "[operations::integral]") {
 		aa = complex(2.0, -0.3);
 		bb = complex(0.8, 0.01);
 		
-		REQUIRE(real(operations::integral_product(aa, bb)) == 1.603_a);
-		REQUIRE(imag(operations::integral_product(aa, bb)) == -0.22_a);
+		CHECK(real(operations::integral_product(aa, bb)) == 1.603_a);
+		CHECK(imag(operations::integral_product(aa, bb)) == -0.22_a);
 		
 		for(int ii = 0; ii < aa.basis().part().local_size(); ii++)	{
 			auto iig = aa.basis().part().local_to_global(ii);
@@ -147,8 +150,8 @@ TEST_CASE("function operations::integral", "[operations::integral]") {
 			bb.linear()[ii] = 1.0/(iig + 1)*exp(complex(0.0, M_PI/8 - M_PI/7*iig));
 		}
 		
-		REQUIRE(real(operations::integral_product(aa, bb)) == Approx(sqrt(2.0)*0.25*N*(N + 1.0)*bas.volume_element()));
-		REQUIRE(real(operations::integral_product(aa, bb)) == Approx(sqrt(2.0)*0.25*N*(N + 1.0)*bas.volume_element()));
+		CHECK(real(operations::integral_product(aa, bb)) == Approx(sqrt(2.0)*0.25*N*(N + 1.0)*bas.volume_element()));
+		CHECK(real(operations::integral_product(aa, bb)) == Approx(sqrt(2.0)*0.25*N*(N + 1.0)*bas.volume_element()));
 		
 	}
 	
@@ -161,7 +164,7 @@ TEST_CASE("function operations::integral", "[operations::integral]") {
 		aa = -13.23;
 		bb = -13.23;
 		
-		REQUIRE(fabs(operations::integral_absdiff(aa, bb)) < 1e-14);
+		CHECK(fabs(operations::integral_absdiff(aa, bb)) < 1e-14);
 
 		double sign = 1.0;
 		for(int ii = 0; ii < aa.basis().part().local_size(); ii++)	{
@@ -171,7 +174,7 @@ TEST_CASE("function operations::integral", "[operations::integral]") {
 			sign *= -1.0;
 		}
 		
-		REQUIRE(operations::integral_absdiff(aa, bb) == Approx(0.5*N*(N + 1.0)*bas.volume_element()));
+		CHECK(operations::integral_absdiff(aa, bb) == Approx(0.5*N*(N + 1.0)*bas.volume_element()));
 		
 	}
 	
@@ -183,7 +186,7 @@ TEST_CASE("function operations::integral", "[operations::integral]") {
 		aa = -13.23*exp(complex(0.0, M_PI/3.63));
 		bb = -13.23*exp(complex(0.0, M_PI/3.63));
 		
-		REQUIRE(fabs(operations::integral_absdiff(aa, bb)) < 1e-14);
+		CHECK(fabs(operations::integral_absdiff(aa, bb)) < 1e-14);
 
 		double sign = 1.0;
 		for(int ii = 0; ii < aa.basis().part().local_size(); ii++)	{
@@ -193,7 +196,7 @@ TEST_CASE("function operations::integral", "[operations::integral]") {
 			sign *= -1.0;
 		}
 		
-		REQUIRE(operations::integral_absdiff(aa, bb) == Approx(0.5*N*(N + 1.0)*bas.volume_element()));
+		CHECK(operations::integral_absdiff(aa, bb) == Approx(0.5*N*(N + 1.0)*bas.volume_element()));
 		
 	}
 		

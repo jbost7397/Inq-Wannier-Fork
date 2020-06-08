@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef HAMILTONIAN__KS_POTENTIAL
-#define HAMILTONIAN__KS_POTENTIAL
+#ifndef INQ__HAMILTONIAN__KS_POTENTIAL
+#define INQ__HAMILTONIAN__KS_POTENTIAL
 
 /*
  Copyright (C) 2019 Xavier Andrade
@@ -27,27 +27,46 @@
 #include <operations/integral.hpp>
 #include <input/interaction.hpp>
 #include <hamiltonian/xc_functional.hpp>
+#include <hamiltonian/atomic_potential.hpp>
 
+namespace inq {
 namespace hamiltonian {
 
 	class self_consistency {
 
 	public:
 
-		self_consistency(input::interaction interaction):
+		self_consistency(input::interaction interaction, basis::real_space const & potential_basis, basis::real_space const & density_basis):
 			theory_(interaction.theory()),
 			exchange_(int(interaction.exchange())),
-			correlation_(int(interaction.correlation())){
+			correlation_(int(interaction.correlation())),
+			vion_(density_basis),
+			core_density_(density_basis),
+			potential_basis_(potential_basis),
+			density_basis_(density_basis)
+		{
+		}
+
+		template <class ions_type>
+		void update_ionic_fields(const ions_type & ions, const hamiltonian::atomic_potential & atomic_pot){
+			solvers::poisson poisson_solver;
+			
+			auto ionic_long_range = poisson_solver(atomic_pot.ionic_density(density_basis_, ions.cell(), ions.geo()));
+			auto ionic_short_range = atomic_pot.local_potential(density_basis_, ions.cell(), ions.geo());
+			vion_ = operations::add(ionic_long_range, ionic_short_range);
+
+			core_density_ = atomic_pot.nlcc_density(density_basis_, ions.cell(), ions.geo());
 		}
 		
-		template <class vexternal_type, class density_type, class energy_type>
-		auto ks_potential(const vexternal_type & vexternal, const density_type & electronic_density, const density_type & ionic_density, energy_type & energy){
+		template <class field_type, class energy_type>
+		auto ks_potential(const field_type & electronic_density, energy_type & energy) const {
 
-			assert(vexternal.basis() == electronic_density.basis()); //for the moment they must be equal
+			assert(electronic_density.basis() == density_basis_);
+			assert(core_density_.basis() == electronic_density.basis());
+			
+			energy.external = operations::integral_product(electronic_density, vion_);
 
-			energy.external = operations::integral_product(electronic_density, vexternal);
-
-			vexternal_type vks(vexternal.skeleton());
+			field_type vks(vion_.skeleton());
 
 			solvers::poisson poisson_solver;
 
@@ -56,11 +75,7 @@ namespace hamiltonian {
 			case input::interaction::electronic_theory::HARTREE_FOCK:
 				{
 
-					auto total_density = operations::add(electronic_density, ionic_density);
-					auto vhartree = poisson_solver(total_density);
-					energy.hartree = 0.5*operations::integral_product(electronic_density, vhartree);
-					
-					vks = operations::add(vexternal, vhartree);
+					vks = vion_;
 					
 					break;
 				}
@@ -69,29 +84,24 @@ namespace hamiltonian {
 				{
 
 					auto vhartree = poisson_solver(electronic_density);
-					auto vion = poisson_solver(ionic_density);
 					
 					energy.hartree = 0.5*operations::integral_product(electronic_density, vhartree);
-					energy.external += operations::integral_product(electronic_density, vion);					
-					vion = operations::add(vion, vexternal);
 					
-					vexternal_type ex(vexternal.skeleton());
-					vexternal_type vx(vexternal.skeleton());
+					double ex, ec;
+					field_type vx(vion_.skeleton());
+					field_type vc(vion_.skeleton());
 
-					exchange_.unpolarized(electronic_density.basis().size(), electronic_density, ex, vx);
+					{
+						auto full_density = operations::add(electronic_density, core_density_);
+						exchange_(full_density, ex, vx);
+						correlation_(full_density, ec, vc);
+					}
 
-					vexternal_type ec(vexternal.skeleton());
-					vexternal_type vc(vexternal.skeleton());
-
-					correlation_.unpolarized(electronic_density.basis().size(), electronic_density, ec, vc);
-					
-					energy.xc = operations::integral_product(electronic_density, operations::add(ex, ec));
-
+					energy.xc = ex + ec;
 					auto vxc = operations::add(vx, vc);
-					
-					energy.nvxc = operations::integral_product(electronic_density, vxc);
+					energy.nvxc = operations::integral_product(electronic_density, vxc); //the core correction does not go here
 
-					vks = operations::add(vion, vhartree, vxc);
+					vks = operations::add(vion_, vhartree, vxc);
 
 					break;
 				}
@@ -99,16 +109,18 @@ namespace hamiltonian {
 			case input::interaction::electronic_theory::NON_INTERACTING:
 				{
 
-					auto vion = poisson_solver(ionic_density);
-					energy.external += operations::integral_product(electronic_density, vion);
-					vks = operations::add(vexternal, vion);
-					
+					vks = vion_;
 					break;
 				}
 				
 			}
 			
-			return vks;
+			if(potential_basis_ == vks.basis()){
+				return vks;
+			} else {
+				return operations::transfer::coarsen(std::move(vks), potential_basis_);
+			}
+			
 		}
 
 		auto theory() const {
@@ -120,11 +132,16 @@ namespace hamiltonian {
 		input::interaction::electronic_theory theory_;
 		hamiltonian::xc_functional exchange_;
 		hamiltonian::xc_functional correlation_;
-
+		basis::field<basis::real_space, double> vion_;
+		basis::field<basis::real_space, double> core_density_;
+		basis::real_space potential_basis_;
+		basis::real_space density_basis_;
+		
 	};
 }
+}
 
-#ifdef UNIT_TEST
+#ifdef INQ_UNIT_TEST
 
 #include <ions/unitcell.hpp>
 #include <catch2/catch.hpp>
@@ -132,7 +149,8 @@ namespace hamiltonian {
 
 TEST_CASE("Class hamiltonian::self_consistency", "[self_consistency]"){
 
-  using namespace Catch::literals;
+	using namespace inq;
+	using namespace Catch::literals;
 	
 }
 

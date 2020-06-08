@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef INPUT__CONFIG
-#define INPUT__CONFIG
+#ifndef INQ__INPUT__CONFIG
+#define INQ__INPUT__CONFIG
 
 /*
  Copyright (C) 2019 Xavier Andrade
@@ -23,24 +23,27 @@
 
 #include <cassert>
 
+namespace inq {
 namespace input {
 
-  struct config {
+struct config {
+	
+	config(){
+		extra_states = 0;
+		excess_charge = 0.0;
+	}
+	
+	int extra_states;
+	double excess_charge;
+	
+};
 
-		config(){
-			extra_states = 0;
-			excess_charge = 0.0;
-		}
-
-		int extra_states;
-		double excess_charge;
-		
-  };
+}
 }
 
 ////////////////////////////////////////////////////////
 
-#ifdef UNIT_TEST
+#ifdef INQ_UNIT_TEST
 #include <catch2/catch.hpp>
 #include <ions/unitcell.hpp>
 

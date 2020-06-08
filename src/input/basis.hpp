@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef INPUT__BASIS
-#define INPUT__BASIS
+#ifndef INQ__INPUT__BASIS
+#define INQ__INPUT__BASIS
 
 /*
  Copyright (C) 2019 Xavier Andrade
@@ -28,6 +28,7 @@
 #include <nonstd/optional.hpp>
 #include <utils/merge_optional.hpp>
 
+namespace inq {
 namespace input {
 
   class basis {
@@ -52,6 +53,12 @@ namespace input {
 			return bs;
 		}
 
+		static auto density_factor(double arg_factor){
+			basis bs;
+			bs.density_factor_ = arg_factor;
+			return bs;
+		}
+		
 		auto spacing() const {
 			return spacing_.value();
 		}
@@ -60,12 +67,17 @@ namespace input {
 			return spherical_grid_.value_or(false);
 		}
 
+		auto density_factor() const {
+			return density_factor_.value_or(1.0);
+		}
+		
 		friend basis operator|(const basis & opt1, const basis & opt2){
-			using utils::merge_optional;
+			using inq::utils::merge_optional;
 
 			basis ropt;
 			ropt.spacing_ = merge_optional(opt1.spacing_, opt2.spacing_);
 			ropt.spherical_grid_ = merge_optional(opt1.spherical_grid_, opt2.spherical_grid_);
+			ropt.density_factor_ = merge_optional(opt1.density_factor_, opt2.density_factor_);
 			return ropt;
 		}
 
@@ -76,24 +88,28 @@ namespace input {
 		
 		nonstd::optional<double> spacing_;
 		nonstd::optional<bool> spherical_grid_;
+		nonstd::optional<double> density_factor_;
 		
 	};
+
+}
 }
 
-#ifdef UNIT_TEST
+#ifdef INQ_UNIT_TEST
 #include <catch2/catch.hpp>
 #include <ions/unitcell.hpp>
 
 TEST_CASE("class input::basis", "[basis]") {
   
-  using namespace Catch::literals;
+	using namespace inq;
+	using namespace Catch::literals;
 
 	SECTION("Spacing"){
 
 		auto bi = input::basis::spacing(0.123);
 
-		REQUIRE(bi.spacing() == 0.123_a);
-		REQUIRE(not bi.spherical_grid());
+		CHECK(bi.spacing() == 0.123_a);
+		CHECK(not bi.spherical_grid());
 				
 	}
 					
@@ -102,7 +118,7 @@ TEST_CASE("class input::basis", "[basis]") {
 
 		auto bi = input::basis::cutoff_energy(493.48);
 
-		REQUIRE(bi.spacing() == 0.1_a);
+		CHECK(bi.spacing() == 0.1_a);
 		
 	}
 			
@@ -110,8 +126,8 @@ TEST_CASE("class input::basis", "[basis]") {
 
 		auto bi = input::basis::cutoff_energy(493.48) | input::basis::spherical_grid(true);
 
-		REQUIRE(bi.spacing() == 0.1_a);
-		REQUIRE(bi.spherical_grid());
+		CHECK(bi.spacing() == 0.1_a);
+		CHECK(bi.spherical_grid());
 		
 	}
 			

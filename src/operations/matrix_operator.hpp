@@ -24,48 +24,51 @@
 #include <basis/field_set.hpp>
 #include <cstdlib>
 
+namespace inq {
 namespace operations {
 
-  template <class type>
-	class matrix_operator {
-
-	public:
-
-    matrix_operator(math::array<type, 2> && matrix):
-      matrix_(matrix){
-
-      assert(std::get<0>(sizes(matrix_)) == std::get<1>(sizes(matrix_)));
-      
-    }
-      
-    template <class field_set_type>
-		field_set_type operator()(const field_set_type & phi) const {
-      
-      assert(std::get<0>(sizes(matrix_)) == phi.basis().size());
-      assert(std::get<1>(sizes(matrix_)) == phi.basis().size());
-
-      using boost::multi::blas::gemm;
-      using boost::multi::blas::hermitized;
-    
-      field_set_type mphi = phi;
-			gemm(1.0, matrix_, phi.matrix(),	0.0, mphi.matrix());
-
-      return mphi;      
-    }
-
-	private:
-
-    math::array<type, 2> matrix_;
-    
-	};
+template <class type>
+class matrix_operator {
 	
+public:
+
+	matrix_operator(math::array<type, 2> && matrix):
+		matrix_(matrix){
+
+		assert(std::get<0>(sizes(matrix_)) == std::get<1>(sizes(matrix_)));
+      
+	}
+      
+	template <class field_set_type>
+	field_set_type operator()(const field_set_type & phi) const {
+      
+		assert(std::get<0>(sizes(matrix_)) == phi.basis().size());
+		assert(std::get<1>(sizes(matrix_)) == phi.basis().size());
+
+		using boost::multi::blas::gemm;
+		using boost::multi::blas::hermitized;
+    
+		field_set_type mphi = phi;
+		gemm(1.0, matrix_, phi.matrix(),	0.0, mphi.matrix());
+
+		return mphi;      
+	}
+
+private:
+
+	math::array<type, 2> matrix_;
+    
+};
+
+}
 }
 
-#ifdef UNIT_TEST
+#ifdef INQ_UNIT_TEST
 #include <catch2/catch.hpp>
 
 TEST_CASE("function operations::matrix_operator", "[operations::matrix_operator]") {
 
+	using namespace inq;
 	using namespace Catch::literals;
 
   const int npoint = 100;
@@ -98,7 +101,7 @@ TEST_CASE("function operations::matrix_operator", "[operations::matrix_operator]
     
     for(int ip = 0; ip < npoint; ip++){
       for(int ivec = 0; ivec < nvec; ivec++){
-        REQUIRE(bb.matrix()[ip][ivec] == Approx((ip + 2.0)*aa.matrix()[ip][ivec]));
+        CHECK(bb.matrix()[ip][ivec] == Approx((ip + 2.0)*aa.matrix()[ip][ivec]));
       }
     }
 
@@ -130,7 +133,7 @@ TEST_CASE("function operations::matrix_operator", "[operations::matrix_operator]
     
     for(int ip = 1; ip < npoint - 1; ip++){
       for(int ivec = 0; ivec < nvec; ivec++){
-        REQUIRE(bb.matrix()[ip][ivec] == Approx(2.0*aa.matrix()[ip - 1][ivec] - 1.0*aa.matrix()[ip][ivec] + 2.0*aa.matrix()[ip + 1][ivec]));
+        CHECK(bb.matrix()[ip][ivec] == Approx(2.0*aa.matrix()[ip - 1][ivec] - 1.0*aa.matrix()[ip][ivec] + 2.0*aa.matrix()[ip + 1][ivec]));
       }
     }
 
@@ -161,8 +164,8 @@ TEST_CASE("function operations::matrix_operator", "[operations::matrix_operator]
     
     for(int ip = 0; ip < npoint; ip++){
       for(int ivec = 0; ivec < nvec; ivec++){
-        REQUIRE(real(bb.matrix()[ip][ivec]) == Approx(real(complex(ip + 2.0, 0.3*ip - 6.7)*aa.matrix()[ip][ivec])));
-        REQUIRE(imag(bb.matrix()[ip][ivec]) == Approx(imag(complex(ip + 2.0, 0.3*ip - 6.7)*aa.matrix()[ip][ivec])));
+        CHECK(real(bb.matrix()[ip][ivec]) == Approx(real(complex(ip + 2.0, 0.3*ip - 6.7)*aa.matrix()[ip][ivec])));
+        CHECK(imag(bb.matrix()[ip][ivec]) == Approx(imag(complex(ip + 2.0, 0.3*ip - 6.7)*aa.matrix()[ip][ivec])));
       }
     }
 
@@ -201,8 +204,8 @@ TEST_CASE("function operations::matrix_operator", "[operations::matrix_operator]
         auto next = ip + 1;
         if(prev == -1) prev = npoint - 1;
         if(next == npoint) next = 0;
-        REQUIRE(real(bb.matrix()[ip][ivec]) == Approx(real(2.0*aa.matrix()[prev][ivec] - 1.0*aa.matrix()[ip][ivec] + 2.0*aa.matrix()[next][ivec])));
-        REQUIRE(imag(bb.matrix()[ip][ivec]) == Approx(imag(2.0*aa.matrix()[prev][ivec] - 1.0*aa.matrix()[ip][ivec] + 2.0*aa.matrix()[next][ivec])));
+        CHECK(real(bb.matrix()[ip][ivec]) == Approx(real(2.0*aa.matrix()[prev][ivec] - 1.0*aa.matrix()[ip][ivec] + 2.0*aa.matrix()[next][ivec])));
+        CHECK(imag(bb.matrix()[ip][ivec]) == Approx(imag(2.0*aa.matrix()[prev][ivec] - 1.0*aa.matrix()[ip][ivec] + 2.0*aa.matrix()[next][ivec])));
       }
     }
 

@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef BASIS_FIELD_SET
-#define BASIS_FIELD_SET
+#ifndef INQ__BASIS__FIELD_SET
+#define INQ__BASIS__FIELD_SET
 
 /*
  Copyright (C) 2019 Xavier Andrade
@@ -24,17 +24,13 @@
 #include <utils/partition.hpp>
 #include <math/array.hpp>
 #include <algorithm>
-
 #include <slate/slate.hh>
-
-#ifdef HAVE_CUDA
-#include <thrust/fill.h>
-#endif
 
 #include <mpi3/environment.hpp>
 #include <mpi3/cartesian_communicator.hpp>
 #include <utils/skeleton_wrapper.hpp>
 
+namespace inq {
 namespace basis {
 	
 	template<class Basis, class type>
@@ -59,17 +55,17 @@ namespace basis {
 		}
 
 		field_set(const basis_type & basis, const int num_vectors, boost::mpi3::communicator & comm = boost::mpi3::environment::get_self_instance())
-			:field_set(basis, num_vectors, boost::mpi3::cartesian_communicator<2>(comm))
+			:field_set(basis, num_vectors, boost::mpi3::cartesian_communicator<2>(comm, {}))
 		{
 		}
 
 		template <class any_type>
-		field_set(skeleton_wrapper<field_set<Basis, any_type>> const & skeleton)
-			:field_set(skeleton.base.basis(), skeleton.base.set_size(), skeleton.base.basis_comm()){
+		field_set(inq::utils::skeleton_wrapper<field_set<Basis, any_type>> const & skeleton)
+			:field_set(skeleton.base.basis(), skeleton.base.set_size(), skeleton.base.full_comm()){
 		}
 
 		auto skeleton() const {
-			return skeleton_wrapper<field_set<Basis, type>>(*this);
+			return inq::utils::skeleton_wrapper<field_set<Basis, type>>(*this);
 		}
 
 		field_set(const field_set & coeff) = default;
@@ -95,7 +91,7 @@ namespace basis {
 				get<0>(matrix_.strides()), 
 				set_part_.block_size(), basis_.part().block_size(), 
 				full_comm_.shape()[1], full_comm_.shape()[0],
-				&full_comm_
+				full_comm_.get()
 			);
 		}
 
@@ -159,12 +155,33 @@ namespace basis {
 			return matrix_.partitioned(basis_.cubic_dist(1).local_size()*basis_.cubic_dist(0).local_size()).partitioned(basis_.cubic_dist(0).local_size());
 		}
 
+		auto complex() const {
+			field_set<basis::real_space, inq::complex> complex_field(skeleton());
+			complex_field.matrix() = matrix();
+			return complex_field;
+		}
+
+		field_set<basis::real_space, double> real() const {
+			field_set<basis::real_space, double> real_field(skeleton());
+
+			// Multi should be able to do this, but it causes a lot of compilation troubles
+			//			real_field.matrix() = boost::multi::blas::real(matrix());
+
+			//DATAOPERATIONS GPU::RUN 1D
+			gpu::run(set_part().local_size(), basis().part().local_size(),
+							 [rp = begin(real_field.matrix()), cp = begin(matrix())] GPU_LAMBDA (auto ist, auto ii){
+								 rp[ii][ist] = inq::real(cp[ii][ist]);
+							 });
+			
+			return real_field;
+		}
+		
 	private:
 
 		mutable boost::mpi3::cartesian_communicator<2> full_comm_;
 		mutable boost::mpi3::cartesian_communicator<1> basis_comm_;
 		mutable boost::mpi3::cartesian_communicator<1> set_comm_;
-		utils::partition set_part_;
+		inq::utils::partition set_part_;
 		internal_array_type matrix_;
 		int num_vectors_;
 		basis_type basis_;
@@ -172,8 +189,11 @@ namespace basis {
 	};
 
 }
+}
 
-#ifdef UNIT_TEST
+#ifdef INQ_UNIT_TEST
+
+#include <basis/real_space.hpp>
 
 #include <ions/unitcell.hpp>
 #include <catch2/catch.hpp>
@@ -182,14 +202,15 @@ namespace basis {
 
 TEST_CASE("Class basis::field_set", "[basis::field_set]"){
   
-  using namespace Catch::literals;
+	using namespace inq;
+	using namespace Catch::literals;
   using math::vec3d;
   
   double ecut = 40.0;
 
 	auto comm = boost::mpi3::environment::get_world_instance();
 
-	boost::mpi3::cartesian_communicator<2> cart_comm(comm);
+	boost::mpi3::cartesian_communicator<2> cart_comm(comm, {});
 
 	auto set_comm = cart_comm.axis(0);
 	auto basis_comm = cart_comm.axis(1);	
@@ -200,34 +221,61 @@ TEST_CASE("Class basis::field_set", "[basis::field_set]"){
 
 	basis::field_set<basis::real_space, double> ff(rs, 12, cart_comm);
 
-	REQUIRE(sizes(rs)[0] == 28);
-	REQUIRE(sizes(rs)[1] == 11);
-	REQUIRE(sizes(rs)[2] == 20);
+	CHECK(sizes(rs)[0] == 28);
+	CHECK(sizes(rs)[1] == 11);
+	CHECK(sizes(rs)[2] == 20);
 
 	//std::cout << ff.basis_comm().size() << " x " << ff.set_comm().size() << std::endl;
 	//	std::cout << rs.part().comm_size() << std::endl;
 
-	if(ff.basis_comm().size() == 1) REQUIRE(std::get<0>(sizes(ff.matrix())) == 6160);
-	if(ff.basis_comm().size() == 2) REQUIRE(std::get<0>(sizes(ff.matrix())) == 6160/2);
-	if(ff.set_comm().size() == 1) REQUIRE(std::get<1>(sizes(ff.matrix())) == 12);
-	if(ff.set_comm().size() == 2) REQUIRE(std::get<1>(sizes(ff.matrix())) == 6);
-	if(ff.set_comm().size() == 3) REQUIRE(std::get<1>(sizes(ff.matrix())) == 4);
-	if(ff.set_comm().size() == 4) REQUIRE(std::get<1>(sizes(ff.matrix())) == 3);
-	if(ff.set_comm().size() == 6) REQUIRE(std::get<1>(sizes(ff.matrix())) == 2);
+	if(ff.basis_comm().size() == 1) CHECK(std::get<0>(sizes(ff.matrix())) == 6160);
+	if(ff.basis_comm().size() == 2) CHECK(std::get<0>(sizes(ff.matrix())) == 6160/2);
+	if(ff.set_comm().size() == 1) CHECK(std::get<1>(sizes(ff.matrix())) == 12);
+	if(ff.set_comm().size() == 2) CHECK(std::get<1>(sizes(ff.matrix())) == 6);
+	if(ff.set_comm().size() == 3) CHECK(std::get<1>(sizes(ff.matrix())) == 4);
+	if(ff.set_comm().size() == 4) CHECK(std::get<1>(sizes(ff.matrix())) == 3);
+	if(ff.set_comm().size() == 6) CHECK(std::get<1>(sizes(ff.matrix())) == 2);
 
-	if(ff.basis_comm().size() == 1) REQUIRE(std::get<0>(sizes(ff.cubic())) == 28);
-	if(ff.basis_comm().size() == 2) REQUIRE(std::get<0>(sizes(ff.cubic())) == 14);
-	if(ff.basis_comm().size() == 4) REQUIRE(std::get<0>(sizes(ff.cubic())) == 7);
-	REQUIRE(std::get<1>(sizes(ff.cubic())) == 11);
-	REQUIRE(std::get<2>(sizes(ff.cubic())) == 20);
-	if(ff.set_comm().size() == 1) REQUIRE(std::get<3>(sizes(ff.cubic())) == 12);
-	if(ff.set_comm().size() == 2) REQUIRE(std::get<3>(sizes(ff.cubic())) == 6);
+	if(ff.basis_comm().size() == 1) CHECK(std::get<0>(sizes(ff.cubic())) == 28);
+	if(ff.basis_comm().size() == 2) CHECK(std::get<0>(sizes(ff.cubic())) == 14);
+	if(ff.basis_comm().size() == 4) CHECK(std::get<0>(sizes(ff.cubic())) == 7);
+	CHECK(std::get<1>(sizes(ff.cubic())) == 11);
+	CHECK(std::get<2>(sizes(ff.cubic())) == 20);
+	if(ff.set_comm().size() == 1) CHECK(std::get<3>(sizes(ff.cubic())) == 12);
+	if(ff.set_comm().size() == 2) CHECK(std::get<3>(sizes(ff.cubic())) == 6);
 
 	ff = 12.2244;
 
 	for(int ii = 0; ii < ff.basis().part().local_size(); ii++){
 		for(int jj = 0; jj < ff.set_part().local_size(); jj++){
-			REQUIRE(ff.matrix()[ii][jj] == 12.2244_a);
+			CHECK(ff.matrix()[ii][jj] == 12.2244_a);
+		}
+	}
+
+	auto zff = ff.complex();
+	
+	static_assert(std::is_same<decltype(zff), basis::field_set<basis::real_space, complex>>::value, "complex() should return a complex field");
+		
+	CHECK(std::get<1>(sizes(zff.cubic())) == 11);
+	CHECK(std::get<2>(sizes(zff.cubic())) == 20);
+
+	for(int ii = 0; ii < ff.basis().part().local_size(); ii++){
+		for(int jj = 0; jj < ff.set_part().local_size(); jj++){
+			CHECK(real(zff.matrix()[ii][jj]) == 12.2244_a);
+			CHECK(imag(zff.matrix()[ii][jj]) == 0.0_a);
+		}
+	}
+	
+	auto dff = zff.real();
+
+	static_assert(std::is_same<decltype(dff), basis::field_set<basis::real_space, double>>::value, "real() should return a double field");
+
+	CHECK(std::get<1>(sizes(dff.cubic())) == 11);
+	CHECK(std::get<2>(sizes(dff.cubic())) == 20);
+
+	for(int ii = 0; ii < ff.basis().part().local_size(); ii++){
+		for(int jj = 0; jj < ff.set_part().local_size(); jj++){
+			CHECK(dff.matrix()[ii][jj] == 12.2244_a);
 		}
 	}
 
