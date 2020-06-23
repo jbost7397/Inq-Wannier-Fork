@@ -8,3 +8,6 @@
 [submodule "external_libs/boost-mpi3"]
 	path = external_libs/mpi3
 	url = ../boost-mpi3
+[submodule "external_libs/slate"]
+	path = external_libs/slate
+	url = ../slate
