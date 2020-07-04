@@ -127,6 +127,14 @@ namespace basis {
 			return linear_;
 		}
 
+		auto compat_linear() const {
+			return linear_.template reinterpret_array_cast<typename compat_type<element_type>::type>();
+		}
+
+		auto compat_linear() {
+			return linear_.template reinterpret_array_cast<typename compat_type<element_type>::type>();
+		}
+		
 		template <int dir = 2>
 		friend void print_debug(const field & fld, const std::string & filename){
 
@@ -151,7 +159,7 @@ namespace basis {
 
 		field<basis::real_space, double> real() const {
 			field<basis::real_space, double> real_field(skeleton());		
-			real_field.linear() = boost::multi::blas::real(linear());
+			real_field.linear() = boost::multi::blas::real(compat_linear());
 			return real_field;
 		}
 		
