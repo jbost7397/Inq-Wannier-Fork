@@ -43,10 +43,10 @@ auto overlap(const field_set_type & phi1, const field_set_type & phi2){
 	using boost::multi::blas::gemm;
 	using boost::multi::blas::hermitized;
 
-	auto overlap_matrix = gemm(phi1.basis().volume_element(), hermitized(phi2.matrix()), phi1.matrix());
+	decltype(phi1.matrix()) overlap_matrix = gemm(phi1.basis().volume_element(), hermitized(phi2.compat_matrix()), phi1.compat_matrix());
 
 	if(phi1.basis().part().parallel()){
-		phi1.basis().comm().all_reduce_in_place_n(static_cast<typename field_set_type::element_type *>(overlap_matrix.data()), overlap_matrix.num_elements(), std::plus<>{});
+		phi1.basis().comm().all_reduce_in_place_n(static_cast<typename decltype(overlap_matrix)::element_type *>(overlap_matrix.data()), overlap_matrix.num_elements(), std::plus<>{});
 	}
 		
 	return overlap_matrix;
@@ -61,10 +61,10 @@ auto overlap(const field_set_type & phi){
 	using boost::multi::blas::herk;
 	using boost::multi::blas::hermitized;
 		
-	auto overlap_matrix = herk(phi.basis().volume_element(), hermitized(phi.matrix()));
+	decltype(phi.matrix()) overlap_matrix = herk(phi.basis().volume_element(), hermitized(phi.compat_matrix()));
 
 	if(phi.basis().part().parallel()){
-		phi.basis().comm().all_reduce_in_place_n(static_cast<typename field_set_type::element_type *>(overlap_matrix.data()), overlap_matrix.num_elements(), std::plus<>{});
+		phi.basis().comm().all_reduce_in_place_n(static_cast<typename decltype(overlap_matrix)::element_type *>(overlap_matrix.data()), overlap_matrix.num_elements(), std::plus<>{});
 	}
 		
 	return overlap_matrix;
