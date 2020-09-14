@@ -2,10 +2,10 @@ rm -rf ./gnu.build ./gnu.install
 mkdir -p ./gnu.build
 mkdir -p ./gnu.install
 cd gnu.build
-CXX=g++ CC=gcc cmake ../.. \
+OMPI_CXX=g++ OMPI_CC=gcc cmake ../.. \
 	-DCMAKE_BUILD_TYPE=Debug \
-	-DCMAKE_C_COMPILER=gcc \
-	-DCMAKE_CXX_COMPILER=g++ \
+	-DCMAKE_C_COMPILER=mpicc \
+	-DCMAKE_CXX_COMPILER=mpic++ \
 	-DCMAKE_LINKER=g++ \
 	-DCMAKE_INSTALL_PREFIX=`pwd`/../intel.dir.install \
 	-DCMAKE_C_COMPILE_FLAGS="$(mpicxx -showme:compile || mpicxx -cxx= -compile_info)" \
