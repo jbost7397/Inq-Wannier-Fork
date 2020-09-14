@@ -103,7 +103,7 @@ namespace utils {
 		return ff;
 	}
 
-	auto dlinear_func(inq::math::vec3d rr){
+	auto dlinear_func(inq::math::vec3d /*rr*/){
 		inq::math::vec3d ff;
 		for(int idir = 0; idir < 3 ; idir++) ff[idir] = 4.5;
 		return ff;
