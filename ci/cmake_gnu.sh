@@ -13,7 +13,7 @@ CXX=g++ CC=gcc cmake ../.. \
 	-DCMAKE_CXX_FLAGS="-O3 -Wall -Wextra -Werror" \
 	-DCMAKE_EXE_LINKER_FLAGS="$(mpicxx -showme:link || mpicxx -cxx= -link_info)" \
 	$* \
-  && make -j $(($(nproc)/2 + 1)) && \
+  && make -j $(($(nproc)/2 + 1)) \
   && make install \
   && cd src && ctest -j $(nproc) --output-on-failure || exit 1
 
