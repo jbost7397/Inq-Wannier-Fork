@@ -308,8 +308,7 @@ gnu:
       - if [ -v UPDATE_MULTI ] ; then cd external_libs/multi && git checkout master && git pull && cd - ; fi
       - cd ci
       - ./cmake_gnu.sh
-      - pwd
-      - ls -all
+      - cd gnu.build
       - cd src; ctest -V --timeout 180 -j 16; cd ..
       - cd src; INQ_EXEC_ENV="mpirun --oversubscribe -np 2" ctest -V --timeout 180 -j 8; cd ..
       - cd src; INQ_EXEC_ENV="mpirun --oversubscribe -np 3" ctest -V --timeout 180 -j 5; cd ..
