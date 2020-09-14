@@ -2,8 +2,7 @@ rm -rf ./gnu.build ./gnu.install
 mkdir -p ./gnu.build
 mkdir -p ./gnu.install
 cd gnu.build
-rm 
-cmake ../.. \
+CXX=g++ CC=gcc cmake ../.. \
 	-DCMAKE_BUILD_TYPE=Debug \
 	-DCMAKE_C_COMPILER=gcc \
 	-DCMAKE_CXX_COMPILER=g++ \
