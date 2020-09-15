@@ -307,12 +307,11 @@ gnu:
     script:
       - if [ -v UPDATE_MULTI ] ; then cd external_libs/multi && git checkout master && git pull && cd - ; fi
       - cd ci
-      - ./cmake_gnu.sh
+      - ./install_gnu.sh
       - cd gnu.build
-      - cd src; ctest -V --timeout 180 -j 16; cd ..
       - cd src; INQ_EXEC_ENV="mpirun --oversubscribe -np 2" ctest -V --timeout 180 -j 8; cd ..
       - cd src; INQ_EXEC_ENV="mpirun --oversubscribe -np 3" ctest -V --timeout 180 -j 5; cd ..
-      - cd src; INQ_EXEC_ENV="mpirun --oversubscribe -np 4" ctest -V --timeout 180 -j 4; cd ..      
+      - cd src; INQ_EXEC_ENV="mpirun --oversubscribe -np 4" ctest -V --timeout 180 -j 4; cd ..
       - time tests/hydrogen_local
       - time tests/neon
       - time tests/h2o_ground_state
