@@ -2,18 +2,10 @@ rm -rf ./gnu.build ./gnu.install
 mkdir -p ./gnu.build
 mkdir -p ./gnu.install
 cd gnu.build
-OMPI_CXX=g++ OMPI_CC=gcc cmake ../.. \
-	-DCMAKE_BUILD_TYPE=Debug \
-	-DCMAKE_C_COMPILER=mpicc \
-	-DCMAKE_CXX_COMPILER=mpic++ \
-	-DCMAKE_LINKER=g++ \
-	-DCMAKE_INSTALL_PREFIX=`pwd`/../intel.dir.install \
-	-DCMAKE_C_COMPILE_FLAGS="$(mpicxx -showme:compile || mpicxx -cxx= -compile_info)" \
-	-DCMAKE_CXX_COMPILE_FLAGS="$(mpicxx -showme:compile || mpicxx -cxx= -compile_info)" \
-	-DCMAKE_CXX_FLAGS="-O3 -Wall -Wextra -Werror" \
-	-DCMAKE_EXE_LINKER_FLAGS="$(mpicxx -showme:link || mpicxx -cxx= -link_info)" \
-	$* \
-  && make -j $(($(nproc)/2 + 1)) \
+
+OMPIC_CXX=g++ OMPI_CC=gcc CC=mpicc CXX=mpic++ CXXFLAGS="-O3 -Wall -Wextra -Werror" \
+	../../configure --prefix=`pwd`/../gnu.install $* \
+  && make -j $(($(nproc) + 1)) \
   && make install \
   && cd src && ctest -j $(nproc) --output-on-failure || exit 1
 
