@@ -59,7 +59,7 @@ build-nolapack:
       - eval ! ../configure --prefix=$HOME
 
 nvcc-norun:
-    stage: test
+    stage: build
     script:
       - perl -pi -e 's/main/main\ contrib\ non-free/g' /etc/apt/sources.list
       - apt update --quiet
