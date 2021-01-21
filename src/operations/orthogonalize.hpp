@@ -4,7 +4,7 @@
 #define INQ__OPERATIONS__ORTHOGONALIZE
 
 /*
- Copyright (C) 2019-2020 Xavier Andrade, Alfredo A. Correa
+ Copyright (C) 2019-2021 Xavier Andrade, Alfredo A. Correa
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
@@ -139,9 +139,11 @@ void orthogonalize_single(field_set_type & vec, field_set_type const & phi, int 
 	if(phi.basis().part().parallel()){
 		phi.basis().comm().all_reduce_in_place_n(static_cast<typename field_set_type::element_type *>(olap.data_elements()), olap.num_elements(), std::plus<>{});
 	}
-
-	boost::multi::blas::gemm(-1.0, phi_restricted, olap, 1.0, vec.matrix());
 	
+	namespace blas = boost::multi::blas;
+
+	vec.matrix() += blas::gemm(-1.0, phi_restricted, olap);
+
 }
 
 }

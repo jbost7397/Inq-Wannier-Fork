@@ -4,7 +4,7 @@
 #define INQ__OPERATIONS__SUBSPACE_DIAGONALIZATION
 
 /*
- Copyright (C) 2019-2020 Xavier Andrade, Alfredo A. Correa
+ Copyright (C) 2019-2021 Xavier Andrade, Alfredo A. Correa
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
@@ -22,6 +22,7 @@
 */
 
 #include <inq_config.h>
+
 #include <operations/overlap.hpp>
 #include <operations/diagonalize.hpp>
 #ifdef ENABLE_CUDA
@@ -46,8 +47,6 @@ auto subspace_diagonalization(const hamiltonian_type & ham, field_set_type & phi
 	
 	//OPTIMIZATION: here we don't need to make a full copy. We can
 	//divide into blocks over point index (first dimension of phi).
-	using boost::multi::blas::gemm;
-	using boost::multi::blas::hermitized;
 	
 	namespace blas = boost::multi::blas;
 	phi.matrix() = blas::gemm(1., phi.matrix(), blas::H(subspace_hamiltonian));

@@ -4,7 +4,7 @@
 #define OPERATIONS__MATRIX_OPERATOR
 
 /*
- Copyright (C) 2019-2021 Xavier Andrade, Alfredo A. Correa.
+ Copyright (C) 2019-2021 Xavier Andrade, Alfredo Correa.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
@@ -20,6 +20,8 @@
  along with this program; if not, write to the Free Software
  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
+
+#include<inq_config.h>
 
 #ifdef ENABLE_CUDA
 #include <multi/adaptors/cuda/cublas.hpp> // must be included before blas.hpp
@@ -50,13 +52,12 @@ public:
 		assert(std::get<0>(sizes(matrix_)) == phi.basis().size());
 		assert(std::get<1>(sizes(matrix_)) == phi.basis().size());
 
-		using boost::multi::blas::gemm;
-		using boost::multi::blas::hermitized;
-    
-		field_set_type mphi = phi;
-		gemm(1.0, matrix_, phi.matrix(),	0.0, mphi.matrix());
+		namespace blas = boost::multi::blas;
 
-		return mphi;      
+		field_set_type mphi = phi;
+		mphi.matrix() = blas::gemm(1.0, matrix_, phi.matrix());
+
+		return mphi;
 	}
 
 private:
