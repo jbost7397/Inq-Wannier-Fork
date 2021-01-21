@@ -24,17 +24,19 @@
 #include <inq_config.h>
 
 #include <math/array.hpp>
-#include <cassert>
+
 #ifdef ENABLE_CUDA
-#include "multi/adaptors/blas/cuda.hpp" // must be included before blas.hpp
-#include "multi/adaptors/cuda/cublas/context.hpp" // must be included before blas.hpp
+#include <multi/adaptors/cuda/cublas.hpp> // must be included before blas.hpp
 #endif
 #include <multi/adaptors/blas.hpp>
+
 #include <operations/integral.hpp>
 
 #include <utils/profiling.hpp>
 
 #include <gpu/run.hpp>
+
+#include <cassert>
 
 namespace inq {
 namespace operations {

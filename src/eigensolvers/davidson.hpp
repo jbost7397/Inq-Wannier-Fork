@@ -32,9 +32,10 @@
 #include <operations/overlap_diagonal.hpp>
 
 #ifdef ENABLE_CUDA
-#include <multi/adaptors/blas/cuda.hpp> // must be included before blas.hpp
+#include <multi/adaptors/cuda/cublas.hpp> // must be included before blas.hpp
 #endif
 #include <multi/adaptors/blas.hpp>
+
 template <class array_type>
 auto print_matrix(array_type & A){
   int nrowA=std::get<0>(sizes(A));

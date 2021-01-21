@@ -6,7 +6,7 @@ OMPI_CXX=$CXX ../../blds/gcc/scripts/inc++ -x c++ $0 -o $0x&&$0x&&rm $0x;exit
 #define INQ__BASIS__FIELD
 
 /*
- Copyright (C) 2019 Xavier Andrade, Alfredo A. Correa
+ Copyright (C) 2019-2021 Xavier Andrade, Alfredo A. Correa
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
@@ -33,7 +33,7 @@ OMPI_CXX=$CXX ../../blds/gcc/scripts/inc++ -x c++ $0 -o $0x&&$0x&&rm $0x;exit
 #include <mpi3/environment.hpp>
 
 #ifdef ENABLE_CUDA
-#include <multi/adaptors/blas/cuda.hpp> // must be included before blas.hpp
+#include <multi/adaptors/cuda/cublas.hpp> // must be included before blas.hpp
 #endif
 #include <multi/adaptors/blas.hpp>
 

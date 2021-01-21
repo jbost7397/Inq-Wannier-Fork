@@ -4,7 +4,7 @@
 #define OPERATIONS__MATRIX_OPERATOR
 
 /*
- Copyright (C) 2019 Xavier Andrade, Alfredo Correa.
+ Copyright (C) 2019-2021 Xavier Andrade, Alfredo Correa.
 
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU Lesser General Public License as published by
@@ -22,7 +22,7 @@
 */
 
 #ifdef ENABLE_CUDA
-#include <multi/adaptors/blas/cuda.hpp> // must be included before blas.hpp
+#include <multi/adaptors/cuda/cublas.hpp> // must be included before blas.hpp
 #endif
 #include <multi/adaptors/blas.hpp>
 #include <basis/field_set.hpp>

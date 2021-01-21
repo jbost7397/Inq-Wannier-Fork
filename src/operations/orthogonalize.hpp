@@ -29,7 +29,7 @@
 #include <utils/profiling.hpp>
 
 #ifdef ENABLE_CUDA
-#include <multi/adaptors/blas/cuda.hpp> // must be included before blas.hpp
+#include <multi/adaptors/cuda/cublas.hpp> // must be included before blas.hpp
 #endif
 #include <multi/adaptors/blas.hpp>
 
