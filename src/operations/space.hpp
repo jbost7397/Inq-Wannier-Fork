@@ -72,7 +72,7 @@ void zero_outside_sphere(basis::field<basis::fourier_space, math::vector3<comple
 
 ///////////////////////////////////////////////////////////////
 
-void zero_outside_sphere(const basis::field_set<basis::fourier_space, complex> & fphi){
+void zero_outside_sphere(basis::field_set<basis::fourier_space, complex> & fphi){
 	CALI_CXX_MARK_FUNCTION;
 	
 	//DATAOPERATIONS GPU::RUN 4D
@@ -408,7 +408,7 @@ auto to_fourier(const basis::field<basis::real_space, math::vector3<complex>> & 
 	
 	basis::field<basis::fourier_space, math::vector3<complex>> fphi(fourier_basis);
 	
-	to_fourier(real_basis, fourier_basis, phi.cubic().reinterpret_array_cast<complex>(3), fphi.cubic().reinterpret_array_cast<complex>(3));
+	to_fourier(real_basis, fourier_basis, phi.cubic().reinterpret_array_cast<complex const>(3), fphi.cubic().reinterpret_array_cast<complex>(3));
 
 	if(fphi.basis().spherical()) zero_outside_sphere(fphi);
 			
@@ -427,7 +427,7 @@ basis::field<basis::real_space, math::vector3<complex>> to_real(const basis::fie
 
 	basis::field<basis::real_space, math::vector3<complex>> phi(real_basis);
 
-	to_real(fourier_basis, real_basis, fphi.cubic().reinterpret_array_cast<complex>(3), phi.cubic().reinterpret_array_cast<complex>(3), normalize);
+	to_real(fourier_basis, real_basis, fphi.cubic().reinterpret_array_cast<complex const>(3), phi.cubic().reinterpret_array_cast<complex>(3), normalize);
 
 	return phi;
 }
@@ -443,7 +443,7 @@ basis::field_set<basis::real_space, math::vector3<complex>> to_real(const basis:
 
 	basis::field_set<basis::real_space, math::vector3<complex>> phi(real_basis, fphi.set_size(), fphi.full_comm());
 
-	auto const & fphi_as_scalar = fphi.cubic().reinterpret_array_cast<complex>(3).rotated(3).flatted().rotated();
+	auto const & fphi_as_scalar = fphi.cubic().reinterpret_array_cast<complex const>(3).rotated(3).flatted().rotated();
 	auto && phi_as_scalar = phi.cubic().reinterpret_array_cast<complex>(3).rotated(3).flatted().rotated();
 		
 	to_real(fourier_basis, real_basis, fphi_as_scalar, phi_as_scalar, normalize);
