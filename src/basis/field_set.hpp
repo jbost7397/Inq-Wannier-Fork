@@ -292,7 +292,13 @@ TEST_CASE("Class basis::field_set", "[basis::field_set]"){
 			CHECK(imag(zff.matrix()[ii][jj]) == 0.0_a);
 		}
 	}
-	
+
+	CHECK(     ff.cubic().base() == std::as_const(ff).cubic().base()  );
+	CHECK( not(ff.cubic().base() != std::as_const(ff).cubic().base()) );
+
+	CHECK(     std::as_const(ff).cubic().base() == ff.cubic().base() );
+	CHECK( not(std::as_const(ff).cubic().base() != ff.cubic().base()) );
+
 #ifdef ENABLE_CUDA
 	static_assert( std::is_same<decltype(              ff .cubic().base()), boost::multi::memory::cuda::managed::ptr<double      >>{}, "!");
 	static_assert( std::is_same<decltype(std::as_const(ff).cubic().base()), boost::multi::memory::cuda::managed::ptr<double const>>{}, "!");
