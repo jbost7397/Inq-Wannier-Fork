@@ -293,6 +293,11 @@ TEST_CASE("Class basis::field_set", "[basis::field_set]"){
 		}
 	}
 	
+#ifdef ENABLE_CUDA
+	static_assert( std::is_same<decltype(              ff .cubic().base()), boost::multi::memory::cuda::managed::ptr<double      >>{}, "!");
+	static_assert( std::is_same<decltype(std::as_const(ff).cubic().base()), boost::multi::memory::cuda::managed::ptr<double const>>{}, "!");
+#endif
+
 }
 
 #endif
