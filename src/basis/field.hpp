@@ -276,7 +276,27 @@ TEST_CASE("Class basis::field", "[basis::field]"){
 	CHECK(std::get<0>(strd) >= std::get<1>(strd));
 	CHECK(std::get<1>(strd) >= std::get<2>(strd));
 	CHECK(std::get<2>(strd) >= std::get<3>(strd));
-	
+
+	CHECK( std::as_const(ff        ).cubic().base() == ff        .cubic().base() );
+	CHECK( std::as_const(ff_complex).cubic().base() == ff_complex.cubic().base() );
+
+	CHECK( not (std::as_const(ff        ).cubic().base() == ff        .cubic().base()) );
+	CHECK( not (std::as_const(ff_complex).cubic().base() != ff_complex.cubic().base()) );
+
+	CHECK( ff        .cubic().base() == std::as_const(ff        ).cubic().base() );
+	CHECK( ff_complex.cubic().base() == std::as_const(ff_complex).cubic().base() );
+
+	CHECK( not (ff        .cubic().base() == std::as_const(ff        ).cubic().base()) );
+	CHECK( not (ff_complex.cubic().base() != std::as_const(ff_complex).cubic().base()) );
+
+#ifdef ENABLE_CUDA
+	static_assert( std::is_same<decltype(              ff .cubic().base()), boost::multi::memory::cuda::managed::ptr<double      >>{}, "!");
+	static_assert( std::is_same<decltype(std::as_const(ff).cubic().base()), boost::multi::memory::cuda::managed::ptr<double const>>{}, "!");
+
+	static_assert( std::is_same<decltype(              ff_complex .cubic().base()), boost::multi::memory::cuda::managed::ptr<std::complex<double>      >>{}, "!");
+	static_assert( std::is_same<decltype(std::as_const(ff_complex).cubic().base()), boost::multi::memory::cuda::managed::ptr<std::complex<double> const>>{}, "!");
+#endif
+
 }
 
 #endif
