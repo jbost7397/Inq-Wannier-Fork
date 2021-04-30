@@ -40,9 +40,11 @@ auto overlap(const field_set_type & phi1, const field_set_type & phi2){
 	
 	// no state parallelization for now
 	assert(not phi1.set_part().parallel());
+
+	math::array<typename field_set_type::element_type, 2> overlap_matrix({phi1.set_size(), phi1.set_size()});
 	
 	namespace blas = boost::multi::blas;
-	auto overlap_matrix =+ blas::gemm(phi1.basis().volume_element(), blas::H(phi2.matrix()), phi1.matrix());
+	blas::gemm(phi1.basis().volume_element(), blas::H(phi2.matrix()), phi1.matrix(), 0.0, overlap_matrix);
 
 	{	CALI_CXX_MARK_SCOPE("overlap(2arg)_mpi_reduce");	
 		phi1.basis().comm().all_reduce_in_place_n(raw_pointer_cast(overlap_matrix.data_elements()), overlap_matrix.num_elements(), std::plus<>{});
