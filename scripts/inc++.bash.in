@@ -1,6 +1,6 @@
 #!/bin/bash
-#    
-#    Copyright (C) 2020 Xavier Andrade <xavier@llnl.gov>
+#
+#    Copyright (C) 2020-2021 Xavier Andrade <xavier@llnl.gov>, Alfredo Correa <correaa@llnl.gov>
 #
 #    This program is free software: you can redistribute it and/or
 #    modify it under the terms of the GNU Lesser General Public
@@ -15,7 +15,7 @@
 #    You should have received a copy of the GNU Lesser General Public
 #    License along with this program. If not, see
 #    <https://www.gnu.org/licenses/>.
-                             
+
 if [[ "$*" == *-c* ]]
 then
     #we are just compiling
@@ -31,7 +31,7 @@ fi
 
 includeflags="-I@Libxc_INCLUDE_DIRS@             \
   -I@Boost_INCLUDE_DIRS@                         \
-  @FFTW_CFLAGS@                          \
+  @FFTW_CFLAGS@                                  \
   -I@PROJECT_BINARY_DIR@/                        \
   -I@PROJECT_BINARY_DIR@/external_libs/pseudopod \
   -I@PROJECT_SOURCE_DIR@/src/                    \
@@ -41,3 +41,4 @@ includeflags="-I@Libxc_INCLUDE_DIRS@             \
 command_line="$cxx -std=c++17 @INCPP_FLAGS@ ${includeflags//;/ -I} $ldflags $* ${libs//;/ }"
 
 echo $command_line && $command_line
+
