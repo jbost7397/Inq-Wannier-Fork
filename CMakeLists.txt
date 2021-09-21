@@ -28,6 +28,7 @@ if(ENABLE_CUDA)
   set(SRC_EXT cu)
   enable_language(CUDA)
   find_package(CUDA 11.0.0 REQUIRED) # deprecated in 3.17 replaced by FindCudaToolkit
+
   if(NOT DEFINED ENV{CUDA_ARCH_OVERRIDE})
     # temporary workaround to detect CUDA arch, for between the deprecation of FindCUDA in CMake 3.10 and the availability of FindCudaToolkit in CMake 3.17 # https://stackoverflow.com/a/68223399/225186
 	include(FindCUDA/select_compute_arch)
