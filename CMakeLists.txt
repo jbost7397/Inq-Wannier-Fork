@@ -27,6 +27,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if(ENABLE_CUDA)
   set(SRC_EXT cu)
   enable_language(CUDA)
+  set_property(GLOBAL PROPERTY CUDA_STANDARD 17)
+
   find_package(CUDA 11.0.0 REQUIRED) # deprecated in 3.17 replaced by FindCudaToolkit
 
   if(NOT DEFINED ENV{CUDA_ARCH_OVERRIDE})
@@ -39,8 +41,8 @@ if(ENABLE_CUDA)
 	SET(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH_LIST})
   endif()
 
-  set_property(GLOBAL PROPERTY CUDA_STANDARD 17)
-  set_property(GLOBAL PROPERTY "${CUDA_ARCH_LIST}")
+#  message(STATUS "CUDA_ARCH_LIST:" ${CUDA_ARCH_LIST})
+#  set_property(GLOBAL PROPERTY "${CUDA_ARCH_LIST}")
 
   string(APPEND CMAKE_CUDA_FLAGS " --forward-unknown-to-host-linker ${ARCH_FLAGS} -std=c++17 --expt-relaxed-constexpr --extended-lambda --Werror=cross-execution-space-call -Xcudafe \"--diag_suppress=implicit_return_from_non_void_function\"")
 
