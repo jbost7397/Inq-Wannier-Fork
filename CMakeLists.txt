@@ -33,7 +33,7 @@ if(ENABLE_CUDA)
 
   find_package(CUDA 11.0.0 REQUIRED) # deprecated in 3.17 replaced by FindCudaToolkit
 
-  if(NOT DEFINED ENV{CUDA_ARCH_OVERRIDE})
+  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
     # temporary workaround to detect CUDA arch, for between the deprecation of FindCUDA in CMake 3.10 and the availability of FindCudaToolkit in CMake 3.17 # https://stackoverflow.com/a/68223399/225186
 	include(FindCUDA/select_compute_arch)
 	CUDA_DETECT_INSTALLED_GPUS(INSTALLED_GPU_CCS_1)
