@@ -421,7 +421,7 @@ gcc-ompi-coverage:
       - time mpirun --allow-run-as-root --oversubscribe -np 3 tests/nitrogen      
       - tests/silicon2
       - bash <(curl -s https://codecov.io/bash) || echo 'Codecov failed to upload'
-      
+
 gcc-ompi-coverage-noinline:
     stage: build
     tags:
@@ -464,6 +464,18 @@ intel-ompi:
       - cd ..
       - $PREFIX/bin/inc++ ../tests/silicon.cpp -o tests/silicon2
       - tests/silicon2
+
+nvcc-ompi-compileonly:
+    image: nvidia/cuda:11.2.0-devel
+    stage: build
+    script:
+      - export DEBIAN_FRONTEND=noninteractive
+      - apt-get -qq update && apt-get -qq install --no-install-recommends -y libblas-dev liblapack-dev libfftw3-dev libboost-serialization-dev libopenmpi-dev gfortran g++ pkg-config cmake make git ca-certificates numdiff python3 python3-numpy python3-h5py python3-mpi4py python3-scipy libxml2-dev libhdf5-dev
+      - export PREFIX=`mktemp -d`
+      - if [ -v UPDATE_MULTI ] ; then cd external_libs/multi && git checkout master && git pull && cd - ; fi
+      - nvcc -V
+      - CUDACXX=/usr/local/cuda/bin/nvcc ../configure --prefix=$PREFIX --enable-cuda --disable-debug --with-cuda-prefix=/usr/local/cuda --pass-thru -DCMAKE_CUDA_ARCHITECTURES=70
+      - make
 
 nvcc-ompi-fast:
     stage: build
