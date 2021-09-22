@@ -20,6 +20,8 @@ message(STATUS "CMAKE_CUDA_ARCHITECTURES before:" ${CMAKE_CUDA_ARCHITECTURES})
 if(ENABLE_CUDA)
   set(SRC_EXT cu)
   enable_language(CUDA)
+  set_property(GLOBAL PROPERTY CUDA_STANDARD 17)
+
   find_package(CUDA 11.0.0 REQUIRED) # deprecated in 3.17 replaced by FindCudaToolkit
 
   if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
