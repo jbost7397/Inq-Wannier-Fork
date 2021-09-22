@@ -37,7 +37,7 @@ if(ENABLE_CUDA)
 #    set(CMAKE_CUDA_ARCHITECTURES 52 61 70)
 #  endif()
 
-  if(NOT DEFINED ${CMAKE_CUDA_ARCHITECTURES})
+  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
     # temporary workaround to detect CUDA arch, for between the deprecation of FindCUDA in CMake 3.10 and the availability of FindCudaToolkit in CMake 3.17 # https://stackoverflow.com/a/68223399/225186
 	include(FindCUDA/select_compute_arch)
 	CUDA_DETECT_INSTALLED_GPUS(INSTALLED_GPU_CCS_1)
