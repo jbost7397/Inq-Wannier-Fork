@@ -33,7 +33,11 @@ if(ENABLE_CUDA)
 
   find_package(CUDA 11.0.0 REQUIRED) # deprecated in 3.17 replaced by FindCudaToolkit
 
-  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+#  if(NOT DEFINED ${CMAKE_CUDA_ARCHITECTURES})
+#    set(CMAKE_CUDA_ARCHITECTURES 52 61 70)
+#  endif()
+
+  if(NOT DEFINED ${CMAKE_CUDA_ARCHITECTURES})
     # temporary workaround to detect CUDA arch, for between the deprecation of FindCUDA in CMake 3.10 and the availability of FindCudaToolkit in CMake 3.17 # https://stackoverflow.com/a/68223399/225186
 	include(FindCUDA/select_compute_arch)
 	CUDA_DETECT_INSTALLED_GPUS(INSTALLED_GPU_CCS_1)
@@ -44,7 +48,7 @@ if(ENABLE_CUDA)
   endif()
 
   message(STATUS "CMAKE_CUDA_ARCHITECTURES after:" ${CMAKE_CUDA_ARCHITECTURES})
-#  set_property(GLOBAL PROPERTY "${CUDA_ARCH_LIST}")
+  set_property(GLOBAL PROPERTY CUDA_ARCHITECTURES "${CUDA_ARCH_LIST}")
 
   string(APPEND CMAKE_CUDA_FLAGS " --forward-unknown-to-host-linker ${ARCH_FLAGS} -std=c++17 --expt-relaxed-constexpr --extended-lambda --Werror=cross-execution-space-call -Xcudafe \"--diag_suppress=implicit_return_from_non_void_function\"")
 
