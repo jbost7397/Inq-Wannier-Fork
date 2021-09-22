@@ -1,5 +1,5 @@
 # -*-indent-tabs-mode:nil;c-basic-offset:2;tab-width:4;autowrap:nil;-*-
-cmake_minimum_required(VERSION 3.11) # for reference: ubuntu 20.04 ships cmake 3.16, Ubuntu 20.10 ships CMake 3.18
+cmake_minimum_required(VERSION 3.11) # for reference: ubuntu 20.04 has cmake 3.16
 message("CMake version ${CMAKE_VERSION}")
 include(GNUInstallDirs)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake")
@@ -12,30 +12,15 @@ if(POLICY CMP0074)
   cmake_policy(SET CMP0074 NEW)
 endif()
 
-if(POLICY CMP0104)
-  cmake_policy(SET CMP0104 NEW)
-endif()
-
 enable_testing()
 include(CTest)
-
-enable_language(CXX)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
 
 message(STATUS "CMAKE_CUDA_ARCHITECTURES before:" ${CMAKE_CUDA_ARCHITECTURES})
 
 if(ENABLE_CUDA)
   set(SRC_EXT cu)
   enable_language(CUDA)
-  set_property(GLOBAL PROPERTY CUDA_STANDARD 17)
-
   find_package(CUDA 11.0.0 REQUIRED) # deprecated in 3.17 replaced by FindCudaToolkit
-
-#  if(NOT DEFINED ${CMAKE_CUDA_ARCHITECTURES})
-#    set(CMAKE_CUDA_ARCHITECTURES 52 61 70)
-#  endif()
 
   if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
     # temporary workaround to detect CUDA arch, for between the deprecation of FindCUDA in CMake 3.10 and the availability of FindCudaToolkit in CMake 3.17 # https://stackoverflow.com/a/68223399/225186
@@ -50,7 +35,7 @@ if(ENABLE_CUDA)
   message(STATUS "CMAKE_CUDA_ARCHITECTURES after:" ${CMAKE_CUDA_ARCHITECTURES})
   set_property(GLOBAL PROPERTY CUDA_ARCHITECTURES "${CUDA_ARCH_LIST}")
 
-  string(APPEND CMAKE_CUDA_FLAGS " --forward-unknown-to-host-linker ${ARCH_FLAGS} -std=c++17 --expt-relaxed-constexpr --extended-lambda --Werror=cross-execution-space-call -Xcudafe \"--diag_suppress=implicit_return_from_non_void_function\"")
+  string(APPEND CMAKE_CUDA_FLAGS " --forward-unknown-to-host-linker ${ARCH_FLAGS} --expt-relaxed-constexpr --extended-lambda --Werror=cross-execution-space-call -Xcudafe \"--diag_suppress=implicit_return_from_non_void_function\"")
 
   if(${CUDA_CUFFT_LIBRARIES} STREQUAL "CUDA_cufft_LIBRARY-NOTFOUND")
     include_directories("${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/include")
@@ -59,7 +44,6 @@ if(ENABLE_CUDA)
   else()
     link_libraries(${CUDA_CUFFT_LIBRARIES})
   endif()
-
   if(${CUDA_cusolver_LIBRARY} STREQUAL "CUDA_cusolver_LIBRARY-NOTFOUND")
     include_directories("${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/include")
     link_directories   ("${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/lib64")
@@ -67,7 +51,6 @@ if(ENABLE_CUDA)
   else()
     link_libraries(${CUDA_cusolver_LIBRARY})
   endif()
-
   if(${CUDA_cublas_LIBRARY} STREQUAL "CUDA_cublas_LIBRARY-NOTFOUND")
     include_directories("${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/include")
     link_directories   ("${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/lib64")
@@ -85,8 +68,12 @@ link_libraries(m)
 
 add_subdirectory(external_libs)
 
+enable_language(CXX)
 enable_language(Fortran)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(FortranCInterface)
 FortranCInterface_VERIFY(CXX)
