@@ -24,6 +24,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+message(STATUS "CMAKE_CUDA_ARCHITECTURES before:" ${CMAKE_CUDA_ARCHITECTURES})
+
 if(ENABLE_CUDA)
   set(SRC_EXT cu)
   enable_language(CUDA)
@@ -41,7 +43,7 @@ if(ENABLE_CUDA)
 	SET(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH_LIST})
   endif()
 
-#  message(STATUS "CUDA_ARCH_LIST:" ${CUDA_ARCH_LIST})
+  message(STATUS "CMAKE_CUDA_ARCHITECTURES after:" ${CMAKE_CUDA_ARCHITECTURES})
 #  set_property(GLOBAL PROPERTY "${CUDA_ARCH_LIST}")
 
   string(APPEND CMAKE_CUDA_FLAGS " --forward-unknown-to-host-linker ${ARCH_FLAGS} -std=c++17 --expt-relaxed-constexpr --extended-lambda --Werror=cross-execution-space-call -Xcudafe \"--diag_suppress=implicit_return_from_non_void_function\"")
