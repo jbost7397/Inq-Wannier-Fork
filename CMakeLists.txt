@@ -8,9 +8,13 @@ project(inq VERSION 0.1)
 
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
-if(POLICY CMP0074)
-  cmake_policy(SET CMP0074 NEW)
-endif()
+#if(POLICY CMP0074)
+#  cmake_policy(SET CMP0074 NEW)
+#endif()
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 enable_testing()
 include(CTest)
@@ -72,10 +76,6 @@ add_subdirectory(external_libs)
 
 enable_language(CXX)
 enable_language(Fortran)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(FortranCInterface)
 FortranCInterface_VERIFY(CXX)
