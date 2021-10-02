@@ -4,8 +4,31 @@ include_directories(../external_libs)
 
 add_library(unit_tests_main OBJECT main/unit_tests_main.${SRC_EXT})
 
-file(GLOB INCLUDE_FILES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} */*.hpp)
-
+file(GLOB INCLUDE_FILES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} 
+	density/*.hpp	
+	gpu/*.hpp
+	hamiltonian/*.hpp
+	inq/*.hpp
+	magnitude/*.hpp
+	math/*.hpp
+	observables/*.hpp
+	perturbations/*.hpp
+	real_time/*.hpp
+	states/*.hpp
+	utils/*.hpp
+	basis/*.hpp
+	config/*.hpp
+	eigensolvers/*.hpp
+	ground_state/*.hpp
+	input/*.hpp
+	ions/*.hpp
+	main/*.hpp
+	mixers/*.hpp
+	operations/*.hpp
+	physics/*.hpp
+	solvers/*.hpp
+	systems/*.hpp
+)
 
 foreach(TEST_FILE ${INCLUDE_FILES})
   get_filename_component(dir ${TEST_FILE} DIRECTORY)

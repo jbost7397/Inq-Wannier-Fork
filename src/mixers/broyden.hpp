@@ -31,6 +31,8 @@
 #include <mpi3/environment.hpp>
 #include <utils/raw_pointer_cast.hpp>
 
+#include <gpu/run.hpp>
+
 namespace inq {
 namespace mixers {
 
