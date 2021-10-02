@@ -26,6 +26,8 @@
 #include <math/array.hpp>
 #include <mixers/base.hpp>
 
+#include <gpu/run.hpp>
+
 namespace inq {
 namespace mixers {
 
