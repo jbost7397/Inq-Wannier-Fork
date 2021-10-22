@@ -123,6 +123,19 @@ include_directories(${Libxc_INCLUDE_DIRS})
 link_libraries(${Libxc_LIBRARIES})
 link_libraries(xc)
 
+
+#MDI
+message("\nCONFIGURING MDI\n")
+set(CMAKE_BUILD_TYPE_BACKUP ${MAKE_BUILD_TYPE})
+set(CMAKE_BUILD_TYPE Release)
+add_subdirectory(external_libs/mdi)
+set(CMAKE_BUILD_TYPE ${MAKE_BUILD_TYPE_BACKUP})
+message("\nDONE CONFIGURING MDI\n")
+set(mdi_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/external_libs/mdi/MDI_Library/)
+include_directories(${mdi_INCLUDE_DIRS})
+link_libraries(mdi)
+
+
 #SPGLIB
 
 message("\nCONFIGURING SPGLIB\n")
