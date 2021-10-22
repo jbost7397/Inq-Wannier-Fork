@@ -17,3 +17,6 @@
 [submodule "external_libs/spglib"]
 	path = external_libs/spglib
 	url = https://gitlab.com/npneq/spglib
+[submodule "external_libs/mdi"]
+	path = external_libs/mdi
+	url = https://github.com/MolSSI-MDI/MDI_Library.git
