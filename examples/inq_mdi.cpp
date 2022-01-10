@@ -101,7 +101,7 @@ void update_system(std::vector<double> &cell,
 
   /* Update geometry */
   geo.clear();
-  for (int iatom=0; iatom < elements.size(); iatom++) {
+  for (int64_t iatom=0; iatom < (int64_t)elements.size(); iatom++) {
     auto spec = species(pseudo::element( elements[iatom] ));
     geo.push_back( spec | vector3<double>( coords[3*iatom+0], coords[3*iatom+1], coords[3*iatom+2]) );
   }
@@ -138,7 +138,7 @@ void update_scf(bool *energy_valid_ptr,
 
   *total_energy_ptr = result.energy.total();
   *kinetic_energy_ptr = result.energy.kinetic();
-  for (int iatom=0; iatom < result.forces.size(); iatom++) {
+  for (int64_t iatom=0; iatom < (int64_t)result.forces.size(); iatom++) {
     forces[(3*iatom)+0] = result.forces[iatom][0];
     forces[(3*iatom)+1] = result.forces[iatom][1];
     forces[(3*iatom)+2] = result.forces[iatom][2];
@@ -208,7 +208,7 @@ int execute_command(const char *command, MDI_Comm mdi_comm, void* class_obj) {
     update_system(cell, &scf_box, dimensions, elements, coords, geo);
 
     std::vector<int> elements_send(elements.size(), 0);
-    for (int iatom=0; iatom < elements.size(); iatom++) {
+    for (int64_t iatom=0; iatom < (int64_t)elements.size(); iatom++) {
       elements_send[iatom] = elements[iatom];
     }
     MDI_Send(&elements_send[0], elements.size(), MDI_INT, mdi_comm);
@@ -281,7 +281,7 @@ int execute_command(const char *command, MDI_Comm mdi_comm, void* class_obj) {
     update_system(cell, &scf_box, dimensions, elements, coords, geo);
 
     std::vector<double> masses_send(elements.size(), 0.0);
-    for (int iatom=0; iatom < elements.size(); iatom++) {
+    for (int64_t iatom=0; iatom < (int64_t)elements.size(); iatom++) {
       masses_send[iatom] = geo[iatom].species().mass();
     }
     MDI_Send(&masses_send[0], elements.size(), MDI_DOUBLE, mdi_comm);
@@ -308,7 +308,7 @@ int execute_command(const char *command, MDI_Comm mdi_comm, void* class_obj) {
       MPI_Abort(mpi_world_comm, 1);
     }
     else if ( new_natoms < elements.size() ) {
-      for ( int iatom=0; iatom < elements.size() - new_natoms; iatom++ ) {
+      for ( int64_t iatom=0; iatom < (int64_t)elements.size() - new_natoms; iatom++ ) {
 	elements.pop_back();
 	coords.pop_back();
 	coords.pop_back();
@@ -319,7 +319,7 @@ int execute_command(const char *command, MDI_Comm mdi_comm, void* class_obj) {
       }
     }
     else if ( new_natoms > elements.size() ) {
-      for ( int iatom=0; iatom <  new_natoms - elements.size(); iatom++ ) {
+      for ( int64_t iatom=0; iatom < new_natoms - (int64_t)elements.size(); iatom++ ) {
 	elements.push_back( 0 );
 	coords.push_back( 0.0 );
 	coords.push_back( 0.0 );
