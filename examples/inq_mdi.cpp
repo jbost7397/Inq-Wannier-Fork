@@ -307,7 +307,7 @@ int execute_command(const char *command, MDI_Comm mdi_comm, void* class_obj) {
       std::cout << "ERROR: Invalid value received by >NATOMS command: " << new_natoms;
       MPI_Abort(mpi_world_comm, 1);
     }
-    else if ( new_natoms < elements.size() ) {
+    else if ( new_natoms < (int64_t)elements.size() ) {
       for ( int64_t iatom=0; iatom < (int64_t)elements.size() - new_natoms; iatom++ ) {
 	elements.pop_back();
 	coords.pop_back();
@@ -318,7 +318,7 @@ int execute_command(const char *command, MDI_Comm mdi_comm, void* class_obj) {
 	forces.pop_back();
       }
     }
-    else if ( new_natoms > elements.size() ) {
+    else if ( new_natoms > (int64_t)elements.size() ) {
       for ( int64_t iatom=0; iatom < new_natoms - (int64_t)elements.size(); iatom++ ) {
 	elements.push_back( 0 );
 	coords.push_back( 0.0 );
