@@ -396,8 +396,8 @@ int initialize_mdi(MDI_Comm* comm_ptr) {
 
   // Set the execute_command callback
   int (*generic_command)(const char*, MDI_Comm, void*) = execute_command;
-  void* engine_obj;
-  MDI_Set_execute_command_func(execute_command, engine_obj);
+  void* engine_obj = nullptr;
+  MDI_Set_execute_command_func(generic_command, engine_obj);
 
   return 0;
 }
