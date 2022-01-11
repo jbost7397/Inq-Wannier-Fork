@@ -120,13 +120,16 @@ void update_scf(bool *energy_valid_ptr,
   /* Only rerun the SCF if the energy is not valid */
   if ( *energy_valid_ptr ) { return; }
   
-  boost::mpi3::communicator comm_world = boost::mpi3::environment::get_world_instance();
+  //boost::mpi3::communicator comm_world = boost::mpi3::environment::get_world_instance();  
 
   inq::systems::ions ions(*scf_box_ptr, geo);
 
   config conf;
 
-  inq::systems::electrons electrons(comm_world, ions, *scf_box_ptr, conf);
+  boost::mpi3::communicator& gripped_MPI_comm = boost::mpi3::grip(mpi_world_comm);
+  inq::systems::electrons electrons(gripped_MPI_comm, ions, *scf_box_ptr, conf);
+
+  //inq::systems::electrons electrons(comm_world, ions, *scf_box_ptr, conf);
 
   inq::ground_state::initial_guess(ions, electrons);
 
