@@ -1,4 +1,4 @@
-# -*- indent-tabs-mode: t -*-
+# -*- indent-tabs-mode:t;c-basic-offset:2;tab-width:2 -*-
 cmake_minimum_required(VERSION 3.18) # for reference: ubuntu 20.04 has cmake 3.16
 message("CMake version ${CMAKE_VERSION}")
 include(GNUInstallDirs)
@@ -8,18 +8,15 @@ project(inq VERSION 0.1)
 
 set(CMAKE_VERBOSE_MAKEFILE ON)
 
-#if(POLICY CMP0074)
-#  cmake_policy(SET CMP0074 NEW)
-#endif()
+enable_language(CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-#if(POLICY CMP0104)
-#  cmake_policy(SET CMP0104 NEW)
-#endif()
-
-#find_package(Catch2 CONFIG)
+#find_package(Catch2 CONFIG)  # catch version required doesn't exists in any system yet
 #if (${Catch2_FOUND})
 #else ()
-    message(STATUS "downloading Catch2 v3p3")
+  message(STATUS "downloading Catch2 devel")  # TODO(correaa) stick to a tagged version that works
 	Include(FetchContent)
 	FetchContent_Declare(
 		Catch2
@@ -27,74 +24,29 @@ set(CMAKE_VERBOSE_MAKEFILE ON)
 		GIT_TAG        devel
 	)
 	FetchContent_MakeAvailable(Catch2)
-#    include(ExternalProject)
-#    ExternalProject_Add(
-#            catch2
-#            PREFIX ${PROJECT_SOURCE_DIR}/lib/catch2
-#            GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-#            TIMEOUT 10
-#            UPDATE_COMMAND ${GIT_EXECUTABLE} pull
-#            CONFIGURE_COMMAND ""
-#            BUILD_COMMAND ""
-#            INSTALL_COMMAND ""
-#            LOG_DOWNLOAD ON
-#    )
-#    add_dependencies(tests catch2)
-
-#    # Expose required variable (CATCH_INCLUDE_DIR) to parent scope
-#    ExternalProject_Get_Property(catch2 source_dir)
-#    set(CATCH_INCLUDE_DIR ${source_dir}/include CACHE INTERNAL "Path to include folder for Catch2")
-#    add_subdirectory(${PROJECT_SOURCE_DIR}/lib/catch2)
-#    include_directories(${CATCH_INCLUDE_DIR})
+  message(STATUS "downloaded Catch2 devel")
 #endif ()
-#	message(STATUS "foo include dir: ${CATCH_INCLUDE_DIR}")
-#	message(STATUS "foo include dir: ${catch2_SOURCE_DIR}")
-#	message(STATUS "foo include dir: ${catch2_SOURCE_DIR}/include")
-
-#	include_directories(${CATCH_INCLUDE_DIR})
-#	include_directories(${catch2_SOURCE_DIR})
-	include_directories(${catch2_SOURCE_DIR}/src)
-#	link_libraries(Catch2::Catch2)
+include_directories(${catch2_SOURCE_DIR}/src)
 
 enable_testing()
 include(CTest)
 
-enable_language(CXX)
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
 if(ENABLE_CUDA)
-  set(SRC_EXT cu)
-  enable_language(CUDA)
-  find_package(CUDA 11.0.0 REQUIRED) # deprecated in 3.17 replaced by FindCudaToolkit
-
-#  nvcc 11 doesn't work with gcc 10, use option `--pass-thru -DCMAKE_CUDA_HOST_COMPILER=g++-9`") # https://gitlab.com/npneq/inq/-/issues/107
-
-  # temporary workaround to detect CUDA arch, for between the deprecation of FindCUDA in CMake 3.10 and the availability of FindCudaToolkit in CMake 3.17 # https://stackoverflow.com/a/68223399/225186
-  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-	  message("-DCMAKE_CUDA_ARCHITECTURES is not set, automatic architecture detection...")
-      include(FindCUDA/select_compute_arch)
-      CUDA_DETECT_INSTALLED_GPUS(INSTALLED_GPU_CCS_1)
-      string(STRIP "${INSTALLED_GPU_CCS_1}" INSTALLED_GPU_CCS_2)
-      string(REPLACE " " ";" INSTALLED_GPU_CCS_3 "${INSTALLED_GPU_CCS_2}")
-      string(REPLACE "." "" CUDA_ARCH_LIST "${INSTALLED_GPU_CCS_3}")
-      SET(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH_LIST})
-      set_property(GLOBAL PROPERTY CUDA_ARCHITECTURES "${CUDA_ARCH_LIST}")
-      set_property(GLOBAL PROPERTY CUDA_STANDARD 17)  # with cmake 3.13 this is not enough, -std=c++17 is needed below
-	  message("setting CUDA_ARCHITECTURES global property to ${CUDA_ARCH_LIST}")
-  else()
-	  message("-DCMAKE_CUDA_ARCHITECTURES is set...")
-	  set(CUDA_ARCH_LIST "${CMAKE_CUDA_ARCHITECTURES}")
-	  message("setting CUDA_ARCH_LIST to ${CMAKE_CUDA_ARCHITECTURES}")
-      set_property(GLOBAL PROPERTY CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}")
-      set_property(GLOBAL PROPERTY CUDA_STANDARD 17)  # with cmake 3.13 this is not enough, -std=c++17 is needed below
-	  message("setting CUDA_ARCHITECTURES global property to ${CMAKE_CUDA_ARCHITECTURES}")
-	  set(ARCH_FLAGS "--generate-code=arch=compute_${CMAKE_CUDA_ARCHITECTURES},code=[compute_${CMAKE_CUDA_ARCHITECTURES},sm_${CMAKE_CUDA_ARCHITECTURES}]")
-  endif()
-
+	set(SRC_EXT cu)
+	enable_language(CUDA)
+	find_package(CUDA 11.0.0 REQUIRED) # deprecated in 3.17 replaced by FindCudaToolkit
+#nvcc 11 doesn't work with gcc 10, use option `--pass-thru -DCMAKE_CUDA_HOST_COMPILER=g++-9`") # https://gitlab.com/npneq/inq/-/issues/107
+	include(FindCUDA/select_compute_arch)
+	CUDA_DETECT_INSTALLED_GPUS(INSTALLED_GPU_CCS_1)
+	string(STRIP "${INSTALLED_GPU_CCS_1}" INSTALLED_GPU_CCS_2)
+	string(REPLACE " " ";" INSTALLED_GPU_CCS_3 "${INSTALLED_GPU_CCS_2}")
+	string(REPLACE "." "" CUDA_ARCH_LIST "${INSTALLED_GPU_CCS_3}")
+	SET(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH_LIST})
+	set_property(GLOBAL PROPERTY CUDA_ARCHITECTURES "${CUDA_ARCH_LIST}")
+	message("setting CUDA_ARCHITECTURES global property to ${CUDA_ARCH_LIST}")
   message("... at the end ARCH_FLAGS was set to ${ARCH_FLAGS}")
 
+	set_property(GLOBAL PROPERTY CUDA_STANDARD 17)  # with cmake 3.13 this is not enough, -std=c++17 is needed below
   string(APPEND CMAKE_CUDA_FLAGS " --forward-unknown-to-host-linker ${ARCH_FLAGS} -std=c++17 --expt-relaxed-constexpr --extended-lambda --Werror=cross-execution-space-call -Xcudafe \"--diag_suppress=implicit_return_from_non_void_function\"")
 
   if(${CUDA_CUFFT_LIBRARIES} STREQUAL "CUDA_cufft_LIBRARY-NOTFOUND")
