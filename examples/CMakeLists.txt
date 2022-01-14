@@ -14,3 +14,6 @@ foreach(TEST_FILE ${TEST_SRCS})
   endif()
 endforeach()
 
+add_library(inqmdi SHARED
+            inq_mdi.h
+            inq_mdi.cpp)
