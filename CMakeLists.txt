@@ -149,6 +149,11 @@ include_directories(PkgConfig::FFTW)
 link_libraries(PkgConfig::FFTW)
 cmake_print_properties(TARGETS PkgConfig::FFTW PROPERTIES INTERFACE_LINK_LIBRARIES INTERFACE_INCLUDE_DIRECTORIES)
 
+#HEFFTE
+message("\nCONFIGURING HEFFTE\n")
+add_subdirectory(external_libs/heffte)
+message("\nDONE CONFIGURING HEFFTE\n")
+
 if(ENABLE_HEFFTE)
   find_package(Heffte REQUIRED)
   #get_target_property(HEFFTE_INCLUDE_DIRS Heffte::Heffte INTERFACE_INCLUDE_DIRECTORIES)
@@ -183,7 +188,6 @@ set(spglib_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/external_libs/spglib/src/)
 set(spglib_LIBRARIES ${PROJECT_BINARY_DIR}/external_libs/spglib/libsymspg.a)
 include_directories(${spglib_INCLUDE_DIRS})
 link_libraries(symspg_static)
-
 
 find_package(Boost REQUIRED COMPONENTS serialization filesystem system)
 message(STATUS "Boost actual version found " ${Boost_VERSION})
