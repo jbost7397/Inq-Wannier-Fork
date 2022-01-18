@@ -17,3 +17,6 @@
 [submodule "external_libs/spglib"]
 	path = external_libs/spglib
 	url = ../spglib
+[submodule "external_libs/heffte"]
+	path = external_libs/heffte
+	url = https://gitlab.com/npneq/heffte.git
