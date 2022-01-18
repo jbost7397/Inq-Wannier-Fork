@@ -149,11 +149,6 @@ include_directories(PkgConfig::FFTW)
 link_libraries(PkgConfig::FFTW)
 cmake_print_properties(TARGETS PkgConfig::FFTW PROPERTIES INTERFACE_LINK_LIBRARIES INTERFACE_INCLUDE_DIRECTORIES)
 
-#HEFFTE
-message("\nCONFIGURING HEFFTE\n")
-add_subdirectory(external_libs/heffte)
-message("\nDONE CONFIGURING HEFFTE\n")
-
 if(ENABLE_HEFFTE)
   find_package(Heffte REQUIRED)
   #get_target_property(HEFFTE_INCLUDE_DIRS Heffte::Heffte INTERFACE_INCLUDE_DIRECTORIES)
