@@ -124,12 +124,19 @@ void to_fourier_heffte(basis::real_space const & real_basis, basis::fourier_spac
 		fft(rs_box, fs_box, real_basis.comm().get());
 
 	CALI_MARK_END("heffte_initialization");
+
+	// we don't need a copy when there is just one field
+	if(size(array_rs[0][0][0]) == 1) {
+		CALI_CXX_MARK_SCOPE("heffte_forward_1");
+		fft.forward((const std::complex<double> *) raw_pointer_cast(array_rs.base()), (std::complex<double> *) raw_pointer_cast(array_fs.base()));
+		return;
+	}
 	
 	math::array<complex, 1> input(fft.size_inbox());
 	math::prefetch(input);
 	math::array<complex, 1> output(fft.size_outbox());	
 	math::prefetch(output);
-	
+
 	for(int ist = 0; ist < size(array_rs[0][0][0]); ist++){
 
 		input({0, real_basis.local_size()}) = array_rs.flatted().flatted().transposed()[ist];
@@ -261,6 +268,13 @@ void to_real_heffte(basis::fourier_space const & fourier_basis, basis::real_spac
 
 	auto scaling = heffte::scale::none;
 	if(normalize) scaling = heffte::scale::full;
+
+	// we don't need a copy when there is just one field
+	if(size(array_rs[0][0][0]) == 1) {
+		CALI_CXX_MARK_SCOPE("heffte_backward_1");
+		fft.backward((const std::complex<double> *) raw_pointer_cast(array_fs.base()), (std::complex<double> *) raw_pointer_cast(array_rs.base()), scaling);
+		return;
+	}
 	
 	math::array<complex, 1> input(fft.size_inbox());
 	math::prefetch(input);	
@@ -281,6 +295,8 @@ void to_real_heffte(basis::fourier_space const & fourier_basis, basis::real_spac
 	}
 
 }
+
+///////////////////////////////////////////////////////////////
 
 template <class InArray4D, class OutArray4D>
 void to_real_native(basis::fourier_space const & fourier_basis, basis::real_space const & real_basis, InArray4D const & array_fs, OutArray4D && array_rs, bool normalize) {
