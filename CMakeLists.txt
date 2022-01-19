@@ -184,7 +184,6 @@ set(spglib_LIBRARIES ${PROJECT_BINARY_DIR}/external_libs/spglib/libsymspg.a)
 include_directories(${spglib_INCLUDE_DIRS})
 link_libraries(symspg_static)
 
-
 find_package(Boost REQUIRED COMPONENTS serialization filesystem system)
 message(STATUS "Boost actual version found " ${Boost_VERSION})
 if(Boost_VERSION LESS_EQUAL 105300) # may be higher than 1.53.0
