@@ -1,4 +1,4 @@
-ENABLE_VARS="cuda|ON|ENABLE_CUDA heffte|ON|ENABLE_HEFFTE"
+ENABLE_VARS="cuda|ON|ENABLE_CUDA"
 WITH_VARS="cuda-prefix|yes|CUDA_ROOT fftw-prefix|yes|FFTW_ROOT boost-prefix|yes|BOOST_ROOT"
 
 ENABLE_CUDA_DOC="Compile with GPU support through Nvidia Cuda"
