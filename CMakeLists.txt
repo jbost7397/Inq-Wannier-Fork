@@ -150,6 +150,7 @@ link_libraries(PkgConfig::FFTW)
 cmake_print_properties(TARGETS PkgConfig::FFTW PROPERTIES INTERFACE_LINK_LIBRARIES INTERFACE_INCLUDE_DIRECTORIES)
 
 set(Heffte_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/external_libs/heffte/include ${PROJECT_BINARY_DIR}/external_libs/heffte/include)
+set(Heffte_LIBRARIES ${PROJECT_BINARY_DIR}/external_libs/heffte/libheffte.a)
 link_libraries(Heffte)
 include_directories(${Heffte_INCLUDE_DIRS})
 
