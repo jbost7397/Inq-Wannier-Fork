@@ -149,9 +149,9 @@ include_directories(PkgConfig::FFTW)
 link_libraries(PkgConfig::FFTW)
 cmake_print_properties(TARGETS PkgConfig::FFTW PROPERTIES INTERFACE_LINK_LIBRARIES INTERFACE_INCLUDE_DIRECTORIES)
 
-find_package(Heffte REQUIRED)
-#get_target_property(HEFFTE_INCLUDE_DIRS Heffte::Heffte INTERFACE_INCLUDE_DIRECTORIES)
-link_libraries(Heffte::Heffte)
+set(Heffte_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/external_libs/heffte/include ${PROJECT_BINARY_DIR}/external_libs/heffte/include)
+link_libraries(Heffte)
+include_directories(${Heffte_INCLUDE_DIRS})
 
 find_package(BLAS REQUIRED)
 link_libraries(${BLAS_LIBRARIES})
