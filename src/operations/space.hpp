@@ -39,11 +39,11 @@
 #include <utils/profiling.hpp>
 #include <utils/raw_pointer_cast.hpp>
 
-#ifdef ENABLE_HEFFTE
 #include <heffte.h>
-#endif
 
 #include <cassert>
+
+#define USE_HEFFTE false
 
 namespace inq {
 namespace operations {
@@ -102,13 +102,11 @@ void zero_outside_sphere(states::orbital_set<basis::fourier_space, complex>& fph
 ///////////////////////////////////////////////////////////////
 
 template <class InArray4D, class OutArray4D>
-void to_fourier(basis::real_space const & real_basis, basis::fourier_space const & fourier_basis, InArray4D const & array_rs, OutArray4D && array_fs) {
+void to_fourier_heffte(basis::real_space const & real_basis, basis::fourier_space const & fourier_basis, InArray4D const & array_rs, OutArray4D && array_fs) {
 
 	CALI_CXX_MARK_FUNCTION;
 
 	assert(std::get<3>(sizes(array_rs)) == std::get<3>(sizes(array_fs)));
-	
-#ifdef ENABLE_HEFFTE
 
 	CALI_MARK_BEGIN("heffte_initialization");
  
@@ -144,7 +142,16 @@ void to_fourier(basis::real_space const & real_basis, basis::fourier_space const
 		array_fs.flatted().flatted().transposed()[ist] = output({0, fourier_basis.local_size()});
 	}
 		
-#else
+}
+
+///////////////////////////////////////////////////////////////
+
+template <class InArray4D, class OutArray4D>
+void to_fourier_native(basis::real_space const & real_basis, basis::fourier_space const & fourier_basis, InArray4D const & array_rs, OutArray4D && array_fs) {
+
+	CALI_CXX_MARK_FUNCTION;
+
+	assert(std::get<3>(sizes(array_rs)) == std::get<3>(sizes(array_fs)));
 	
 	namespace multi = boost::multi;
 #ifdef ENABLE_CUDA
@@ -212,20 +219,29 @@ void to_fourier(basis::real_space const & real_basis, basis::fourier_space const
 		}
 
 	}
-
-#endif
 	
 }
-		
+
 ///////////////////////////////////////////////////////////////
 
 template <class InArray4D, class OutArray4D>
-void to_real(basis::fourier_space const & fourier_basis, basis::real_space const & real_basis, InArray4D const & array_fs, OutArray4D && array_rs, bool normalize) {
+void to_fourier(basis::real_space const & real_basis, basis::fourier_space const & fourier_basis, InArray4D const & array_rs, OutArray4D && array_fs) {
+
+	if(USE_HEFFTE){
+		to_fourier_heffte(real_basis, fourier_basis, array_rs, array_fs);
+	} else {
+		to_fourier_native(real_basis, fourier_basis, array_rs, array_fs);		
+	}
+	
+}
+
+///////////////////////////////////////////////////////////////
+
+template <class InArray4D, class OutArray4D>
+void to_real_heffte(basis::fourier_space const & fourier_basis, basis::real_space const & real_basis, InArray4D const & array_fs, OutArray4D && array_rs, bool normalize) {
 
 	CALI_CXX_MARK_FUNCTION;
 
-#ifdef ENABLE_HEFFTE
-	
 	CALI_MARK_BEGIN("heffte_initialization");
 	
 	heffte::box3d<> const rs_box = {{int(real_basis.cubic_dist(2).start()), int(real_basis.cubic_dist(1).start()), int(real_basis.cubic_dist(0).start())},
@@ -263,8 +279,11 @@ void to_real(basis::fourier_space const & fourier_basis, basis::real_space const
 		array_rs.flatted().flatted().transposed()[ist] = output({0, real_basis.local_size()});
 		
 	}
-		
-#else //Heftte_FOUND
+
+}
+
+template <class InArray4D, class OutArray4D>
+void to_real_native(basis::fourier_space const & fourier_basis, basis::real_space const & real_basis, InArray4D const & array_fs, OutArray4D && array_rs, bool normalize) {
 	
 	namespace multi = boost::multi;
 #ifdef ENABLE_CUDA
@@ -336,7 +355,7 @@ void to_real(basis::fourier_space const & fourier_basis, basis::real_space const
 
 		}
 	}
-
+	
 	if(normalize){
 		CALI_CXX_MARK_SCOPE("fft_normalize");
 		gpu::run(size(array_rs[0][0][0]), real_basis.local_size(), 
@@ -345,8 +364,17 @@ void to_real(basis::fourier_space const & fourier_basis, basis::real_space const
 						 });
 	}
 
-#endif //Heftte_FOUND
+}
 
+template <class InArray4D, class OutArray4D>
+void to_real(basis::fourier_space const & fourier_basis, basis::real_space const & real_basis, InArray4D const & array_fs, OutArray4D && array_rs, bool normalize) {
+
+	if(USE_HEFFTE){
+		to_real_heffte(fourier_basis, real_basis, array_fs, array_rs, normalize);
+	} else {
+		to_real_native(fourier_basis, real_basis, array_fs, array_rs, normalize);
+	}
+	
 }
 
 ///////////////////////////////////////////////////////////////
