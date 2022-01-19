@@ -144,7 +144,7 @@ cmake_print_properties(TARGETS MPI::MPI_CXX PROPERTIES INTERFACE_LINK_LIBRARIES 
 
 #FFTW has to go before blas to avoid unscrupulous (i.e. MKL) blas implementations that include FFTW and don't implement it properly
 find_package(PkgConfig REQUIRED)
-pkg_search_module(FFTW REQUIRED fftw3 IMPORTED_TARGET)
+pkg_search_module(FFTW REQUIRED fftw3 fftw3f IMPORTED_TARGET)
 include_directories(PkgConfig::FFTW)
 link_libraries(PkgConfig::FFTW)
 cmake_print_properties(TARGETS PkgConfig::FFTW PROPERTIES INTERFACE_LINK_LIBRARIES INTERFACE_INCLUDE_DIRECTORIES)
@@ -152,6 +152,7 @@ cmake_print_properties(TARGETS PkgConfig::FFTW PROPERTIES INTERFACE_LINK_LIBRARI
 set(Heffte_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/external_libs/heffte/include ${PROJECT_BINARY_DIR}/external_libs/heffte/include)
 set(Heffte_LIBRARIES ${PROJECT_BINARY_DIR}/external_libs/heffte/libheffte.a)
 link_libraries(Heffte)
+link_libraries(fftw3f)
 include_directories(${Heffte_INCLUDE_DIRS})
 
 find_package(BLAS REQUIRED)
