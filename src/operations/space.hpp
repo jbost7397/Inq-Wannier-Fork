@@ -230,6 +230,8 @@ void to_fourier_native(basis::real_space const & real_basis, basis::fourier_spac
 template <class InArray4D, class OutArray4D>
 void to_fourier(basis::real_space const & real_basis, basis::fourier_space const & fourier_basis, InArray4D const & array_rs, OutArray4D && array_fs) {
 
+	CALI_CXX_MARK_FUNCTION;
+	
 	if(USE_HEFFTE){
 		to_fourier_heffte(real_basis, fourier_basis, array_rs, array_fs);
 	} else {
@@ -296,7 +298,9 @@ void to_real_heffte(basis::fourier_space const & fourier_basis, basis::real_spac
 
 template <class InArray4D, class OutArray4D>
 void to_real_native(basis::fourier_space const & fourier_basis, basis::real_space const & real_basis, InArray4D const & array_fs, OutArray4D && array_rs, bool normalize) {
-	
+
+	CALI_CXX_MARK_FUNCTION;
+		
 	namespace multi = boost::multi;
 #ifdef ENABLE_CUDA
 	namespace fft = multi::fft;
@@ -378,9 +382,13 @@ void to_real_native(basis::fourier_space const & fourier_basis, basis::real_spac
 
 }
 
+///////////////////////////////////////////////////////////////
+
 template <class InArray4D, class OutArray4D>
 void to_real(basis::fourier_space const & fourier_basis, basis::real_space const & real_basis, InArray4D const & array_fs, OutArray4D && array_rs, bool normalize) {
 
+	CALI_CXX_MARK_FUNCTION;
+	
 	if(USE_HEFFTE){
 		to_real_heffte(fourier_basis, real_basis, array_fs, array_rs, normalize);
 	} else {
