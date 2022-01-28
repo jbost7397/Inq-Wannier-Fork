@@ -76,8 +76,6 @@ void write_xyz(std::vector<input::atom> const& geo, const std::string& xyz_file_
 	for(std::size_t i = 0; i != geo.size(); ++i) {
 		xyz_file << geo[i].species().symbol() <<' '<< geo[i].position()/unit.in_atomic_units() <<'\n';
 	}
-
-	xyz_file.close();
 }
 
 }
