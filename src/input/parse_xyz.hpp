@@ -67,6 +67,19 @@ auto parse_xyz(const std::string & xyz_file_name, quantity<magnitude::length> un
 	return geo;
 }
 
+void write_xyz(std::vector<input::atom> const& geo, const std::string& xyz_file_name, quantity<magnitude::length> unit = magnitude::operator""_angstrom(1.0)) {
+
+	std::ofstream xyz_file{xyz_file_name};
+	xyz_file << geo.size() <<'\n';
+	xyz_file << '\n';
+
+	for(std::size_t i = 0; i != geo.size(); ++i) {
+		xyz_file << geo[i].species().symbol() <<' '<< geo[i].position()/unit.in_atomic_units() <<'\n';
+	}
+
+	xyz_file.close();
+}
+
 }
 }
 
@@ -84,7 +97,7 @@ TEST_CASE("function ions::parse_xyz", "[inq::input::parse_xyz]") {
 	using Catch::Approx;
 
   auto geo = input::parse_xyz(config::path::unit_tests_data() + "benzene.xyz");
-  
+
   CHECK(geo.size() == 12);
 
   CHECK(geo[2].species() == pseudo::element("C"));
