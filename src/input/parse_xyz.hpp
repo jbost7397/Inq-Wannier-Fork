@@ -67,21 +67,37 @@ auto parse_xyz(const std::string & xyz_file_name, quantity<magnitude::length> un
 	return geo;
 }
 
-template<class AtomsSequence>
-auto generate_xyz(AtomsSequence const& geo, std::ostream& os, quantity<magnitude::length> unit = magnitude::operator""_angstrom(1.0)) -> std::ostream& {
+template<class AtomsSequence, class Cell>
+auto generate_xyz(
+	AtomsSequence const& geo,
+	Cell const& cell,
+	std::ostream& os,
+	quantity<magnitude::length> unit = magnitude::operator""_angstrom(1.0)
+) -> std::ostream& {  // using https://open-babel.readthedocs.io/en/latest/FileFormats/Extended_XYZ_cartesian_coordinates_format.html
 	os << geo.size() <<'\n';
 	os << '\n';
 
 	using std::begin; using std::end;
+	int i = 0;
 	for(auto it = begin(geo); it != end(geo); ++it) {
-		os << geo[i].species().symbol() <<' '<< geo[i].position()/unit.in_atomic_units() <<'\n';
+		os << it->species().symbol() <<' '<< it->position()/unit.in_atomic_units();
+		os <<'\n';
+		++i;
 	}
+	os <<'\n';
+	os <<"Vector 1 "<< cell[0]/unit.in_atomic_units()<<'\n';
+	os <<"Vector 2 "<< cell[1]/unit.in_atomic_units()<<'\n';
+	os <<"Vector 3 "<< cell[2]/unit.in_atomic_units()<<'\n';
+	os <<"Offset   "<< "0.000000    0.000000    0.000000\n";
+
 	return os;
 }
 
-void write_xyz(std::vector<input::atom> const& geo, const std::string& xyz_file_name, quantity<magnitude::length> unit = magnitude::operator""_angstrom(1.0)) {
+template<class AtomsSequence, class Cell>
+void write_xyz(AtomsSequence const& geo, Cell const& cell, const std::string& xyz_file_name, quantity<magnitude::length> unit = magnitude::operator""_angstrom(1.0)) {
 	std::ofstream xyz_file{xyz_file_name};
-	generate_xyz(geo);
+	generate_xyz(geo, cell, xyz_file);
+	if(not xyz_file) {throw std::runtime_error{"cannot read xyz file "+ xyz_file_name};}
 }
 
 }
@@ -92,6 +108,8 @@ void write_xyz(std::vector<input::atom> const& geo, const std::string& xyz_file_
 
 #include <catch2/catch_all.hpp>
 
+#include <systems/box.hpp>
+#include <magnitude/length.hpp>
 #include <config/path.hpp>
 
 TEST_CASE("function ions::parse_xyz", "[inq::input::parse_xyz]") {
@@ -123,9 +141,12 @@ TEST_CASE("function ions::parse_xyz", "[inq::input::parse_xyz]") {
   CHECK(geo[12].position()[2] == 5.0_a);
 
 	std::ostringstream oss;
-	write_xyz(geo, oss);
-	CHECK( oss );
 
+	using namespace inq::magnitude;
+	auto cell = inq::systems::box::orthorhombic(9.717_A, 11.22023_A, 5.172_A);
+
+	generate_xyz(geo, cell, oss);
+	CHECK( oss );
 }
 
 
