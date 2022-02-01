@@ -48,6 +48,7 @@ bool exit_signal = false;
 
 /* MPI intra-communicator for all processes running this code */
 MPI_Comm mpi_world_comm;
+int my_rank;
 
 /* Flag whether the current energy is valid */
 bool energy_valid;
@@ -80,13 +81,13 @@ void update_system(std::vector<double> &cell,
        abs(cell[5]) > small ||
        abs(cell[6]) > small ||
        abs(cell[7]) > small) {
-    std::cout << "ERROR: INQ only supports orthorhombic cells.";
+    std::cout << "ERROR: INQ only supports orthorhombic cells." << std::endl;
     MPI_Abort(mpi_world_comm, 1);
   }
   if ( dimensions[0] != dimensions[1] ||
        dimensions[1] != dimensions[2] ||
        (dimensions[0] != 1 && dimensions[0] != 2) ) {
-    std::cout << "ERROR: INQ only supports cells that are either non-periodic in all dimensions or periodic in all dimensions.";
+    std::cout << "ERROR: INQ only supports cells that are either non-periodic in all dimensions or periodic in all dimensions."  << std::endl;
     MPI_Abort(mpi_world_comm, 1);
   }
   inq::quantity<length> xlength = inq::quantity<length>::from_atomic_units(cell[0]);
@@ -307,7 +308,7 @@ int execute_command(const char *command, MDI_Comm mdi_comm, void* class_obj) {
     int64_t new_natoms;
     MDI_Recv(&new_natoms, 1, MDI_INT64_T, mdi_comm);
     if ( new_natoms < 0 ) {
-      std::cout << "ERROR: Invalid value received by >NATOMS command: " << new_natoms;
+      std::cout << "ERROR: Invalid value received by >NATOMS command: " << new_natoms << std::endl;
       MPI_Abort(mpi_world_comm, 1);
     }
     else if ( new_natoms < (int64_t)elements.size() ) {
@@ -415,8 +416,10 @@ int respond_to_commands(MDI_Comm comm) {
     MPI_Bcast(command, MDI_COMMAND_LENGTH, MPI_CHAR, 0, mpi_world_comm);
 
     /* Confirm that this command is actually supported at this node */
-    int command_supported = 0;
-    MDI_Check_command_exists("@DEFAULT", command, MDI_COMM_NULL, &command_supported);
+    int command_supported = 1;
+    if ( my_rank == 0 ) {
+      MDI_Check_command_exists("@DEFAULT", command, MDI_COMM_NULL, &command_supported);
+    }
     if ( command_supported != 1 ) {
       /* Note: Replace this with whatever error handling method your code uses */
       MPI_Abort(mpi_world_comm, 1);
@@ -432,7 +435,7 @@ int respond_to_commands(MDI_Comm comm) {
 
 int MDI_Plugin_init_inqmdi() {
   /* MPI intra-communicator for all processes running this code */
-  MPI_Comm mpi_world_comm = MPI_COMM_WORLD;
+  mpi_world_comm = MPI_COMM_WORLD;
 
   // Get the command-line arguments for this plugin instance
   int mdi_argc;
@@ -449,6 +452,7 @@ int MDI_Plugin_init_inqmdi() {
 
   // Get the MPI intra-communicator for this code
   MDI_MPI_get_world_comm(&mpi_world_comm);
+  MPI_Comm_rank(mpi_world_comm, &my_rank);
 
   // Perform one-time operations required to establish a connection with the driver
   MDI_Comm mdi_comm = MDI_COMM_NULL;
