@@ -82,13 +82,13 @@ void update_system(std::vector<double> &cell,
        abs(cell[6]) > small ||
        abs(cell[7]) > small) {
     std::cout << "ERROR: INQ only supports orthorhombic cells." << std::endl;
-    MPI_Abort(mpi_world_comm, 1);
+    MPI_Abort(MPI_COMM_WORLD, 1);
   }
   if ( dimensions[0] != dimensions[1] ||
        dimensions[1] != dimensions[2] ||
        (dimensions[0] != 1 && dimensions[0] != 2) ) {
     std::cout << "ERROR: INQ only supports cells that are either non-periodic in all dimensions or periodic in all dimensions."  << std::endl;
-    MPI_Abort(mpi_world_comm, 1);
+    MPI_Abort(MPI_COMM_WORLD, 1);
   }
   inq::quantity<length> xlength = inq::quantity<length>::from_atomic_units(cell[0]);
   inq::quantity<length> ylength = inq::quantity<length>::from_atomic_units(cell[4]);
@@ -309,7 +309,7 @@ int execute_command(const char *command, MDI_Comm mdi_comm, void* class_obj) {
     MDI_Recv(&new_natoms, 1, MDI_INT64_T, mdi_comm);
     if ( new_natoms < 0 ) {
       std::cout << "ERROR: Invalid value received by >NATOMS command: " << new_natoms << std::endl;
-      MPI_Abort(mpi_world_comm, 1);
+      MPI_Abort(MPI_COMM_WORLD, 1);
     }
     else if ( new_natoms < (int64_t)elements.size() ) {
       for ( int64_t iatom=0; iatom < (int64_t)elements.size() - new_natoms; iatom++ ) {
@@ -353,7 +353,7 @@ int execute_command(const char *command, MDI_Comm mdi_comm, void* class_obj) {
   else {
     /* The received command is not recognized by this engine, so exit
        Note: Replace this with whatever error handling method your code uses */
-    MPI_Abort(mpi_world_comm, 1);
+    MPI_Abort(MPI_COMM_WORLD, 1);
   }
 
   return 0;
@@ -422,7 +422,7 @@ int respond_to_commands(MDI_Comm comm) {
     }
     if ( command_supported != 1 ) {
       /* Note: Replace this with whatever error handling method your code uses */
-      MPI_Abort(mpi_world_comm, 1);
+      MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
     execute_command(command, comm, NULL);
@@ -440,11 +440,11 @@ int MDI_Plugin_init_inqmdi() {
   // Get the command-line arguments for this plugin instance
   int mdi_argc;
   if ( MDI_Plugin_get_argc(&mdi_argc) ) {
-    MPI_Abort(mpi_world_comm, 1);
+    MPI_Abort(MPI_COMM_WORLD, 1);
   }
   char** mdi_argv;
   if ( MDI_Plugin_get_argv(&mdi_argv) ) {
-    MPI_Abort(mpi_world_comm, 1);
+    MPI_Abort(MPI_COMM_WORLD, 1);
   }
 
   // Call MDI_Init
