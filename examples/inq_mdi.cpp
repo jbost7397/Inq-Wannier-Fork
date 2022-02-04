@@ -351,8 +351,8 @@ int execute_command(const char *command, MDI_Comm mdi_comm, void* class_obj) {
 
   /* Respond to an unrecognized command */
   else {
-    /* The received command is not recognized by this engine, so exit
-       Note: Replace this with whatever error handling method your code uses */
+    /* The received command is not recognized by this engine, so exit */
+    std::cout << "ERROR: INQ received an unrecognized MDI command: " << command << std::endl;
     MPI_Abort(MPI_COMM_WORLD, 1);
   }
 
@@ -421,7 +421,7 @@ int respond_to_commands(MDI_Comm comm) {
       MDI_Check_command_exists("@DEFAULT", command, MDI_COMM_NULL, &command_supported);
     }
     if ( command_supported != 1 ) {
-      /* Note: Replace this with whatever error handling method your code uses */
+      std::cout << "ERROR: INQ does not support this MDI command: " << command << std::endl;
       MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
@@ -440,10 +440,12 @@ int MDI_Plugin_init_inqmdi() {
   // Get the command-line arguments for this plugin instance
   int mdi_argc;
   if ( MDI_Plugin_get_argc(&mdi_argc) ) {
+    std::cout << "ERROR: MDI_Plugin_get_argc failed: " << std::endl;
     MPI_Abort(MPI_COMM_WORLD, 1);
   }
   char** mdi_argv;
   if ( MDI_Plugin_get_argv(&mdi_argv) ) {
+    std::cout << "ERROR: MDI_Plugin_get_argv failed: " << std::endl;
     MPI_Abort(MPI_COMM_WORLD, 1);
   }
 
