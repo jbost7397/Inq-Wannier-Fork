@@ -410,6 +410,7 @@ int initialize_mdi(MDI_Comm* comm_ptr) {
 int respond_to_commands(MDI_Comm comm) {
   // Respond to the driver's commands
   char* command = new char[MDI_COMMAND_LENGTH];
+
   while( not exit_signal ) {
 
     MDI_Recv_command(command, comm);
@@ -434,6 +435,10 @@ int respond_to_commands(MDI_Comm comm) {
 
 
 int MDI_Plugin_init_inqmdi() {
+
+  // ensure the exit signal is false if the plugin is restarted
+  exit_signal = false;
+
   /* MPI intra-communicator for all processes running this code */
   mpi_world_comm = MPI_COMM_WORLD;
 
@@ -461,6 +466,9 @@ int MDI_Plugin_init_inqmdi() {
   initialize_mdi(&mdi_comm);
 
   //inq::input::environment env(mdi_argc, mdi_argv);
+
+  // This is needed to avoid segfaults
+  boost::mpi3::environment::named_attributes_key_f() = std::make_unique<boost::mpi3::communicator::keyval<std::map<std::string, boost::mpi3::any>>>();
 
   // Respond to commands from the driver
   respond_to_commands(mdi_comm);

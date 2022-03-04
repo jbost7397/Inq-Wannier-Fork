@@ -14,7 +14,7 @@ void mpi_error(const char* errormsg) {
 
 int code_for_plugin_instance(void* mpi_comm_ptr, MDI_Comm mdi_comm, void* class_object) {
   MPI_Comm mpi_comm = *(MPI_Comm*) mpi_comm_ptr;
-  int my_rank;
+  int my_rank = 0;
   MPI_Comm_rank(mpi_comm, &my_rank);
 
   // Determine the name of the engine
@@ -54,6 +54,20 @@ int code_for_plugin_instance(void* mpi_comm_ptr, MDI_Comm mdi_comm, void* class_
   }
   delete[] coords;
   */
+
+  /*
+  double energy = 0.0;
+  if ( MDI_Send_command("<ENERGY", mdi_comm) ) {
+    mpi_error("MDI_Send_command returned non-zero exit code.");
+  }
+  if ( MDI_Recv(&energy, 1, MDI_DOUBLE, mdi_comm) ) {
+    mpi_error("MDI_Recv returned non-zero exit code.");
+  }
+  if ( my_rank == 0 ) {
+    std::cout << " Energy: " << energy << std::endl;
+  }
+  */
+
 
   // Send the "EXIT" command to the engine
   if ( MDI_Send_command("EXIT", mdi_comm) != 0 ) {
@@ -175,7 +189,7 @@ int main(int argc, char **argv) {
   if ( plugin_name == NULL ) {
     mpi_error("Plugin name was not provided.");
   }
-  
+
   // Split world_comm into MPI intra-comms for the driver and each plugin
   MPI_Comm intra_comm;
   int my_rank, color, intra_rank;
@@ -210,6 +224,7 @@ int main(int argc, char **argv) {
 			   NULL) != 0 ) {
       mpi_error("MDI_Launch_plugin returned non-zero exit code.");
     }
+
   }
 
   // Synchronize all MPI ranks
