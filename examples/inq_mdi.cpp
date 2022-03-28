@@ -39,11 +39,6 @@
 
 #include "inq_mdi.h"
 
-using namespace inq::input;
-using namespace inq::systems;
-using namespace inq::magnitude;
-using inq::math::vector3;
-
 bool exit_signal = false;
 
 /* MPI intra-communicator for all processes running this code */
@@ -54,7 +49,7 @@ int my_rank;
 bool energy_valid;
 
 /* Values defining the system */
-std::vector<atom> geo;
+std::vector<inq::input::atom> geo;
 std::vector<double> cell(9, 0.0);
 double total_energy = 0.0;
 double kinetic_energy = 0.0;
@@ -71,7 +66,9 @@ void update_system(std::vector<double> &cell,
 		   std::vector<int> &dimensions,
 		   std::vector<int> &elements,
 		   std::vector<double> &coords,
-		   std::vector<atom> &geo) {
+		   std::vector<inq::input::atom> &geo) {
+  using inq::magnitude::operator""_Ha;
+
   double small = 1.0e-10;
 
   /* Update cell dimensions */
@@ -90,21 +87,21 @@ void update_system(std::vector<double> &cell,
     std::cout << "ERROR: INQ only supports cells that are either non-periodic in all dimensions or periodic in all dimensions."  << std::endl;
     MPI_Abort(MPI_COMM_WORLD, 1);
   }
-  inq::quantity<length> xlength = inq::quantity<length>::from_atomic_units(cell[0]);
-  inq::quantity<length> ylength = inq::quantity<length>::from_atomic_units(cell[4]);
-  inq::quantity<length> zlength = inq::quantity<length>::from_atomic_units(cell[8]);
+  inq::quantity<inq::magnitude::length> xlength = inq::quantity<inq::magnitude::length>::from_atomic_units(cell[0]);
+  inq::quantity<inq::magnitude::length> ylength = inq::quantity<inq::magnitude::length>::from_atomic_units(cell[4]);
+  inq::quantity<inq::magnitude::length> zlength = inq::quantity<inq::magnitude::length>::from_atomic_units(cell[8]); 
   if ( dimensions[0] == 1 ) { // non-periodic case
-    *scf_box_ptr = box::orthorhombic(xlength, ylength, zlength).finite().cutoff_energy(30.0_Ha);
+    *scf_box_ptr = inq::systems::box::orthorhombic(xlength, ylength, zlength).finite().cutoff_energy(30.0_Ha);
   }
   else { // periodic case
-    *scf_box_ptr = box::orthorhombic(xlength, ylength, zlength).periodic().cutoff_energy(30.0_Ha);
+    *scf_box_ptr = inq::systems::box::orthorhombic(xlength, ylength, zlength).periodic().cutoff_energy(30.0_Ha);
   }
 
   /* Update geometry */
   geo.clear();
   for (int64_t iatom=0; iatom < (int64_t)elements.size(); iatom++) {
-    auto spec = species(pseudo::element( elements[iatom] ));
-    geo.push_back( spec | vector3<double>( coords[3*iatom+0], coords[3*iatom+1], coords[3*iatom+2]) );
+    auto spec = inq::input::species(pseudo::element( elements[iatom] ));
+    geo.push_back( spec | inq::math::vector3<double>( coords[3*iatom+0], coords[3*iatom+1], coords[3*iatom+2]) );
   }
 
 }
@@ -112,19 +109,21 @@ void update_system(std::vector<double> &cell,
 
 
 void update_scf(bool *energy_valid_ptr,
-		std::vector<atom> &geo,
+		std::vector<inq::input::atom> &geo,
 		double *total_energy_ptr,
 		double *kinetic_energy_ptr, 
 		std::vector<double> &forces,
 		inq::systems::box *scf_box_ptr) {
 
+  using inq::magnitude::operator""_Ha; 
+ 
   /* Only rerun the SCF if the energy is not valid */
   if ( *energy_valid_ptr ) { return; }
   
 
   inq::systems::ions ions(*scf_box_ptr, geo);
 
-  config conf;
+  inq::input::config conf;
 
   mpi_world_comm = MPI_COMM_WORLD;
   inq::systems::electrons electrons(boost::mpi3::grip(mpi_world_comm), ions, *scf_box_ptr, conf);
@@ -134,9 +133,9 @@ void update_scf(bool *energy_valid_ptr,
 
   inq::ground_state::initial_guess(ions, electrons);
 
-  auto scf_options = scf::conjugate_gradient() | scf::energy_tolerance(1.0e-5_Ha) | scf::density_mixing() | scf::broyden_mixing() | scf::calculate_forces();
+  auto scf_options = inq::input::scf::conjugate_gradient() | inq::input::scf::energy_tolerance(1.0e-5_Ha) | inq::input::scf::density_mixing() | inq::input::scf::broyden_mixing() | inq::input::scf::calculate_forces();
 
-  auto result = inq::ground_state::calculate(ions, electrons, interaction::dft(), scf_options);
+  auto result = inq::ground_state::calculate(ions, electrons, inq::input::interaction::dft(), scf_options);
 
   /* NOTE: MIGHT NEED TO PERFORM UNIT CONVERSIONS HERE */
 
@@ -154,7 +153,10 @@ void update_scf(bool *energy_valid_ptr,
 
 int execute_command(const char *command, MDI_Comm mdi_comm, void* class_obj) {
 
-  inq::systems::box scf_box = box::orthorhombic(12.0_b, 11.0_b, 10.0_b).finite().cutoff_energy(30.0_Ha);
+  using inq::magnitude::operator""_Ha; 
+  using inq::magnitude::operator""_b;
+
+  inq::systems::box scf_box = inq::systems::box::orthorhombic(12.0_b, 11.0_b, 10.0_b).finite().cutoff_energy(30.0_Ha);
  
   /* Respond to the <CELL command */
   if ( strcmp(command, "<CELL") == 0 ) {
@@ -436,6 +438,11 @@ int respond_to_commands(MDI_Comm comm) {
 
 int MDI_Plugin_init_inqmdi() {
 
+  using namespace inq::input;
+  using namespace inq::systems;
+  using namespace inq::magnitude;
+  using inq::math::vector3;
+
   // ensure the exit signal is false if the plugin is restarted
   exit_signal = false;
 
@@ -474,12 +481,18 @@ int MDI_Plugin_init_inqmdi() {
   respond_to_commands(mdi_comm);
 
   fftw_cleanup(); //required for valgrid
-
+  boost::mpi3::environment::named_attributes_key_f().reset();
+	
   return 0;
 }
 
 
 int main(int argc, char ** argv){
+
+  using namespace inq::input;
+  using namespace inq::systems;
+  using namespace inq::magnitude;
+  using inq::math::vector3;
 
   /* MDI communicator used to communicate with the driver */
   MDI_Comm mdi_comm = MDI_COMM_NULL;
