@@ -31,7 +31,6 @@ int code_for_plugin_instance(void* mpi_comm_ptr, MDI_Comm mdi_comm, void* class_
   }
   delete[] engine_name;
 
-  /*
   // Get the number of atoms
   int natoms;
   if ( MDI_Send_command("<NATOMS", mdi_comm) != 0 ) {
@@ -53,9 +52,7 @@ int code_for_plugin_instance(void* mpi_comm_ptr, MDI_Comm mdi_comm, void* class_
     mpi_error("MDI_Recv returned non-zero exit code.");
   }
   delete[] coords;
-  */
 
-  /*
   double energy = 0.0;
   if ( MDI_Send_command("<ENERGY", mdi_comm) ) {
     mpi_error("MDI_Send_command returned non-zero exit code.");
@@ -66,7 +63,6 @@ int code_for_plugin_instance(void* mpi_comm_ptr, MDI_Comm mdi_comm, void* class_
   if ( my_rank == 0 ) {
     std::cout << " Energy: " << energy << std::endl;
   }
-  */
 
 
   // Send the "EXIT" command to the engine
