@@ -46,9 +46,18 @@ int main(int argc, char ** argv){
 	auto found_gs = electrons.load("h2o_restart");
 
 	assert(found_gs);
-	
-	hamiltonian::ks_hamiltonian<basis::real_space> ham(electrons.states_basis_, ions.cell(), electrons.atomic_pot_, false, ions.geo(),
-																										 electrons.states_.num_states(), 0.0, electrons.states_basis_comm_);
+
+	auto inter = input::interaction::dft();
+		
+	hamiltonian::ks_hamiltonian<basis::real_space> ham(electrons.states_basis_, ions.cell(), electrons.atomic_pot_, /*Pseudos in fourier space */ false, ions.geo(),
+																										 electrons.states_.num_states(), inter.exchange_coefficient(), electrons.states_basis_comm_);
+
+	hamiltonian::self_consistency sc(inter, electrons.states_basis_, electrons.density_basis_);
+
+	electrons.density_ = density::calculate(electrons);
+
+	hamiltonian::energy energy;
+	ham.scalar_potential = sc.ks_potential(electrons.density_, energy);
 		
 	for(auto & phi : electrons.lot()) {
 		auto hphi = ham(phi);
