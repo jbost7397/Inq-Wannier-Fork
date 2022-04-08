@@ -33,6 +33,8 @@ int main(int argc, char ** argv){
 	using namespace inq::magnitude;	
   using math::vector3;
 
+	// STANDARD INQ INITIALIZATION
+	
 	input::environment env(argc, argv);
 
 	inq::systems::box box = systems::box::orthorhombic(12.0_b, 11.0_b, 10.0_b).finite().cutoff_energy(30.0_Ha);
@@ -44,9 +46,13 @@ int main(int argc, char ** argv){
 	inq::systems::electrons electrons(env.par(), ions, box);
 
 	auto found_gs = electrons.load("h2o_restart");
+	if(not found_gs){
+		std::cerr << "Can't read restart information." << std::endl;
+		exit(1);
+	}
 
-	assert(found_gs);
-
+	// INITIALIZE THE HAMILTONIAN
+	
 	auto inter = input::interaction::dft();
 		
 	hamiltonian::ks_hamiltonian<basis::real_space> ham(electrons.states_basis_, ions.cell(), electrons.atomic_pot_, /*Pseudos in fourier space */ false, ions.geo(),
@@ -57,10 +63,25 @@ int main(int argc, char ** argv){
 	electrons.density_ = density::calculate(electrons);
 
 	hamiltonian::energy energy;
+	sc.update_ionic_fields(ions, electrons.atomic_pot_);
 	ham.scalar_potential = sc.ks_potential(electrons.density_, energy);
-		
+
+	// DO THE CALCULATIONS
+	
 	for(auto & phi : electrons.lot()) {
 		auto hphi = ham(phi);
+
+		auto ev = operations::overlap_diagonal(hphi, phi);
+
+		operations::shift(-1.0, ev, hphi, phi);
+
+		auto res = operations::overlap_diagonal(phi);
+
+		for(int ist = 0; ist < phi.local_set_size(); ist++){
+			std::cout << ist << '\t' << res[ist] << std::endl;
+		}
+		
 	}
+
 	
 }
