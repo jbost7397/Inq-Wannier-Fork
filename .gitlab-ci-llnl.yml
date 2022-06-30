@@ -14,3 +14,4 @@ lassen-build:
       - ../configure --prefix=`pwd`../install --disable-debug
       - make -j8
       - make install
+      - INQ_EXEC_ENV='jsrun -n 1 -M "-gpu"' bsub -nnodes 1 -q pbatch -I ctest -j 64 --output-on-failure
