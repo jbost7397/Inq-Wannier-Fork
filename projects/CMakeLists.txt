@@ -1,0 +1,15 @@
+#include_directories(.)
+#include_directories(../external_libs)
+#include_directories(../src)
+
+file(GLOB_RECURSE PRJ_SRCS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} *.cpp)
+
+foreach(PRJ_SOURCE ${PRJ_SRCS})
+  get_filename_component(PRJ_EXE ${PRJ_SOURCE} NAME_WE)
+  add_executable(${PRJ_EXE} ${PRJ_SOURCE})
+#  target_link_libraries(${PRJ_EXE} PRIVATE Catch2::Catch2)
+# target_include_directories(${PRJ_EXE} PRIVATE ${catch2_SOURCE_DIR}/src)
+  if(ENABLE_CUDA)
+    set_source_files_properties(${PRJ_EXE} PROPERTIES LANGUAGE CUDA)
+  endif()
+endforeach()
