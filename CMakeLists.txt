@@ -201,4 +201,4 @@ add_subdirectory(speed_tests)
 add_subdirectory(examples)
 add_subdirectory(benchmarks)
 
-
+add_subdirectory(projects)
