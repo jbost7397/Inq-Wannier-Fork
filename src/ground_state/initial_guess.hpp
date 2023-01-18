@@ -13,8 +13,9 @@
 
 namespace inq {
 namespace ground_state {
-	
-void initial_guess(const systems::ions & ions, systems::electrons & electrons){
+
+template <typename Type>
+void initial_guess(const systems::ions & ions, systems::electrons<Type> & electrons){
 
 	int iphi = 0;
 	for(auto & phi : electrons.lot()) {

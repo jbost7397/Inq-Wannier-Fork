@@ -23,20 +23,19 @@
 namespace inq {
 namespace real_time {
 
-template <class ForcesType, class Perturbation>
+template <class OrbType, class ForcesType, class Perturbation>
 class real_time_data {
 	bool last_iter_;
 	int iter_;
 	double time_;
 	systems::ions & ions_;
-	systems::electrons & electrons_;
+	systems::electrons<OrbType> & electrons_;
 	hamiltonian::energy & energy_;
 	ForcesType & forces_;
 	Perturbation const & pert_;
 	
 public:
-
-	real_time_data(bool last_iter, int iter, double time, systems::ions & ions, systems::electrons & electrons, hamiltonian::energy & energy, ForcesType & forces, Perturbation const & pert)
+	real_time_data(bool last_iter, int iter, double time, systems::ions & ions, systems::electrons<OrbType> & electrons, hamiltonian::energy & energy, ForcesType & forces, Perturbation const & pert)
 		:last_iter_(last_iter), iter_(iter), time_(time), ions_(ions), electrons_(electrons), energy_(energy), forces_(forces), pert_(pert){
 	}
 
@@ -91,8 +90,8 @@ public:
 	
 };
 
-template <typename ProcessFunction, typename IonSubPropagator = ions::propagator::fixed, typename Perturbation = perturbations::none>
-void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunction func, const input::interaction & inter, const input::rt & options, IonSubPropagator const& ion_propagator = {}, Perturbation const & pert = {}){
+template <typename ProcessFunction, typename Type, typename IonSubPropagator = ions::propagator::fixed, typename Perturbation = perturbations::none>
+void propagate(systems::ions & ions, systems::electrons<Type> & electrons, ProcessFunction func, const input::interaction & inter, const input::rt & options, IonSubPropagator const& ion_propagator = {}, Perturbation const & pert = {}){
 		CALI_CXX_MARK_FUNCTION;
 		
 		const double dt = options.dt();

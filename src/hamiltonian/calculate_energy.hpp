@@ -32,8 +32,8 @@ namespace hamiltonian {
 
   public:
 
-    template <typename HamType>
-    calculate_energy(HamType const & ham, systems::electrons const & el) :
+    template <typename HamType, typename Type>
+    calculate_energy(HamType const & ham, systems::electrons<Type> const & el) :
 		normres_    ({static_cast<size_type>(el.lot().size()), el.max_local_size()}),
 		eigenvalues_({static_cast<size_type>(el.lot().size()), el.max_local_size()})
 	{

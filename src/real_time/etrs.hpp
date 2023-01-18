@@ -31,8 +31,8 @@
 namespace inq {
 namespace real_time {
 
-template <class IonSubPropagator, class ForcesType, class HamiltonianType, class SelfConsistencyType, class EnergyType>
-void etrs(double const time, double const dt, systems::ions & ions, systems::electrons & electrons, IonSubPropagator const & ion_propagator, ForcesType const & forces, HamiltonianType & ham, SelfConsistencyType & sc, EnergyType & energy){
+template <class IonSubPropagator, class ForcesType, class HamiltonianType, class SelfConsistencyType, class EnergyType, class Type>
+void etrs(double const time, double const dt, systems::ions & ions, systems::electrons<Type> & electrons, IonSubPropagator const & ion_propagator, ForcesType const & forces, HamiltonianType & ham, SelfConsistencyType & sc, EnergyType & energy){
 	
 	electrons.spin_density() = 0.0;
 	int iphi = 0;

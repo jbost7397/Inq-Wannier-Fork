@@ -44,9 +44,12 @@
 namespace inq {
 namespace systems {
 
+template <typename OrbitalType = complex>
 class electrons {
-	
+
 public:
+
+	using orbital_type = OrbitalType;
 	
 	static auto lot_subcomm(parallel::cartesian_communicator<3> & comm){
 		return comm.axis(input::parallelization::dimension_kpoints());
@@ -79,8 +82,6 @@ public:
 	auto & occupations() {
 		return occupations_;
 	}
-
-
 
 	electrons(input::parallelization const & dist, const inq::systems::ions & ions, systems::box const & box, input::kpoints const & kpts, const input::config & conf = {}):
 		electrons(dist, ions, box, conf, kpts)
@@ -346,7 +347,7 @@ public: //temporary hack to be able to apply a kick from main and avoid a bug in
 	hamiltonian::atomic_potential atomic_pot_;
 private:
 	states::ks_states states_;
-	std::vector<states::orbital_set<basis::real_space, complex>> lot_;
+	std::vector<states::orbital_set<basis::real_space, orbital_type>> lot_;
 	math::array<double, 2> eigenvalues_;
 	math::array<double, 2> occupations_;
 	math::array<double, 1> lot_weights_;

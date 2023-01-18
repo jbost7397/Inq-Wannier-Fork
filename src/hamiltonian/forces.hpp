@@ -45,8 +45,8 @@ struct loc_pot {
 };
 
 
-template <typename HamiltonianType>
-math::array<math::vector3<double>, 1> calculate_forces(const systems::ions & ions, systems::electrons & electrons, HamiltonianType const & ham){
+template <typename HamiltonianType, typename Type>
+math::array<math::vector3<double>, 1> calculate_forces(const systems::ions & ions, systems::electrons<Type> & electrons, HamiltonianType const & ham){
 
 	CALI_CXX_MARK_FUNCTION;
 
