@@ -55,6 +55,18 @@ struct uniform_distribution<inq::complex>{
 	static constexpr std::size_t rngs_per_sample = 2;
 };
 
+template<>
+struct uniform_distribution<inq::spinor>{
+	using result_type = inq::spinor;
+	using param_type = void;
+	uniform_distribution<double> impl_;
+	template<class Generator> 
+	result_type operator()(Generator& g) GPU_FUNCTION {
+		return {impl_(g), impl_(g), impl_(g), impl_(g)};
+	}
+	static constexpr std::size_t rngs_per_sample = 4;
+};
+
 namespace inq {
 namespace operations {
 
