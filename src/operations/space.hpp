@@ -23,6 +23,7 @@
 
 #include <inq_config.h> //for ENABLE_HEFFTE
 
+#include <math/spinor.hpp>
 #include <gpu/run.hpp>
 #include <gpu/alltoall.hpp>
 #include <basis/field.hpp>
@@ -59,6 +60,19 @@ void zero_outside_sphere(FieldSetType<basis::fourier_space, complex>& fphi){
 					 [fphicub = begin(fphi.hypercubic()), point_op = fphi.basis().point_op()] GPU_LAMBDA
 					 (auto ist, auto iz, auto iy, auto ix){
 						 if(point_op.outside_sphere(ix, iy, iz)) fphicub[ix][iy][iz][ist] = complex(0.0);
+					 });
+}
+
+///////////////////////////////////////////////////////////////
+
+template <template <typename BasisType, typename Type> typename FieldSetType>
+void zero_outside_sphere(FieldSetType<basis::fourier_space, spinor>& fphi){
+	CALI_CXX_MARK_FUNCTION;
+	
+	gpu::run(fphi.local_set_size(), fphi.basis().local_sizes()[2], fphi.basis().local_sizes()[1], fphi.basis().local_sizes()[0],
+					 [fphicub = begin(fphi.hypercubic()), point_op = fphi.basis().point_op()] GPU_LAMBDA
+					 (auto ist, auto iz, auto iy, auto ix){
+						 if(point_op.outside_sphere(ix, iy, iz)) fphicub[ix][iy][iz][ist] = spinor(complex{0.0, 0.0}, complex{0.0, 0.0});
 					 });
 }
 
@@ -505,6 +519,44 @@ auto to_real(states::orbital_set<basis::fourier_space, math::vector3<complex, Ve
 	return phi;
 }
 
+
+///////////////////////////////////////////////////////////////
+
+template <template <typename BasisType, typename Type> typename FieldSetType>
+auto to_fourier(FieldSetType<basis::real_space, spinor> const & phi){
+
+	CALI_CXX_MARK_SCOPE("to_fourier(spinor)");
+	
+	auto fphi = FieldSetType<basis::fourier_space, spinor>::reciprocal(phi.skeleton());
+
+	auto &&    fphi_as_complex = fphi.hypercubic().template reinterpret_array_cast<complex      >(2).rotated().rotated().rotated().flatted().rotated();
+	auto const& phi_as_complex = phi .hypercubic().template reinterpret_array_cast<complex const>(2).rotated().rotated().rotated().flatted().rotated();
+	
+	to_fourier_array(phi.basis(), fphi.basis(), phi_as_complex, fphi_as_complex);
+
+	if(fphi.basis().spherical()) zero_outside_sphere(fphi);
+			
+	return fphi;
+	
+}
+
+///////////////////////////////////////////////////////////////
+
+template <template <typename BasisType, typename Type> typename FieldSetType>
+auto to_real(FieldSetType<basis::fourier_space, spinor> const& fphi, bool normalize = true){
+
+	CALI_CXX_MARK_SCOPE("to_real(spinor)");
+
+	auto phi = FieldSetType<basis::real_space, spinor>::reciprocal(fphi.skeleton());
+
+	auto const& fphi_as_complex = fphi.hypercubic().template reinterpret_array_cast<complex const>(2).rotated().rotated().rotated().flatted().rotated();
+	auto &&     phi_as_complex  = phi .hypercubic().template reinterpret_array_cast<complex      >(2).rotated().rotated().rotated().flatted().rotated();
+
+	to_real_array(fphi.basis(), phi.basis(), fphi_as_complex, phi_as_complex, normalize);
+
+	return phi;
+}
+
 ///////////////////////////////////////////////////////////////
 
 }
@@ -531,7 +583,8 @@ TEST_CASE("function operations::space", "[operations::space]") {
 	basis::real_space rs(box, basis_comm);
 	
 	basis::field_set<basis::real_space, complex> phi(rs, 7, cart_comm);
-	
+	basis::field_set<basis::real_space, spinor> sphi(rs, 7, cart_comm);
+		
 	SECTION("Zero"){
 		
 		for(int ix = 0; ix < rs.local_sizes()[0]; ix++){
@@ -543,6 +596,7 @@ TEST_CASE("function operations::space", "[operations::space]") {
 		}
 		
 		auto fphi = operations::space::to_fourier(phi);
+		auto fsphi = operations::space::to_fourier(sphi);
 		
 		double diff = 0.0;
 		for(int ix = 0; ix < fphi.basis().local_sizes()[0]; ix++){
@@ -562,6 +616,7 @@ TEST_CASE("function operations::space", "[operations::space]") {
 		CHECK(diff < 1e-15);
 		
 		auto phi2 = operations::space::to_real(fphi);
+		auto sphi2 = operations::space::to_real(fsphi);		
 
 		diff = 0.0;
 		for(int ix = 0; ix < rs.local_sizes()[0]; ix++){
@@ -595,7 +650,8 @@ TEST_CASE("function operations::space", "[operations::space]") {
 		}
 		
 		auto fphi = operations::space::to_fourier(phi);
-		
+		auto fsphi = operations::space::to_fourier(sphi);
+			
 		double diff = 0.0;
 		for(int ix = 0; ix < fphi.basis().local_sizes()[0]; ix++){
 			for(int iy = 0; iy < fphi.basis().local_sizes()[1]; iy++){
@@ -617,7 +673,8 @@ TEST_CASE("function operations::space", "[operations::space]") {
 		std::cout << "DIFF1 " << diff << std::endl;
 
 		auto phi2 = operations::space::to_real(fphi);
-
+		auto sphi2 = operations::space::to_real(fsphi);
+		
 		diff = 0.0;
 		for(int ix = 0; ix < rs.local_sizes()[0]; ix++){
 			for(int iy = 0; iy < rs.local_sizes()[1]; iy++){
