@@ -40,6 +40,11 @@ public:
 		comp_[1] = bb;	
 	}
 
+	GPU_FUNCTION spinor(double const & aa, double const & bb, double const & cc, double const & dd){
+		comp_[0] = complex{aa, bb};
+		comp_[1] = complex{cc, dd};	
+	}
+	
 	GPU_FUNCTION constexpr auto operator[](int ii) const {
 		assert(ii >= 0 and ii < 2);
 		return comp_[ii];
