@@ -30,6 +30,7 @@ OMPI_CXX=$CXX ../../blds/gcc/scripts/inc++ -x c++ $0 -o $0x&&$0x&&rm $0x;exit
 #include <utils/raw_pointer_cast.hpp>
 #include <basis/real_space.hpp>
 #include <math/complex.hpp>
+#include <math/spinor.hpp>
 #include <parallel/get_remote_points.hpp>
 
 #include <mpi3/environment.hpp>
@@ -246,7 +247,6 @@ field<basis::real_space, math::vector3<double, VectorSpace>> real_field(field<ba
 
 #include <basis/real_space.hpp>
 #include <ions/unit_cell.hpp>
-
 #include <catch2/catch_all.hpp>
 
 TEST_CASE("Class basis::field", "[basis::field]"){
@@ -321,6 +321,8 @@ TEST_CASE("Class basis::field", "[basis::field]"){
 		parallel::global_index ipg(ip);
 		if(ff.basis().part().contains(ip)) CHECK(red.linear()[ip] == ff.linear()[ff.basis().part().global_to_local(ipg)]);
 	}
+
+	basis::field<basis::real_space, spinor> ffspinors(rs);
 	
 }
 
