@@ -217,7 +217,7 @@ namespace ions {
 		}
 
 		auto is_orthogonal() const {
-			return fabs(dot(lattice_[0], lattice_[1])) < 1e-8 and fabs(dot(lattice_[1], lattice_[2])) < 1e-8 and fabs(dot(lattice_[2], lattice_[0])) < 1e-8;
+			return std::abs(dot(lattice_[0], lattice_[1])) < 1e-8 and std::abs(dot(lattice_[1], lattice_[2])) < 1e-8 and std::abs(dot(lattice_[2], lattice_[0])) < 1e-8;
 		}
 
 		auto is_cartesian() const {
