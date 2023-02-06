@@ -48,7 +48,7 @@ GPU_FUNCTION inline Type1 add(Type1 * val, Type2 const & incr){
 GPU_FUNCTION inline complex add(complex * val, complex const & incr){
 	auto re = add((double *) val, real(incr));
 	auto im = add(((double *) val) + 1, imag(incr));
-	return complex(re, im);
+	return complex{re, im};
 }
 
 template <typename Type, typename Space>

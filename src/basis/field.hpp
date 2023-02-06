@@ -208,7 +208,7 @@ field<basis::real_space, complex> complex_field(field<basis::real_space, double>
 
 	gpu::run(rfield.basis().part().local_size(),
 					 [cp = begin(cfield.linear()), rp = begin(rfield.linear())] GPU_LAMBDA (auto ip){
-						 cp[ip] = inq::complex(rp[ip], 0.0);
+						 cp[ip] = inq::complex{rp[ip], 0.0};
 					 });
 	
 	return cfield;
@@ -238,7 +238,7 @@ field<basis::real_space, vector3<double, VectorSpace>> real_field(field<basis::r
 	
 	gpu::run(3, cfield.basis().part().local_size(),
 					 [rp = begin(rfield.linear()), cp = begin(cfield.linear())] GPU_LAMBDA (auto idir, auto ip){
-						 rp[ip][idir] = inq::real(cp[ip][idir]);
+						 rp[ip][idir] = real(cp[ip][idir]);
 					 });
 	
 	return rfield;

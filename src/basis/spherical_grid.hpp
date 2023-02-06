@@ -346,9 +346,9 @@ TEST_CASE("class basis::spherical_grid", "[basis::spherical_grid]") {
 		auto size = sphere.size();
 		comm.all_reduce_in_place_n(&size, 1, std::plus<>{});
     CHECK(size == 257);
-    
-    math::array<complex, 4> grid({pw.local_sizes()[0], pw.local_sizes()[1], pw.local_sizes()[2], 20}, 0.0);
-    math::array<complex, 2> subgrid({sphere.size(), 20}, 0.0);
+
+    math::array<complex, 4> grid({pw.local_sizes()[0], pw.local_sizes()[1], pw.local_sizes()[2], 20}, complex{0.0, 0.0});
+    math::array<complex, 2> subgrid({sphere.size(), 20}, complex{0.0, 0.0});
 
     for(long ii = 0; ii < grid.num_elements(); ii++) grid.data_elements()[ii] = 1.0;
     
@@ -380,8 +380,8 @@ TEST_CASE("class basis::spherical_grid", "[basis::spherical_grid]") {
 		comm.all_reduce_in_place_n(&size, 1, std::plus<>{});
     CHECK(size == 257);
 
-    math::array<complex, 6> grid({1, pw.local_sizes()[0], pw.local_sizes()[1], pw.local_sizes()[2], 2, 20}, 0.0);
-    math::array<complex, 3> subgrid({sphere.size(), 2, 20}, 0.0);
+    math::array<complex, 6> grid({1, pw.local_sizes()[0], pw.local_sizes()[1], pw.local_sizes()[2], 2, 20}, complex{0.0, 0.0});
+    math::array<complex, 3> subgrid({sphere.size(), 2, 20}, complex{0.0, 0.0});
 
     sphere.gather(grid[0], subgrid);
 

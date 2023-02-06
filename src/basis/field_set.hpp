@@ -276,7 +276,7 @@ field_set<basis::real_space, inq::complex> complex_field(field_set<basis::real_s
 
 	gpu::run(field.set_part().local_size(), field.basis().part().local_size(),
 					 [fie = begin(field.matrix()), cfie = begin(cfield.matrix())] GPU_LAMBDA (auto ist, auto ii){
-						 cfie[ii][ist] = complex(fie[ii][ist], 0.0);
+						 cfie[ii][ist] = complex{fie[ii][ist], 0.0};
 					 });
 	
 	return cfield;
@@ -303,7 +303,7 @@ field_set<basis::real_space, double> real_field(field_set<basis::real_space, inq
 	
 	gpu::run(field.set_part().local_size(), field.basis().part().local_size(),
 					 [rp = begin(rfield.matrix()), cp = begin(field.matrix())] GPU_LAMBDA (auto ist, auto ii){
-						 rp[ii][ist] = inq::real(cp[ii][ist]);
+						 rp[ii][ist] = real(cp[ii][ist]);
 					 });
 	
 	return rfield;
