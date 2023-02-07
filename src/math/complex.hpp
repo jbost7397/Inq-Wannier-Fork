@@ -12,6 +12,8 @@
 #include <thrust/complex.h>
 #endif
 
+#include <multi/adaptors/complex.hpp>  // for multi::complex
+
 namespace inq {
 
 #ifdef ENABLE_CUDA
