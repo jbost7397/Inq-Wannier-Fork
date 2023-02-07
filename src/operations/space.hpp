@@ -58,7 +58,7 @@ void zero_outside_sphere(FieldSetType<basis::fourier_space, complex>& fphi){
 	gpu::run(fphi.local_set_size(), fphi.basis().local_sizes()[2], fphi.basis().local_sizes()[1], fphi.basis().local_sizes()[0],
 					 [fphicub = begin(fphi.hypercubic()), point_op = fphi.basis().point_op()] GPU_LAMBDA
 					 (auto ist, auto iz, auto iy, auto ix){
-						 if(point_op.outside_sphere(ix, iy, iz)) fphicub[ix][iy][iz][ist] = complex(0.0);
+						if(point_op.outside_sphere(ix, iy, iz)) fphicub[ix][iy][iz][ist] = complex{0.0, 0.0};
 					 });
 }
 
