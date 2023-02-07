@@ -58,7 +58,7 @@ public:
 								 auto g2 = point_op.g2(ix, iy, iz);
 								 
 								 if(point_op.g_is_zero(ix, iy, iz)){
-									 pfs[ix][iy][iz] = complex(0.0, 0.0);
+									 pfs[ix][iy][iz] = complex{0.0, 0.0};
 								 } else {
 									 pfs[ix][iy][iz] *= -scal/g2;
 								 }
@@ -89,9 +89,9 @@ public:
 								 auto g2 = point_op.g2(ix, iy, iz);
 								 
 								 if(point_op.g_is_zero(ix, iy, iz)){
-									 for(int ist = 0; ist < nst; ist++) pfs[ix][iy][iz][ist] = complex(0.0, 0.0);
+									for(int ist = 0; ist < nst; ist++) pfs[ix][iy][iz][ist] = complex{0.0, 0.0};
 								 } else {
-									 for(int ist = 0; ist < nst; ist++) pfs[ix][iy][iz][ist] *= -scal/g2;
+									for(int ist = 0; ist < nst; ist++) pfs[ix][iy][iz][ist] *= -scal/g2;
 								 }
 								 
 							 });
@@ -105,6 +105,7 @@ private:
 
 	GPU_FUNCTION auto static poisson_slab_cutoff(vector3<double, cartesian> gg, double const & rc){
 		auto gpar = hypot(gg[0], gg[1]);
+		using std::fabs;
 		auto gz = fabs(gg[2]);
 		
 		if(gpar < 1e-12){
