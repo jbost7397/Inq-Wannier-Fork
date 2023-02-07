@@ -143,7 +143,8 @@ public:
 				sumq = sumq + max_occ_*function(efermi, real(eig[ie]));
 			}
 			comm.all_reduce_in_place_n(&sumq, 1, std::plus<>{});
-			
+
+			using std::fabs;
 			if(fabs(sumq - nelec) <= tol) break;
 			if(sumq <= nelec) emin = efermi;
 			if(sumq >= nelec) emax = efermi;
