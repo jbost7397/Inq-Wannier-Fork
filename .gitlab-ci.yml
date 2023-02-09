@@ -549,94 +549,95 @@ intel-mpich-3p:
 #########################################################################################################################
 # NVIDIA MPICH FAST
 #########################################################################################################################
-
 nvcc-mpich-fast:
+    image: nvidia/cuda:11.8.0-devel-ubuntu22.04
     stage: build
     needs: []
     tags:
-      - cuda_gpu
+      - cuda-docker
     script:
-      - export PREFIX=`mktemp -d /tmp/inq-build-XXXXXXXXXXXXXX`
-      - export SRCDIR=`pwd`
-      - if [ -v UPDATE_MULTI ] ; then cd external_libs/multi && git checkout master && git pull && cd - ; fi
-      - export PATH=/usr/local/cuda/bin:$PATH
-      - cmake --version
-      - nvcc -V
-      - mkdir -p $PREFIX/build
-      - cd $PREFIX/build
-      - CUDACXX=/usr/local/cuda/bin/nvcc $SRCDIR/configure --prefix=$PREFIX/install --enable-cuda --disable-debug --with-cuda-prefix=/usr/local/cuda --pass-thru -DCMAKE_CUDA_ARCHITECTURES=70 -DMPI_EXECUTABLE_SUFFIX=.mpich
-      - time make -j16
-      - time make -j16 install
-      - cd $SRCDIR
-      - echo $PREFIX > nvcc-mpich-fast-path
+      - nvidia-smi
+      - apt update -qq && apt install --no-install-recommends -y -qq pixz git ca-certificates ssh g++ gfortran make cmake pkg-config libblas-dev liblapack-dev libfftw3-dev libboost-serialization-dev libboost-filesystem-dev python2 valgrind libmpich-dev mpich libhdf5-dev libhdf5-mpich-dev
+      - mkdir build && cd build
+      - ../configure --prefix=$HOME --enable-cuda --disable-debug --with-cuda-prefix=/usr/local/cuda --pass-thru -DCMAKE_CUDA_ARCHITECTURES=70 -DMPI_EXECUTABLE_SUFFIX=.mpich
+      - time make -j4
+      - cd ../
+      - du -sh build/
+      - time tar -Ipixz -cf nvidia-mpich-build.tar.xz build/
+      - du -sh nvidia-mpich-build.tar.xz
     artifacts:
       paths:
-      - nvcc-mpich-fast-path
+      - nvidia-mpich-build.tar.xz
 
 nvcc-mpich-fast-1p:
     stage: test
     needs: ["nvcc-mpich-fast"]
     tags:
-      - cuda_gpu
+      - cuda-docker
     script:
+      - apt update -qq && apt install --no-install-recommends -y -qq pixz git ca-certificates ssh g++ gfortran make cmake pkg-config libblas-dev liblapack-dev libfftw3-dev libboost-serialization-dev libboost-filesystem-dev python2 valgrind libmpich-dev mpich libhdf5-dev libhdf5-mpich-dev
+      - time tar -Ipixz -xvf nvidia-mpich-build.tar.xz
+      - cd build
+      - cmake --build . --target install/fast
       - PREFIX=`cat nvcc-mpich-fast-path`
       - INQ_EXEC_ENV="mpirun.mpich -np 1" make test -C $PREFIX/build/src ARGS="--output-on-failure --timeout 600 -j8"
       - INQ_EXEC_ENV="mpirun.mpich -np 1" make test -C $PREFIX/build/tests ARGS="--output-on-failure --timeout 1800 -j8"
       - INQ_EXEC_ENV="mpirun.mpich -np 1" make test -C $PREFIX/build/speed_tests ARGS="--output-on-failure --timeout 1800 -j8"
       
-nvcc-mpich-fast-2p:
-    stage: test
-    needs: ["nvcc-mpich-fast"]
-    tags:
-      - cuda_gpu
-    script:
-      - PREFIX=`cat nvcc-mpich-fast-path`
-      - INQ_EXEC_ENV="mpirun.mpich -np 2" make test -C $PREFIX/build/src ARGS="--output-on-failure --timeout 600 -j4"
-      - INQ_EXEC_ENV="mpirun.mpich -np 2" make test -C $PREFIX/build/tests ARGS="--output-on-failure --timeout 1800 -j4"
-
-nvcc-mpich-fast-3p:
-    stage: test
-    needs: ["nvcc-mpich-fast"]
-    tags:
-      - cuda_gpu
-    script:
-      - PREFIX=`cat nvcc-mpich-fast-path`
-      - INQ_EXEC_ENV="mpirun.mpich -np 3" make test -C $PREFIX/build/src ARGS="--output-on-failure --timeout 600 -j2"
-      - INQ_EXEC_ENV="mpirun.mpich -np 3" make test -C $PREFIX/build/tests ARGS="--output-on-failure --timeout 1800 -j2"
-
-nvcc-mpich-fast-4p:
-    stage: test
-    needs: ["nvcc-mpich-fast"]
-    tags:
-      - cuda_gpu
-    script:
-      - PREFIX=`cat nvcc-mpich-fast-path`
-      - INQ_EXEC_ENV="mpirun.mpich -np 4" make test -C $PREFIX/build/src ARGS="--output-on-failure --timeout 600 -j2"
-      - INQ_EXEC_ENV="mpirun.mpich -np 4" make test -C $PREFIX/build/tests ARGS="--output-on-failure --timeout 1800 -j2"
-
-nvcc-mpich-fast-5p:
-    stage: test
-    needs: ["nvcc-mpich-fast"]
-    tags:
-      - cuda_gpu
-    script:
-      - PREFIX=`cat nvcc-mpich-fast-path`
-      - INQ_EXEC_ENV="mpirun.mpich -np 5" make test -C $PREFIX/build/tests ARGS="--output-on-failure --timeout 1800 -j1"      
-
-nvcc-mpich-fast-clean:
-    stage: clean
-    needs:
-     - nvcc-mpich-fast
-     - nvcc-mpich-fast-1p
-     - nvcc-mpich-fast-2p
-     - nvcc-mpich-fast-3p
-     - nvcc-mpich-fast-4p
-     - nvcc-mpich-fast-5p
-    tags:
-      - cuda_gpu
-    script:
-      - PREFIX=`cat nvcc-mpich-fast-path`
-      - rm -vfr $PREFIX
+#nvcc-mpich-fast-2p:
+#    stage: test
+#    needs: ["nvcc-mpich-fast"]
+#    tags:
+#      - cuda-docker
+#    script:
+#      - PREFIX=`cat nvcc-mpich-fast-path`
+#      - INQ_EXEC_ENV="mpirun.mpich -np 2" make test -C $PREFIX/build/src ARGS="--output-on-failure --timeout 600 -j4"
+#      - INQ_EXEC_ENV="mpirun.mpich -np 2" make test -C $PREFIX/build/tests ARGS="--output-on-failure --timeout 1800 -j4"
+#
+#nvcc-mpich-fast-3p:
+#    stage: test
+#    needs: ["nvcc-mpich-fast"]
+#    tags:
+#      - cuda-docker
+#    script:
+#      - PREFIX=`cat nvcc-mpich-fast-path`
+#      - INQ_EXEC_ENV="mpirun.mpich -np 3" make test -C $PREFIX/build/src ARGS="--output-on-failure --timeout 600 -j2"
+#      - INQ_EXEC_ENV="mpirun.mpich -np 3" make test -C $PREFIX/build/tests ARGS="--output-on-failure --timeout 1800 -j2"
+#
+#nvcc-mpich-fast-4p:
+#    stage: test
+#    needs: ["nvcc-mpich-fast"]
+#    tags:
+#      - cuda-docker
+#    script:
+#      - PREFIX=`cat nvcc-mpich-fast-path`
+#      - INQ_EXEC_ENV="mpirun.mpich -np 4" make test -C $PREFIX/build/src ARGS="--output-on-failure --timeout 600 -j2"
+#      - INQ_EXEC_ENV="mpirun.mpich -np 4" make test -C $PREFIX/build/tests ARGS="--output-on-failure --timeout 1800 -j2"
+#
+#nvcc-mpich-fast-5p:
+#    stage: test
+#    needs: ["nvcc-mpich-fast"]
+#    tags:
+#      - cuda-docker
+#    script:
+#      - PREFIX=`cat nvcc-mpich-fast-path`
+#      - INQ_EXEC_ENV="mpirun.mpich -np 5" make test -C $PREFIX/build/tests ARGS="--output-on-failure --timeout 1800 -j1"      
+#
+#nvcc-mpich-fast-clean:
+#    stage: clean
+#    needs:
+#     - nvcc-mpich-fast
+#     - nvcc-mpich-fast-1p
+#     - nvcc-mpich-fast-2p
+#     - nvcc-mpich-fast-3p
+#     - nvcc-mpich-fast-4p
+#     - nvcc-mpich-fast-5p
+#    tags:
+#      - cuda-docker
+#    script:
+#      - PREFIX=`cat nvcc-mpich-fast-path`
+#      - rm -vfr $PREFIX
+#
 
 #########################################################################################################################
 # NVIDIA MPICH DEBUG
