@@ -115,15 +115,15 @@ link_libraries(MPI::MPI_C)
 message(STATUS "MPI Executable for running programs:" ${MPIEXEC_EXECUTABLE})
 message(STATUS "MPI number of processors detected on the host system: " ${MPIEXEC_MAX_NUMPROCS})
 include(CMakePrintHelpers)
-cmake_print_properties(TARGETS MPI::MPI_CXX PROPERTIES INTERFACE_LINK_LIBRARIES INTERFACE_INCLUDE_DIRECTORIES)
+cmake_print_properties(TARGETS MPI::MPI_C PROPERTIES INTERFACE_LINK_LIBRARIES INTERFACE_INCLUDE_DIRECTORIES)
 
 #Check for MPI_Isendrecv_replace that sometimes MPI doesn't have
-set(CMAKE_REQUIRED_INCLUDES ${MPI_CXX_INCLUDE_PATH})
-set(CMAKE_REQUIRED_LIBRARIES MPI::MPI_CXX)
+set(CMAKE_REQUIRED_INCLUDES ${MPI_C_INCLUDE_PATH})
+set(CMAKE_REQUIRED_LIBRARIES MPI::MPI_C)
 include(CheckCXXSymbolExists)
 check_cxx_symbol_exists(MPI_Isendrecv_replace mpi.h HAVE_MPI_ISENDRECV_REPLACE)
 
-target_link_libraries(inq INTERFACE MPI::MPI_CXX)
+target_link_libraries(inq INTERFACE MPI::MPI_C)
 
 #FFTW has to go before blas to avoid unscrupulous (i.e. MKL) blas implementations that include FFTW and don't implement it properly
 find_package(PkgConfig REQUIRED)
