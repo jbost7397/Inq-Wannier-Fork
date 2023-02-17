@@ -109,9 +109,9 @@ include(FortranCInterface)
 FortranCInterface_VERIFY(CXX)
 FortranCInterface_HEADER(FC.h MACRO_NAMESPACE "FC_")
 
-find_package(MPI REQUIRED COMPONENTS CXX)
-include_directories(${MPI_CXX_INCLUDE_PATH})
-link_libraries(MPI::MPI_CXX) # needs cmake 3.9
+find_package(MPI REQUIRED)
+include_directories(${MPI_C_INCLUDE_PATH})
+link_libraries(MPI::MPI_C)
 message(STATUS "MPI Executable for running programs:" ${MPIEXEC_EXECUTABLE})
 message(STATUS "MPI number of processors detected on the host system: " ${MPIEXEC_MAX_NUMPROCS})
 include(CMakePrintHelpers)
