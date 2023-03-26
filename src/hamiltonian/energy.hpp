@@ -30,34 +30,25 @@ namespace hamiltonian {
 
 	class energy {
 		
-		double ion_;
-		double eigenvalues_;
-		double external_;
-		double nonlocal_;
-		double hartree_;
-		double xc_;
-		double nvxc_;
-		double hf_exchange_;
+		double ion_ = 0.0;
+		double eigenvalues_ = 0.0;
+		double external_ = 0.0;
+		double nonlocal_ = 0.0;
+		double hartree_ = 0.0;
+		double xc_ = 0.0;
+		double nvxc_ = 0.0;
+		double hf_exchange_ = 0.0;
 
 	public:
 		
-		energy(){
-			ion_ = 0.0;
-			eigenvalues_ = 0.0;
-			external_ = 0.0;
-			nonlocal_ = 0.0;
-			hartree_ = 0.0;
-			xc_ = 0.0;
-			nvxc_ = 0.0;
-			hf_exchange_ = 0.0;
-		}
+		energy() = default;
 
 		template <typename HamType, typename ElType>
 		auto calculate(HamType const & ham, ElType & el) {
 
 			CALI_CXX_MARK_SCOPE("energy::calculate");
 
-			auto normres = math::array<complex, 2>({el.kpin().size(), el.max_local_set_size()});
+			auto normres = math::array<complex, 2>({static_cast<math::array<complex, 2>::size_type>(el.kpin().size()), el.max_local_set_size()});
 			
 			eigenvalues_ = 0.0;
 			nonlocal_ = 0.0;
