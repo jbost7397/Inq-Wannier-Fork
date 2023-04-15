@@ -1,4 +1,4 @@
-# Copyright (C) 2019-2020 Xavier Andrade, Alfredo A. Correa
+# Copyright (C) 2019-2023 Xavier Andrade, Alfredo A. Correa
 
 image: debian:stable-backports
 
@@ -649,7 +649,7 @@ nvcc-mpich-debug:
     needs: []
     image:  nvcr.io/nvidia/cuda:11.8.0-devel-ubuntu22.04
     tags:
-      - cuda_gpu
+      - docker
     script:
       - time apt update -qq
       - time apt install --no-install-recommends -y -qq pixz curl git ca-certificates ssh g++ gfortran clang make cmake pkg-config libblas-dev liblapack-dev libfftw3-dev libmpich-dev mpich libhdf5-dev libhdf5-mpich-dev libboost-serialization-dev libboost-filesystem-dev python2
