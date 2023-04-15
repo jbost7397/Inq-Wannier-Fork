@@ -9,11 +9,11 @@ default:
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
   CXXFLAGS: "-O3 -pipe"
-  OMPI_ALLOW_RUN_AS_ROOT: 1
-  OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+#  OMPI_ALLOW_RUN_AS_ROOT: 1
+#  OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
 # avoid the annoying messages from openmpi over docker, https://github.com/open-mpi/ompi/issues/4948  
   OMPI_MCA_btl_vader_single_copy_mechanism: none
-  OMPI_MCA_rmaps_base_oversubscribe: 1
+#  OMPI_MCA_rmaps_base_oversubscribe: 1
   CODECOV_TOKEN: "5855e536-b784-400e-b0b2-b1d01c2287a9"
 
 stages:
@@ -647,9 +647,12 @@ nvcc-mpich-fast-clean:
 nvcc-mpich-debug:
     stage: build
     needs: []
+    image:  nvcr.io/nvidia/cuda:11.8.0-devel-ubuntu22.04
     tags:
       - cuda_gpu
     script:
+      - time apt update -qq
+      - time apt install --no-install-recommends -y -qq pixz curl git ca-certificates ssh g++ gfortran clang make cmake pkg-config libblas-dev liblapack-dev libfftw3-dev libmpich-dev mpich libhdf5-dev libhdf5-mpich-dev libboost-serialization-dev libboost-filesystem-dev python2
       - export PREFIX=`mktemp -d /tmp/inq-build-XXXXXXXXXXXXXX`
       - export SRCDIR=`pwd`
       - if [ -v UPDATE_MULTI ] ; then cd external_libs/multi && git checkout master && git pull && cd - ; fi
