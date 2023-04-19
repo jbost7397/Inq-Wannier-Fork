@@ -553,24 +553,26 @@ intel-mpich-3p:
 #########################################################################################################################
 
 nvcc-mpich-fast:
+    image: nvidia/cuda:11.8.0-devel-ubuntu22.04
     stage: build
     needs: []
     tags:
-      - cuda_gpu
+      - cuda-docker
     script:
-      - export PATH=/usr/local/cuda/bin:$PATH
+      - nvidia-smi
+      - apt update -qq && apt install --no-install-recommends -y -qq git ca-certificates ssh g++ gfortran make cmake pkg-config libblas-dev liblapack-dev libfftw3-dev libboost-serialization-dev libboost-filesystem-dev python2 libmpich-dev mpich libhdf5-dev libhdf5-mpich-dev
       - cmake --version
       - mkdir build && cd build
       - ../configure --prefix=$HOME/install --enable-cuda --disable-debug --with-cuda-prefix=/usr/local/cuda --pass-thru -DCMAKE_CUDA_ARCHITECTURES=70 -DMPI_EXECUTABLE_SUFFIX=.mpich
       - time make -j16 install
       - ctest --output-on-failure --timeout 600
       - cd src/; INQ_EXEC_ENV="mpirun.mpich -np 2" ctest --output-on-failure --timeout 1800; cd ..
-      - cd test/; INQ_EXEC_ENV="mpirun.mpich -np 2" ctest --output-on-failure --timeout 1800; cd ..      
+      - cd tests/; INQ_EXEC_ENV="mpirun.mpich -np 2" ctest --output-on-failure --timeout 1800; cd ..      
       - cd src/; INQ_EXEC_ENV="mpirun.mpich -np 3" ctest --output-on-failure --timeout 1800; cd ..
-      - cd test/; INQ_EXEC_ENV="mpirun.mpich -np 3" ctest --output-on-failure --timeout 1800; cd ..      
+      - cd tests/; INQ_EXEC_ENV="mpirun.mpich -np 3" ctest --output-on-failure --timeout 1800; cd ..      
       - cd src/; INQ_EXEC_ENV="mpirun.mpich -np 4" ctest --output-on-failure --timeout 1800; cd ..
-      - cd test/; INQ_EXEC_ENV="mpirun.mpich -np 4" ctest --output-on-failure --timeout 1800; cd ..      
-      - cd test/; INQ_EXEC_ENV="mpirun.mpich -np 5" ctest --output-on-failure --timeout 1800; cd ..
+      - cd tests/; INQ_EXEC_ENV="mpirun.mpich -np 4" ctest --output-on-failure --timeout 1800; cd ..      
+      - cd tests/; INQ_EXEC_ENV="mpirun.mpich -np 5" ctest --output-on-failure --timeout 1800; cd ..
 
 #########################################################################################################################
 # NVIDIA MPICH DEBUG
