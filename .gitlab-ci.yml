@@ -472,7 +472,7 @@ nvcc-mpich-debug:
 # NVIDIA MPICH NCCL
 #########################################################################################################################
 
-nvcc-mpich-nccl:
+nccl-mpich:
     stage: test
     needs: []
     tags:
@@ -486,8 +486,7 @@ nvcc-mpich-nccl:
       - git clone https://github.com/NVIDIA/nccl.git
       - cd nccl
       - git checkout v2.18
-      - time make -j4 src.build CUDA_HOME=/usr/ NVCC_GENCODE="-gencode=arch=compute_70,code=sm_70"
-      - mv build /usr/local/nccl
+      - time make -j4 src.build CUDA_HOME=/usr/ NVCC_GENCODE="-gencode=arch=compute_70,code=sm_70" BUILDDIR=/usr/local/nccl/
       - cd ../
       - export GPUBIND=`pwd`/scripts/gpubind
       - mkdir build
@@ -571,8 +570,7 @@ nccl-mpich-template:
       - git clone https://github.com/NVIDIA/nccl.git
       - cd nccl
       - git checkout v2.18
-      - time make -j4 src.build CUDA_HOME=/usr/ NVCC_GENCODE="-gencode=arch=compute_70,code=sm_70"
-      - mv build /usr/local/nccl
+      - time make -j4 src.build CUDA_HOME=/usr/ NVCC_GENCODE="-gencode=arch=compute_70,code=sm_70" BUILDDIR=/usr/local/nccl/
       - cd ../
       - git clone https://gitlab.com/npneq/inq_template.git
       - cd inq_template
