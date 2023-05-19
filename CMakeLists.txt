@@ -18,6 +18,8 @@ set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "")
 set(FETCHCONTENT_QUIET FALSE)
 Include(FetchContent)
 
+list(APPEND CMAKE_PREFIX_PATH "${PROJECT_SOURCE_DIR}/cmake")
+
 add_library(inq INTERFACE)
 target_include_directories(inq
     INTERFACE
