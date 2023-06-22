@@ -46,7 +46,7 @@ if(ENABLE_CUDA)
 
 #  nvcc 11 doesn't work with gcc 13, use option `-DCMAKE_CUDA_HOST_COMPILER=g++-12.2`")
 
-  string(APPEND CMAKE_CUDA_FLAGS "--extended-lambda --Werror=cross-execution-space-call -Xcudafe=--display_error_number")
+  string(APPEND CMAKE_CUDA_FLAGS "--expt-relaxed-constexpr --extended-lambda --Werror=cross-execution-space-call -Xcudafe=--display_error_number")
   # string(APPEND CMAKE_CUDA_FLAGS " --forward-unknown-to-host-linker ${ARCH_FLAGS} -std=c++17 --expt-relaxed-constexpr --extended-lambda -Xcudafe \"--diag_suppress=implicit_return_from_non_void_function\"")
 
   target_link_libraries(inq INTERFACE CUDA::cublas CUDA::cufft CUDA::cusolver)
