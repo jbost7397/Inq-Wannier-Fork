@@ -32,12 +32,6 @@ target_include_directories(inq
      $<INSTALL_INTERFACE:src>
 )
 
-target_compile_options(inq INTERFACE
-  $<$<COMPILE_LANG_AND_ID:CUDA,NVIDIA>:
-  --expt-relaxed-constexpr --extended-lambda --Werror=cross-execution-space-call -Xcudafe=--display_error_number -Xcudafe=--diag_error=incompatible_assignment_operands -Xcudafe=--diag_error=returning_ptr_to_local_variable -Xcudafe=--diag_error=subscript_out_of_range -Xcudafe=--diag_error=used_before_set -Xcudafe=--diag_error=undefined_preproc_id -Xcudafe=--diag_error=implicit_func_decl -Xcudafe=--diag_error=implicit_return_from_non_void_function -Xcudafe=--diag_error=missing_type_specifier
-  >
-)
-
 enable_testing()
 include(CTest)
 
@@ -48,77 +42,14 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(ENABLE_CUDA)
   enable_language(CUDA)
-  find_package(CUDAToolkit 11.0.0 REQUIRED COMPONENTS cublas cufft cusolver)
+  find_package(CUDAToolkit 11.0 REQUIRED COMPONENTS cublas cufft cusolver)
 
 #  nvcc 11 doesn't work with gcc 13, use option `-DCMAKE_CUDA_HOST_COMPILER=g++-12.2`")
 
-# # temporary workaround to detect CUDA arch, for between the deprecation of FindCUDA in CMake 3.10 and the availability of FindCudaToolkit in CMake 3.17 # https://stackoverflow.com/a/68223399/225186
-  # if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
-	#   message("-DCMAKE_CUDA_ARCHITECTURES is not set, automatic architecture detection...")
-  #     include(FindCUDA/select_compute_arch)
-  #     CUDA_DETECT_INSTALLED_GPUS(INSTALLED_GPU_CCS_1)
-  #     string(STRIP "${INSTALLED_GPU_CCS_1}" INSTALLED_GPU_CCS_2)
-  #     string(REPLACE " " ";" INSTALLED_GPU_CCS_3 "${INSTALLED_GPU_CCS_2}")
-  #     string(REPLACE "." "" CUDA_ARCH_LIST "${INSTALLED_GPU_CCS_3}")
-  #     SET(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH_LIST})
-  #     set_property(GLOBAL PROPERTY CUDA_ARCHITECTURES "${CUDA_ARCH_LIST}")
-  #     set_property(GLOBAL PROPERTY CUDA_STANDARD 17)  # with cmake 3.13 this is not enough, -std=c++17 is needed below
-	#   message("setting CUDA_ARCHITECTURES global property to ${CUDA_ARCH_LIST}")
-  # else()
-	#   message("-DCMAKE_CUDA_ARCHITECTURES is set...")
-	#   set(CUDA_ARCH_LIST "${CMAKE_CUDA_ARCHITECTURES}")
-	#   message("setting CUDA_ARCH_LIST to ${CMAKE_CUDA_ARCHITECTURES}")
-  #     set_property(GLOBAL PROPERTY CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}")
-  #     set_property(GLOBAL PROPERTY CUDA_STANDARD 17)  # with cmake 3.13 this is not enough, -std=c++17 is needed below
-	#   message("setting CUDA_ARCHITECTURES global property to ${CMAKE_CUDA_ARCHITECTURES}")
-	#   set(ARCH_FLAGS "--generate-code=arch=compute_${CMAKE_CUDA_ARCHITECTURES},code=[compute_${CMAKE_CUDA_ARCHITECTURES},sm_${CMAKE_CUDA_ARCHITECTURES}]")
-  # endif()
+  string(APPEND CMAKE_CUDA_FLAGS "--extended-lambda --Werror=cross-execution-space-call -Xcudafe=--display_error_number")
+  # string(APPEND CMAKE_CUDA_FLAGS " --forward-unknown-to-host-linker ${ARCH_FLAGS} -std=c++17 --expt-relaxed-constexpr --extended-lambda -Xcudafe \"--diag_suppress=implicit_return_from_non_void_function\"")
 
-  message("... at the end ARCH_FLAGS was set to ${ARCH_FLAGS}")
-
-  string(APPEND CMAKE_CUDA_FLAGS " --forward-unknown-to-host-linker ${ARCH_FLAGS} -std=c++17 --expt-relaxed-constexpr --extended-lambda --Werror=cross-execution-space-call -Xcudafe \"--diag_suppress=implicit_return_from_non_void_function\"")
-
-  target_link_libraries(inq INTERFACE CUDA::cufft)
-  # if(${CUDA_CUFFT_LIBRARIES} STREQUAL "CUDA_cufft_LIBRARY-NOTFOUND")
-  #   include_directories("${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/include")
-  #   link_directories   ("${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/lib64")
-  #   link_libraries("-lcufft")
-
-  #   target_include_directories(inq INTERFACE "${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/include")
-  #   target_link_directories   (inq INTERFACE "${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/lib64")
-  #   target_link_libraries     (inq INTERFACE "-lcufft")
-  # else()
-  #   link_libraries(${CUDA_CUFFT_LIBRARIES})
-  #   target_link_libraries(inq INTERFACE ${CUDA_CUFFT_LIBRARIES})
-  # endif()
-
-  target_link_libraries(inq INTERFACE CUDA::cusolver)
-  # if(${CUDA_cusolver_LIBRARY} STREQUAL "CUDA_cusolver_LIBRARY-NOTFOUND")
-  #   include_directories("${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/include")
-  #   link_directories   ("${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/lib64")
-  #   link_libraries("-lcusolver")
-
-  #   target_include_directories(inq INTERFACE "${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/include")
-  #   target_link_directories   (inq INTERFACE "${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/lib64")
-  #   target_link_libraries     (inq INTERFACE "-lcusolver")
-  # else()
-  #   link_libraries(${CUDA_cusolver_LIBRARY})
-  #   target_link_libraries(inq INTERFACE ${CUDA_cusolver_LIBRARY})
-  # endif()
-
-  target_link_libraries(inq INTERFACE CUDA::cublas)
-  # if(${CUDA_cublas_LIBRARY} STREQUAL "CUDA_cublas_LIBRARY-NOTFOUND")
-  #   include_directories("${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/include")
-  #   link_directories   ("${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/lib64")
-  #   link_libraries("-lcublas")
-
-  #   target_include_directories(inq INTERFACE "${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/include")
-  #   target_link_directories   (inq INTERFACE "${CUDA_TOOLKIT_ROOT_DIR}/../../math_libs/lib64")
-  #   target_link_libraries     (inq INTERFACE "-lcublas")
-  # else()
-  #   link_libraries(${CUDA_cublas_LIBRARY})
-  #   target_link_libraries(inq INTERFACE ${CUDA_cublas_LIBRARY})
-  # endif()
+  target_link_libraries(inq INTERFACE CUDA::cublas CUDA::cufft CUDA::cusolver)
 
 	if(ENABLE_NCCL)
 		find_package(NCCL REQUIRED)
