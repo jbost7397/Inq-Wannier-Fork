@@ -31,10 +31,6 @@
 #define CUDA_MAX_DIM1 2147483647ULL
 #define CUDA_MAX_DIM23 65535
 
-
-#include <boost/archive/iterators/base64_from_binary.hpp>
-#include <boost/archive/iterators/transform_width.hpp>
-
 namespace gpu {
 
 void sync(){
