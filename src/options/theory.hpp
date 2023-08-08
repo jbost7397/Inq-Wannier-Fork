@@ -134,7 +134,7 @@ public:
 		return hartree_potential() or exchange() != exchange_functional::NONE or correlation() != correlation_functional::NONE;
 	}
 
-	auto induced_vector_potential(const double alpha = -4.0*M_PI){
+	auto induced_vector_potential(const double alpha = 4.0*M_PI){
 		theory inter = *this;
 		inter.alpha_ = alpha;
 		return inter;
