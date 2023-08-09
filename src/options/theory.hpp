@@ -196,7 +196,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		{
 			auto inter = options::theory{}.induced_vector_potential();
 			CHECK(inter.has_induced_vector_potential() == true);
-			CHECK(inter.alpha_value() == -4.0*M_PI);
+			CHECK(inter.alpha_value() == 4.0*M_PI);
 		}
 		{
 			auto inter = options::theory{}.induced_vector_potential(0.2);
