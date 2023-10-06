@@ -19,7 +19,7 @@ namespace inq {
 namespace observables {
 
 template <typename TimeType, typename TimeSeriesType, typename RetElementType = decltype(exp(complex{0.0, 1.0})*TimeSeriesType{}[0])>
-gpu::array<RetElementType, 1> spectrum(quantity<magnitude::energy> maxw, quantity<magnitude::energy> dw, TimeType const & time, TimeSeriesType const & time_series) {
+gpu::array<RetElementType, 1> spectrum(quantity<magnitude::energy> maxw, quantity<magnitude::energy> dw, TimeType const & time, TimeSeriesType const & time_series, const double volume = 1.0) {
 
 	CALI_CXX_MARK_FUNCTION;
 
@@ -34,7 +34,7 @@ gpu::array<RetElementType, 1> spectrum(quantity<magnitude::energy> maxw, quantit
   assert(freq_series.size() == nfreq);
 
   gpu::run(nfreq,
-           [fse = begin(freq_series), tim = begin(time), tse = begin(time_series), ntime, dw] GPU_LAMBDA (auto ifreq){
+           [fse = begin(freq_series), tim = begin(time), tse = begin(time_series), ntime, dw, volume] GPU_LAMBDA (auto ifreq){
              
              double ww = dw.in_atomic_units()*ifreq;
 
@@ -51,7 +51,7 @@ gpu::array<RetElementType, 1> spectrum(quantity<magnitude::energy> maxw, quantit
              //the damp function is zero for the last value
              //sum += 0.5*(tim[ntime - 1] - tim[ntime - 2])*exp(complex{0.0, 1.0}*ww*tim[ntime - 1])*tse[ntime - 1];
              
-             fse[ifreq] = sum;
+             fse[ifreq] = sum/volume;
            });
 
   return freq_series;
