@@ -35,7 +35,6 @@ void calculate_add(const occupations_array_type & occupations, field_set_type & 
 		
 		assert(density.set_size() == 4);
 		assert(std::get<1>(sizes(phi.spinor_matrix())) == phi.spinor_local_set_size());
-		assert(std::get<2>(sizes(phi.spinor_matrix())) == phi.spinor_dim());
 		
 		gpu::run(phi.basis().part().local_size(),
 						 [nst = phi.spinor_local_set_size(), occ = begin(occupations), ph = begin(phi.spinor_matrix()), den = begin(density.matrix())] GPU_LAMBDA (auto ipoint){

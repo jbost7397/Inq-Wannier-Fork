@@ -9,6 +9,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+#include <math/spinor.hpp>
 #include <basis/field_set.hpp>
 #include <states/index.hpp>
 
@@ -113,11 +114,12 @@ public:
 	}
 
 	auto spinor_matrix() const {
-		return fields_.matrix().rotated().partitioned(2).transposed().unrotated();
+		return boost::multi::array_ref<spinor<element_type>, 2>({basis().local_size(), spinor_local_set_size()}, reinterpret_cast<spinor<element_type> const *>(raw_pointer_cast(fields_.matrix().data_elements())));
 	}
 	
 	auto spinor_matrix() {
-		return fields_.matrix().rotated().partitioned(2).transposed().unrotated();
+		// return fields_.matrix().rotated().partitioned(2).transposed().unrotated(); // old code that returned a 3d array (with size 2 last dimension)
+		return boost::multi::array_ref<spinor<element_type>, 2>({basis().local_size(), spinor_local_set_size()}, reinterpret_cast<spinor<element_type>*>(raw_pointer_cast(fields_.matrix().data_elements())));
 	}
 	
 	auto hypercubic() const {
@@ -257,7 +259,8 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG){
 		
 		CHECK(std::get<0>(sizes(sporb.spinor_matrix())) == sporb.basis().local_size());
 		CHECK(std::get<1>(sizes(sporb.spinor_matrix())) == 12);
-		CHECK(std::get<2>(sizes(sporb.spinor_matrix())) == 2);
+
+		CHECK((void *) raw_pointer_cast(sporb.spinor_matrix().data_elements()) == (void *) raw_pointer_cast(sporb.matrix().data_elements()));
 		
 		//CHECK THE ORDER IS CORRECT IN THE SPINOR MATRIX
 		for(int ii = 0; ii < 12; ii++){
