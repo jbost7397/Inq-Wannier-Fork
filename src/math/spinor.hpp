@@ -27,15 +27,18 @@
 
 namespace inq {
 
+template <typename Type>
 class spinor {
 
-	complex comp_[2];
+		Type comp_[2];
 
 public:
-	
+
+	using element_type = Type;
+		
 	GPU_FUNCTION spinor() = default;
 
-	GPU_FUNCTION spinor(complex const & aa, complex const & bb){
+	GPU_FUNCTION spinor(Type const & aa, Type const & bb){
 		comp_[0] = aa;
 		comp_[1] = bb;	
 	}
@@ -61,11 +64,11 @@ public:
 	}
 	
 	GPU_FUNCTION friend auto operator*(complex const & scalar, spinor const & aa){
-		return spinor{scalar*aa[0], scalar*aa[1]};
+		return spinor<decltype(scalar*aa[0])>{scalar*aa[0], scalar*aa[1]};
 	}
 
 	GPU_FUNCTION friend auto operator*(spinor const & aa, complex const & scalar){
-		return spinor{aa[0]*scalar, aa[1]*scalar};
+		return spinor<decltype(aa[0]*scalar)>{aa[0]*scalar, aa[1]*scalar};
 	}
 
 };
@@ -84,9 +87,9 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 	using namespace inq;
 	using namespace Catch::literals;
 
-	spinor uu{complex{1.0, 0.0}, complex{0.0, -1.0}};
+	spinor<complex> uu{complex{1.0, 0.0}, complex{0.0, -1.0}};
 
-	spinor vv;
+	spinor<complex> vv;
 	vv = uu;
 
 	auto ss = vv + uu;
