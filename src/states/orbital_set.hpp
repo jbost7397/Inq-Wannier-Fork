@@ -238,7 +238,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG){
 	CHECK(orb_copy.matrix().size() == orb_copy.basis().local_size());
 	CHECK(orb_copy.matrix().transposed().size() ==  orb_copy.local_set_size());
 
-	states::orbital_set<basis::real_space, double> sporb(rs, 12, 2, {0.4, 0.22, -0.57}, 0, cart_comm);
+	states::orbital_set<basis::real_space, complex> sporb(rs, 12, 2, {0.4, 0.22, -0.57}, 0, cart_comm);
 
 	CHECK(sporb.spinors());
 	CHECK(sizes(sporb.basis())[0] == 28);
@@ -268,13 +268,13 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG){
 		for(int ii = 0; ii < 24; ii++) CHECK(sporb.matrix()[0][ii] == ii%12 + 1.0);
 	}
 	
-	states::orbital_set<basis::real_space, double> rr(rs, 12, 1, {0.4, 0.22, -0.57}, 0, cart_comm);
+	states::orbital_set<basis::real_space, complex> rr(rs, 12, 1, {0.4, 0.22, -0.57}, 0, cart_comm);
 	rr.fill(1.0/set_comm.size());
 	rr.all_reduce(set_comm);
 
 	for(int ii = 0; ii < rr.basis().local_size(); ii++){
 		for(int jj = 0; jj < rr.local_set_size(); jj++){
-			CHECK(rr.matrix()[ii][jj] == 1.0_a);
+			CHECK(real(rr.matrix()[ii][jj]) == 1.0_a);
 		}
 	}
 	
