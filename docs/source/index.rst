@@ -19,6 +19,8 @@ It concentrates on algorithms as a portability hardware layer, generic types, an
    :caption: Contents:
 
    introduction
+   installation
+   units
 
 Indices and tables
 ==================
