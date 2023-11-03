@@ -7,3 +7,6 @@ build
 build.*
 src/eigensolvers/BACKUP
 __pycache__
+
+#sphinx documentation
+docs/build
