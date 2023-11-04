@@ -7,3 +7,5 @@ Unlike other code tutorials we won't give you a full code for all the tasks, you
 So if something doesn't work go back and read the instructions again.
 To follow the tutorial you will need access to a Unix system were to compile and run Inq.
 We assume you have a basic knowledge of a Unix terminal, file manipulation and access to an editor of your choice.
+
+
