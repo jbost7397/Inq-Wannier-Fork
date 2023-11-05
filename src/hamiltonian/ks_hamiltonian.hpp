@@ -32,11 +32,23 @@
 ///
 /// The Kohn-Sham Hamiltonian
 ///
-///
+/// This math expression is from source file ks_hamiltonian.hpp
 ///@f[
 /// \left(-\frac{\hbar^2}{2m}\nabla^2 + v_\text{eff}(\mathbf r)\right) 
 /// \varphi_i(\mathbf r) = \varepsilon_i \varphi_i(\mathbf r)
 ///@f]
+///
+/// This is an example of a code block
+///
+///@code
+///auto & uniform_vector_potential() const {
+///         return uniform_vector_potential_;
+///     }
+///auto & uniform_vector_potential() {
+///         return uniform_vector_potential_;
+///     }
+///@endcode
+///
 namespace inq {
 namespace hamiltonian {
 
