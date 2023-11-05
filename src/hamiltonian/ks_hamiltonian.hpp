@@ -29,6 +29,9 @@
 #include <list>
 #include <unordered_map>
 
+///
+/// The Kohn-Sham Hamiltonian
+///
 namespace inq {
 namespace hamiltonian {
 

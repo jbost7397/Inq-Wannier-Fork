@@ -23,6 +23,7 @@ It concentrates on algorithms as a portability hardware layer, generic types, an
    units
    tutorials
    theory
+   code
 
 Indices and tables
 ==================

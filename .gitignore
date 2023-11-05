@@ -10,3 +10,8 @@ __pycache__
 
 #sphinx documentation
 docs/build
+
+#doxygen documentation
+docs/xml
+docs/html
+docs/latex
