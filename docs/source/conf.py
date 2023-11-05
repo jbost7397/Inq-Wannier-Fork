@@ -33,7 +33,7 @@ version = '0.9.0'
 extensions = ["breathe"]
 
 breathe_projects = {
-    "INQ": "/Users/rullah/Sandbox/inq/docs/xml"
+    "INQ": "/Users/rullah/Sandbox/inq/docs/doxy-build/xml"
 }
 breathe_default_project = "INQ"
 
@@ -71,6 +71,7 @@ templates_path = ['_templates']
 # This pattern also affects html_static_path and html_extra_path.
 exclude_patterns = []
 
+highlight_language = 'c++'
 
 # -- Options for HTML output -------------------------------------------------
 

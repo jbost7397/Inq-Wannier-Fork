@@ -12,6 +12,4 @@ __pycache__
 docs/build
 
 #doxygen documentation
-docs/xml
-docs/html
-docs/latex
+docs/doxy-build

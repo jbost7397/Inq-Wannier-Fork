@@ -4,5 +4,4 @@ Code
 Kohn-Sham Hamiltonian
 ---------------------
 
-.. doxygennamespace:: inq
-   :members:
+.. doxygenfile:: ks_hamiltonian.hpp
