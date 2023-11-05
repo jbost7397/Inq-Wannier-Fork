@@ -32,6 +32,11 @@
 ///
 /// The Kohn-Sham Hamiltonian
 ///
+///
+///@f[
+/// \left(-\frac{\hbar^2}{2m}\nabla^2 + v_\text{eff}(\mathbf r)\right) 
+/// \varphi_i(\mathbf r) = \varepsilon_i \varphi_i(\mathbf r)
+///@f]
 namespace inq {
 namespace hamiltonian {
 
