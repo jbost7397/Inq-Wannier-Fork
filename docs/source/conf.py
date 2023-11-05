@@ -30,7 +30,7 @@ version = '0.9.0'
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ["breathe"]
+extensions = ["breathe", "sphinx.ext.mathjax"]
 
 breathe_projects = {
     "INQ": "/Users/rullah/Sandbox/inq/docs/doxy-build/xml"
