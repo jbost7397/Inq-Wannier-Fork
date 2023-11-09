@@ -15,9 +15,15 @@
 #include <basis/real_space.hpp>
 #include <basis/field.hpp>
 #include <operations/gradient.hpp>
+#include <operations/sum.hpp>
+#include <matrix/gather_scatter.hpp>
 #include <systems/ions.hpp>
 #include <systems/electrons.hpp>
 #include <physics/constants.hpp>
+
+#include <cassert>
+#include <mpi.h>
+#include <tuple>
 
 namespace inq {
 namespace observables {
@@ -51,6 +57,171 @@ template <typename HamiltonianType>
 auto current(const systems::ions & ions, systems::electrons const & electrons, HamiltonianType const & ham){
   return operations::integral(current_density(ions, electrons, ham));
 }
+
+template <typename HamiltonianType>
+std::tuple<basis::field<basis::real_space, vector3<double, covariant>>, basis::field<basis::real_space, vector3<double, covariant>>> shift_ballistic_current_density( systems::electrons const & ground_electrons, systems::electrons const & electrons, HamiltonianType const & ham, int band_start, int band_end){
+
+  int nbands = band_end - band_start +1;
+  int nkpin_loc = electrons.kpin_size();
+  int npoints_loc = electrons.density_basis().local_size();
+
+  assert(electrons.kpin_size() == ground_electrons.kpin_size() );
+  assert(electrons.density_basis().local_size() == ground_electrons.density_basis().local_size() );
+
+  basis::field<basis::real_space, vector3<double, covariant>> bcdensity(electrons.density_basis());
+  bcdensity.fill(vector3<double, covariant>{0.0, 0.0, 0.0});
+
+  basis::field<basis::real_space, vector3<double, covariant>> scdensity(electrons.density_basis());
+  scdensity.fill(vector3<double, covariant>{0.0, 0.0, 0.0});
+
+
+  for (int ikpin=0; ikpin<nkpin_loc; ikpin++){
+   
+    //calculate gradient phi
+    auto phi = electrons.kpin()[ikpin];
+    auto phi0 = ground_electrons.kpin()[ikpin];
+    auto gphi = operations::gradient(phi0,  -1.0,   phi0.kpoint() + ham.uniform_vector_potential());
+    ham.projectors_all().position_commutator(phi0, gphi, phi0.kpoint() + ham.uniform_vector_potential());
+
+    decltype(phi) gphi_x(phi);
+    decltype(phi) gphi_y(phi);
+    decltype(phi) gphi_z(phi);
+
+    gphi_x.fill(0.0);
+    gphi_y.fill(0.0);
+    gphi_z.fill(0.0);
+
+   for(int jp=0; jp < std::get<0>(gphi.matrix().sizes()); jp++){
+     for(int jst=0; jst < std::get<1>(gphi.matrix().sizes()); jst++){
+       gphi_x.matrix()[jp][jst] = gphi.matrix()[jp][jst][0];
+       gphi_y.matrix()[jp][jst] = gphi.matrix()[jp][jst][1];
+       gphi_z.matrix()[jp][jst] = gphi.matrix()[jp][jst][2];
+     }
+   }
+
+    //get phi from other procs
+    gpu::array<long, 1> point_list0(phi0.basis().local_size());
+    {
+    long ip=0;
+
+    for(int ix = 0; ix < phi0.basis().local_sizes()[0]; ix++){
+      for(int iy = 0; iy < phi0.basis().local_sizes()[1]; iy++){
+        for(int iz = 0; iz < phi0.basis().local_sizes()[2]; iz++){	
+
+          auto ixg = phi0.basis().cubic_part(0).local_to_global(ix);
+          auto iyg = phi0.basis().cubic_part(1).local_to_global(iy);
+          auto izg = phi0.basis().cubic_part(2).local_to_global(iz);						
+
+          auto ii = phi0.basis().to_symmetric_range(ixg, iyg, izg);
+          auto isource = phi0.basis().from_symmetric_range(ii);
+
+          point_list0[ip] = phi0.basis().linear_index(isource[0], isource[1], isource[2]);
+          ip++;
+        }
+      }
+    }
+    }
+
+    gpu::array<long, 1> point_list(phi.basis().local_size());
+    {
+    long ip=0;
+
+    for(int ix = 0; ix < phi.basis().local_sizes()[0]; ix++){
+      for(int iy = 0; iy < phi.basis().local_sizes()[1]; iy++){
+        for(int iz = 0; iz < phi.basis().local_sizes()[2]; iz++){	
+
+          auto ixg = phi.basis().cubic_part(0).local_to_global(ix);
+          auto iyg = phi.basis().cubic_part(1).local_to_global(iy);
+          auto izg = phi.basis().cubic_part(2).local_to_global(iz);						
+
+          auto ii = phi.basis().to_symmetric_range(ixg, iyg, izg);
+          auto isource = phi.basis().from_symmetric_range(ii);
+
+          point_list[ip] = phi.basis().linear_index(isource[0], isource[1], isource[2]);
+          ip++;
+        }
+      }
+    }
+    }
+
+    auto olap = matrix::all_gather(operations::overlap(phi,phi0));
+
+    gpu::array<long, 1> state_list(nbands);
+    for(long ib=0; ib<nbands; ib++) state_list[ib] = (band_start-1)+ib;
+
+    auto remphi = parallel::get_remote_points(phi0, point_list0, state_list);
+    auto remgphi_x = parallel::get_remote_points(gphi_x, point_list, state_list);
+    auto remgphi_y = parallel::get_remote_points(gphi_y, point_list, state_list);
+    auto remgphi_z = parallel::get_remote_points(gphi_z, point_list, state_list);
+
+    for (int ib1=0; ib1<nbands; ib1++){
+      for (int ib2=0; ib2<nbands; ib2++){
+
+        gpu::array<vector3<complex, covariant>,1> phigradphi(npoints_loc);
+
+        
+        for (int ip=0; ip<npoints_loc; ip++){
+          vector3<complex,covariant> gg = {remgphi_x[ip][ib2], remgphi_y[ip][ib2], remgphi_z[ip][ib2]};
+          phigradphi[ip] = conj(remphi[ip][ib1]) * gg;
+        }
+
+        if (ib1==ib2){//ballistic current
+          gpu::run( npoints_loc,
+              [nst = phi.set_part().local_size(),  ib1, ib2, ikpin,
+              occ = begin(electrons.occupations()[ikpin]),
+              ol = begin(olap),
+              pgp = begin(phigradphi),
+              bcdens = begin(bcdensity.linear())]
+              GPU_LAMBDA (auto ip){
+              for(int ist = 0; ist < nst; ist++){
+              auto ist_global = phi.set_part().local_to_global(ist);
+              auto value = occ[ist]* conj(ol[ib1][ist_global]) * ol[ib2][ist_global] * pgp[ip];
+              bcdens[ip] += imag(value);
+
+              }  
+
+              });
+        }
+        else{//shift current
+          gpu::run( npoints_loc,
+              [nst = phi.set_part().local_size(),  ib1, ib2, ikpin,
+              occ = begin(electrons.occupations()[ikpin]),
+              ol = begin(olap),
+              pgp = begin(phigradphi),
+              scdens = begin(scdensity.linear())]
+              GPU_LAMBDA (auto ip){
+              for(int ist = 0; ist < nst; ist++){
+              auto ist_global = phi.set_part().local_to_global(ist);
+              auto value = occ[ist]* conj(ol[ib1][ist_global]) * ol[ib2][ist_global] * pgp[ip];
+              scdens[ip] += imag(value);
+              }  
+
+              });
+        }
+
+      }
+    }
+  }
+
+
+  scdensity.all_reduce(electrons.kpin_states_comm());
+  bcdensity.all_reduce(electrons.kpin_states_comm());
+  return std::make_tuple(scdensity,bcdensity);
+}
+
+template <typename HamiltonianType>
+auto shift_ballistic_current(systems::electrons const & ground_electrons, systems::electrons const & electrons, HamiltonianType const & ham, int band_start, int band_end){
+
+  auto sc_bc = shift_ballistic_current_density(ground_electrons, electrons, ham, band_start, band_end);
+  auto scdensity = std::get<0>(sc_bc);
+  auto bcdensity = std::get<1>(sc_bc);
+  return std::make_tuple(operations::integral(scdensity), operations::integral(bcdensity));
+}
+
+
+
+
+
 
 }
 }

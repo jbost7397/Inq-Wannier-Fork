@@ -22,6 +22,7 @@
 #include <utils/profiling.hpp>
 
 #include <chrono>
+#include <tuple>
 
 namespace inq {
 namespace real_time {
@@ -101,6 +102,15 @@ public:
   auto current() const {
     return ions_.cell().metric().to_cartesian(observables::current(ions_, electrons_, ham_));
   }
+
+  auto shift_ballistic_current(systems::electrons const & ground_electrons, int band_start, int band_end) const {
+    auto sc_bc = observables::shift_ballistic_current(ground_electrons, electrons_, ham_, band_start, band_end);
+    auto sc = ions_.cell().metric().to_cartesian(std::get<0>(sc_bc));
+    auto bc = ions_.cell().metric().to_cartesian(std::get<1>(sc_bc));
+    return std::make_tuple(sc,bc);
+  }
+
+
 	auto projected_occupation(const systems::electrons & gs) {
 		auto calc = [](auto occ, auto v) {
 			return occ*norm(v);
