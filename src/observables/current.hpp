@@ -168,13 +168,14 @@ std::tuple<basis::field<basis::real_space, vector3<double, covariant>>, basis::f
         if (ib1==ib2){//ballistic current
           gpu::run( npoints_loc,
               [nst = phi.set_part().local_size(),  ib1, ib2, ikpin,
+              b_part = phi.set_part(),
               occ = begin(electrons.occupations()[ikpin]),
               ol = begin(olap),
               pgp = begin(phigradphi),
               bcdens = begin(bcdensity.linear())]
               GPU_LAMBDA (auto ip){
               for(int ist = 0; ist < nst; ist++){
-              auto ist_global = phi.set_part().local_to_global(ist);
+              auto ist_global = b_part.local_to_global(ist).value();
               auto value = occ[ist]* conj(ol[ib1][ist_global]) * ol[ib2][ist_global] * pgp[ip];
               bcdens[ip] += imag(value);
 
@@ -185,13 +186,14 @@ std::tuple<basis::field<basis::real_space, vector3<double, covariant>>, basis::f
         else{//shift current
           gpu::run( npoints_loc,
               [nst = phi.set_part().local_size(),  ib1, ib2, ikpin,
+              b_part = phi.set_part(),
               occ = begin(electrons.occupations()[ikpin]),
               ol = begin(olap),
               pgp = begin(phigradphi),
               scdens = begin(scdensity.linear())]
               GPU_LAMBDA (auto ip){
               for(int ist = 0; ist < nst; ist++){
-              auto ist_global = phi.set_part().local_to_global(ist);
+              auto ist_global = b_part.local_to_global(ist).value();
               auto value = occ[ist]* conj(ol[ib1][ist_global]) * ol[ib2][ist_global] * pgp[ip];
               scdens[ip] += imag(value);
               }  
