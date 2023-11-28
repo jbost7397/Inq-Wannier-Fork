@@ -43,7 +43,7 @@ int main(int argc, char ** argv){
 	}
 
 	auto kick = perturbations::kick{ions.cell(), {0.01, 0.0, 0.0}, perturbations::gauge::velocity};
-	
+
 	auto const dt = 0.010000;
 	long nsteps = 100; //413.41373/dt;
 	
@@ -77,7 +77,11 @@ int main(int argc, char ** argv){
 		}
 	};
 	
-	real_time::propagate<>(ions, electrons, output, functional.induced_vector_potential(4.0*M_PI), options::real_time{}.num_steps(nsteps).dt(dt*1.0_atomictime).etrs(), ions::propagator::fixed{}, kick);
+	real_time::propagate<>(
+		ions, electrons, output, functional.induced_vector_potential(4.0*M_PI), options::real_time{}.num_steps(nsteps).dt(dt*1.0_atomictime).etrs(), ions::propagator::fixed{}, 
+		// perturbations::laser({0.1, 0.0, 0.0}, 1.0_eV, perturbations::gauge::velocity)
+		kick
+	);
 	
 	return energy_match.fail();
 	
