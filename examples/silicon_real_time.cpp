@@ -29,12 +29,21 @@ int main(int argc, char ** argv){
 	ions.insert_fractional("Si", {0.0,  0.5,  0.5 });
 	ions.insert_fractional("Si", {0.25, 0.75, 0.75});
 
-	auto nk = 8;
-	
+	auto const nk = 4;  // increase later for production run
+
 	systems::electrons electrons(env.par(), ions, input::kpoints::grid({nk, nk, nk}, false), options::electrons{}.spacing(a/32));
 
 	auto functional = options::theory{}.pbe();
 	
+	// try{
+	// 	electrons.load("silicon_restart");
+	// } catch (...) {
+	// 	ground_state::initial_guess(ions, electrons);
+	// 	ground_state::calculate(ions, electrons, options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-4_Ha));
+	// 	ground_state::calculate(ions, electrons, functional, inq::options::ground_state{}.energy_tolerance(1e-8_Ha));
+	// 	electrons.save("silicon_restart");
+	// }
+
 	if(not electrons.try_load("silicon_restart")){
 		ground_state::initial_guess(ions, electrons);
 		ground_state::calculate(ions, electrons, options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-4_Ha));
@@ -42,10 +51,9 @@ int main(int argc, char ** argv){
 		electrons.save("silicon_restart");
 	}
 
-	auto kick = perturbations::kick{ions.cell(), {0.01, 0.0, 0.0}, perturbations::gauge::velocity};
 
 	auto const dt = 0.010000;
-	long nsteps = 100; //413.41373/dt;
+	long nsteps = 10000; //413.41373/dt;
 	
 	gpu::array<double, 1> time(nsteps);
 	gpu::array<double, 1> cur(nsteps);
@@ -53,7 +61,10 @@ int main(int argc, char ** argv){
 	gpu::array<double, 1> aind(nsteps);
 
 	std::ofstream file;
-	if(electrons.root()) file.open("current.dat");
+	if(electrons.root()) {
+		file.open("current.dat");
+		file << "# time, current_x, A_x total (ext + induced)\n";
+	}
 	
 	auto output = [&](auto data){
 		
@@ -69,14 +80,32 @@ int main(int argc, char ** argv){
 		if(data.root() and data.every(50)){
 			auto spectrum = observables::spectrum(20.0_eV, 0.01_eV, time({0, iter - 1}), cur({0, iter - 1}));  
 			
-			std::ofstream file("spectrum.dat");
-			
-			for(int ifreq = 0; ifreq < spectrum.size(); ifreq++){
-				file << ifreq*in_atomic_units(0.01_eV) << '\t' << real(spectrum[ifreq]) << '\t' << imag(spectrum[ifreq]) << std::endl;
+			{
+				std::ofstream sfile("spectrum.dat");
+				sfile << "# Frequency (eV) \t Current Real \t Imaginary\n";
+				
+				for(int ifreq = 0; ifreq != spectrum.size(); ++ifreq) {
+					sfile << ifreq*in_atomic_units(0.01_eV) << '\t' << real(spectrum[ifreq]) << '\t' << imag(spectrum[ifreq]) << std::endl;
+				}
+			}
+			{
+				std::vector<double> hhg(spectrum.size());
+				for(int ifreq = 0; ifreq != spectrum.size(); ++ifreq) {
+					hhg[ifreq] = norm(spectrum[ifreq] * ifreq*in_atomic_units(0.01_eV));
+				}
+
+				std::ofstream hfile("hhg.dat");
+				hfile << "# Frequency (eV) \t HHG Real \t Imaginary\n";
+
+				for(int ifreq = 0; ifreq != hhg.size(); ++ifreq) {
+					hfile << ifreq*in_atomic_units(0.01_eV) << '\t' << hhg[ifreq] << std::endl;
+				}
 			}
 		}
 	};
-	
+
+	auto kick = perturbations::kick{ions.cell(), {0.01, 0.0, 0.0}, perturbations::gauge::velocity};
+
 	real_time::propagate<>(
 		ions, electrons, output, functional.induced_vector_potential(4.0*M_PI), options::real_time{}.num_steps(nsteps).dt(dt*1.0_atomictime).etrs(), ions::propagator::fixed{}, 
 		// perturbations::laser({0.1, 0.0, 0.0}, 1.0_eV, perturbations::gauge::velocity)
