@@ -1,6 +1,12 @@
 Introduction
 ============
 
+.. caution::
+     This is draft documentation.
+.. note::
+
+     INQ is under active development.
+
 INQ is based on density functional theory (DFT).
 It can calculate ground state properties in DFT, and also excited states using time-dependent DFT (TDDFT) in real-time and linear response.
 It implements different approximations for the exchange and correlation part: semi-local functionals like LDAs, GGAs, and metaGGAs, and hybrid functionals that are implemented through the ACE approach for fast execution.

@@ -1,6 +1,12 @@
 Theory
 ======
 
+.. caution::
+     This is draft documentation.
+.. note::
+
+     INQ is under active development.
+
 Total Energy
 ------------
 

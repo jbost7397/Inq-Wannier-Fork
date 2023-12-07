@@ -1,6 +1,12 @@
 Units
 =====
 
+.. caution::
+     This is draft documentation.
+.. note::
+
+     INQ is under active development.
+
 here are several units systems that are used at the atomic level, and many times they are mixed.
 For users this can be cumbersome, confusing, and many times leads to errors.
 To avoid this problem, in inq all the quantities must explicitly include the unit they are in.

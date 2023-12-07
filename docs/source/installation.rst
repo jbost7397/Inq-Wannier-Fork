@@ -1,6 +1,12 @@
 Compilation and Installation
 ============================
 
+.. caution::
+     This is draft documentation.
+.. note::
+
+     INQ is under active development.
+
 Compiling and running on a local computer
 -----------------------------------------
 
