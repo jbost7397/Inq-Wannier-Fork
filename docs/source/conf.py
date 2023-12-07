@@ -72,6 +72,7 @@ templates_path = ['_templates']
 exclude_patterns = []
 
 highlight_language = 'c++'
+pygments_style = 'sphinx'
 
 # -- Options for HTML output -------------------------------------------------
 
