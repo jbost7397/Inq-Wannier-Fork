@@ -11,7 +11,7 @@ Welcome to INQ's documentation!
 
 .. note::
 
-   INQ is under active development. The source code is available from `Gitlab <https://gitlab.com/rraffiu/inq>`_ .
+   INQ is under active development. The source code is available from `Gitlab. <https://gitlab.com/rraffiu/inq>`_
 
 **INQ** is an engine for electronic structure calculations.
 It can work in three ways, as a standalone electronic structure code, as a library to implement complex electronic structure methods, or as a proxy-app to evaluate the performance of electronic structure algorithms in high-performance computing platforms.
