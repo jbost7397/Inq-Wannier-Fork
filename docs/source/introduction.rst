@@ -3,6 +3,7 @@ Introduction
 
 .. caution::
      This is draft documentation.
+
 .. note::
 
      INQ is under active development.
