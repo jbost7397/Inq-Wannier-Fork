@@ -60,6 +60,11 @@ inline constexpr bool ::boost::multi::force_element_trivial_default_construction
 #endif
 #include <multi/adaptors/blas.hpp>
 
+namespace cpu {
+template <class type, size_t dim, class allocator = std::allocator<type>>
+using array = boost::multi::array<type, dim, allocator>;
+}
+
 namespace gpu {
 
 #ifdef ENABLE_GPU
