@@ -40,7 +40,7 @@ GPU_FUNCTION inline Type1 add(Type1 * val, Type2 const & incr){
 #endif
   return atomicAdd(val, incr);
 #else
-	cpu::atomic::add(val, incr);
+	return cpu::atomic::add(val, incr);
 #endif
 }
 
