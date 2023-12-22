@@ -80,9 +80,9 @@ static long check_run(long size){
 	
 	gpu::array<long, 1> list(size, 0l);
 
-	gpu::run(size,
+	cpu::run(size,
 					 [itlist = begin(list)] (auto ii){
-						 gpu::atomic::add(&(itlist[ii]), ii + 1);
+						 cpu::atomic::add(&(itlist[ii]), ii + 1);
 					 });
 	
 	long diff = 0;
@@ -96,10 +96,10 @@ static long check_run(long size1, long size2){
 	
 	gpu::array<long, 3> list({size1, size2, 2}, 0l);
 	
-	gpu::run(size1, size2, 
+	cpu::run(size1, size2, 
 					 [itlist = begin(list)] (auto ii, auto jj){
-						 gpu::atomic::add(&(itlist[ii][jj][0]), ii + 1);
-						 gpu::atomic::add(&(itlist[ii][jj][1]), jj + 1);
+						 cpu::atomic::add(&(itlist[ii][jj][0]), ii + 1);
+						 cpu::atomic::add(&(itlist[ii][jj][1]), jj + 1);
 					 });
 	
 	long diff = 0;
@@ -117,11 +117,11 @@ static long check_run(long size1, long size2, long size3){
 	
 	gpu::array<long, 4> list({size1, size2, size3, 3}, 0l);
 
-	gpu::run(size1, size2, size3,
+	cpu::run(size1, size2, size3,
 					 [itlist = begin(list)] (auto ii, auto jj, auto kk){
-						 gpu::atomic::add(&(itlist[ii][jj][kk][0]), ii + 1);
-						 gpu::atomic::add(&(itlist[ii][jj][kk][1]), jj + 1);
-						 gpu::atomic::add(&(itlist[ii][jj][kk][2]), kk + 1);
+						 cpu::atomic::add(&(itlist[ii][jj][kk][0]), ii + 1);
+						 cpu::atomic::add(&(itlist[ii][jj][kk][1]), jj + 1);
+						 cpu::atomic::add(&(itlist[ii][jj][kk][2]), kk + 1);
 					 });
 		
 	long diff = 0;
@@ -142,12 +142,12 @@ static long check_run(long size1, long size2, long size3, long size4){
 
 	gpu::array<long, 5> list({size1, size2, size3, size4, 4}, 0l);
 
-	gpu::run(size1, size2, size3, size4,
+	cpu::run(size1, size2, size3, size4,
 					 [itlist = begin(list)] (auto ii, auto jj, auto kk, auto ll){
-						 gpu::atomic::add(&(itlist[ii][jj][kk][ll][0]), ii + 1);
-						 gpu::atomic::add(&(itlist[ii][jj][kk][ll][1]), jj + 1);
-						 gpu::atomic::add(&(itlist[ii][jj][kk][ll][2]), kk + 1);
-						 gpu::atomic::add(&(itlist[ii][jj][kk][ll][3]), ll + 1);
+						 cpu::atomic::add(&(itlist[ii][jj][kk][ll][0]), ii + 1);
+						 cpu::atomic::add(&(itlist[ii][jj][kk][ll][1]), jj + 1);
+						 cpu::atomic::add(&(itlist[ii][jj][kk][ll][2]), kk + 1);
+						 cpu::atomic::add(&(itlist[ii][jj][kk][ll][3]), ll + 1);
 					 });
 		
 	long diff = 0;

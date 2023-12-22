@@ -15,6 +15,20 @@
 #include <math/complex.hpp>
 #include <math/vector3.hpp>
 
+
+namespace cpu {
+namespace atomic {
+
+template <typename Type1, typename Type2>
+inline Type1 add(Type1 * val, Type2 const & incr){
+  auto old_val = *val;
+  *val += incr;
+  return old_val;
+}
+
+}
+}
+
 namespace gpu {
 namespace atomic {
 
@@ -26,9 +40,7 @@ GPU_FUNCTION inline Type1 add(Type1 * val, Type2 const & incr){
 #endif
   return atomicAdd(val, incr);
 #else
-  auto old_val = *val;
-  *val += incr;
-  return old_val;
+	cpu::atomic::add(val, incr);
 #endif
 }
 
