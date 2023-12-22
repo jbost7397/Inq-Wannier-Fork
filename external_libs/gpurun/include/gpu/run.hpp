@@ -11,6 +11,7 @@
 
 #include <inq_config.h>
 
+#include <gpu/cpu_run.hpp>
 #include <gpu/host.hpp>
 
 #define CUDA_MAX_DIM1 2147483647ULL
@@ -76,7 +77,7 @@ void run(size_t size, kernel_type kernel){
 	sync();
 	
 #else
-	for(size_t ii = 0; ii < size; ii++) kernel(ii);
+	cpu::run(size, kernel);
 #endif
   
 }
@@ -116,11 +117,7 @@ void run(size_t sizex, size_t sizey, kernel_type kernel){
 	sync();
 	
 #else
-	for(size_t iy = 0; iy < sizey; iy++){
-		for(size_t ix = 0; ix < sizex; ix++){
-			kernel(ix, iy);
-		}
-	}
+	cpu::run(sizex, sizey, kernel);
 #endif
 }
 
@@ -153,13 +150,7 @@ void run(size_t sizex, size_t sizey, size_t sizez, kernel_type kernel){
 	sync();
 	
 #else
-	for(size_t iz = 0; iz < sizez; iz++){
-		for(size_t iy = 0; iy < sizey; iy++){
-			for(size_t ix = 0; ix < sizex; ix++){
-				kernel(ix, iy, iz);
-			}
-		}
-	}
+	cpu::run(sizex, sizey, sizez, kernel);
 #endif
 }
 	
@@ -180,12 +171,14 @@ __global__ void run_kernel_4(unsigned sizex, unsigned sizey, unsigned sizez, uns
 template <class kernel_type>
 void run(size_t sizex, size_t sizey, size_t sizez, size_t sizew, kernel_type kernel){
 
+	
+#ifdef ENABLE_GPU
+
 	if(sizex == 1){
 		run(sizey, sizez, sizew, [kernel] GPU_LAMBDA (auto iy, auto iz, auto iw){ kernel(0, iy, iz, iw); });
 		return;
 	}
 	
-#ifdef ENABLE_GPU
 	if(sizex == 0 or sizey == 0 or sizez == 0 or sizew == 0) return;
 
 	auto blocksize = max_blocksize(run_kernel_4<kernel_type>);
@@ -200,15 +193,7 @@ void run(size_t sizex, size_t sizey, size_t sizez, size_t sizew, kernel_type ker
 	sync();
 
 #else
-	for(size_t iw = 0; iw < sizew; iw++){
-		for(size_t iz = 0; iz < sizez; iz++){
-			for(size_t iy = 0; iy < sizey; iy++){
-				for(size_t ix = 0; ix < sizex; ix++){
-					kernel(ix, iy, iz, iw);
-				}
-			}
-		}
-	}
+	cpu::run(sizex, sizey, sizez, sizew, kernel);
 #endif
 }
 
