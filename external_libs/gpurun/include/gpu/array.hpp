@@ -109,14 +109,13 @@ struct caching_allocator : Base_ {
 };
 #endif
 
-template <class type, size_t dim,
 #ifdef ENABLE_GPU
-					class allocator = caching_allocator<type>
-#else
-					class allocator = std::allocator<type>
-#endif
-					>
+template <class type, size_t dim, class allocator = caching_allocator<type>>
 using array = boost::multi::array<type, dim, allocator>;
+#else
+template <class type, size_t dim, class allocator = std::allocator<type>>
+using array = boost::multi::array<type, dim, allocator>;
+#endif
 
 template <typename ArrayType>
 void prefetch(ArrayType const & array){
