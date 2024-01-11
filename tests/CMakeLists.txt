@@ -16,13 +16,12 @@ foreach(TEST_FILE ${TEST_SRCS})
   target_include_directories(${TEST_EXE} PRIVATE ${catch2_SOURCE_DIR}/src)
   target_link_libraries(${TEST_EXE} PRIVATE Catch2::Catch2 inq)
   add_test(NAME inq::tests::${TEST_EXE} COMMAND ${PROJECT_BINARY_DIR}/scripts/run_test.sh ./${TEST_EXE})
-  if(ENABLE_CUDA)
-    set_source_files_properties(${TEST_FILE} PROPERTIES LANGUAGE CUDA)
+  if(ENABLE_GPU)
+    set_source_files_properties(${TEST_FILE} PROPERTIES LANGUAGE ${GPU_LANGUAGE})
   endif()
 endforeach()
 
 set_tests_properties(inq::tests::h2o_real_time PROPERTIES DEPENDS inq::tests::h2o_ground_state)
-set_tests_properties(inq::tests::al4h1_td PROPERTIES DEPENDS inq::tests::al4h1)
 
 #PYTHON TESTS
 

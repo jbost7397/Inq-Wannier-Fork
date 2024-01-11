@@ -113,6 +113,18 @@ public:
 	}
 
 	template <typename KptsType = input::kpoints::list>
+	electrons(const inq::systems::ions & ions, KptsType const & kpts, const options::electrons & conf = {}):
+		electrons(input::environment::global().par(), ions, conf, kpts)
+	{
+	}
+
+	template <typename KptsType = input::kpoints::list>	
+	electrons(const inq::systems::ions & ions, const options::electrons & conf = {}, KptsType const & kpts = input::kpoints::gamma()):
+		electrons(input::environment::global().par(), ions, conf, kpts)
+	{
+	}
+	
+	template <typename KptsType = input::kpoints::list>
 	electrons(input::parallelization const & dist, const inq::systems::ions & ions, KptsType const & kpts, const options::electrons & conf = {}):
 		electrons(dist, ions, conf, kpts)
 	{
@@ -257,7 +269,7 @@ public:
 		if(logger()){
 			logger()->info("parallelization:");
 			logger()->info("  electrons divided among {} processes ({} kpoints x {} domains x {} states)", full_comm_.size(), full_comm_.shape()[2], full_comm_.shape()[1], full_comm_.shape()[0]);
-#ifdef ENABLE_CUDA
+#ifdef ENABLE_GPU
 			for(int iproc = 0; iproc < full_comm_.size(); iproc++){
 				logger()->info("  process {} has gpu id {}", iproc, gpuids[iproc]);
 			}

@@ -15,17 +15,9 @@
 
 #include <spdlog/spdlog.h>
 
-#include <inq_config.h>  // for ENABLE_CUDA macro
+#include <inq_config.h>
 
 #include <mpi3/environment.hpp>
-
-#ifdef ENABLE_CUDA
-#include <multi/array.hpp>  // for multi::array
-#include <thrust/system/cuda/memory.h>  // for ::thrust::cuda::allocator
-#include <csetjmp>
-#include <csignal>
-#endif
-
 #include <cassert>
 #include <optional>
 
@@ -86,6 +78,15 @@ public:
 	
 	auto par() const {
 		return parallelization(base_comm_);
+	}
+
+	auto & comm() const {
+		return base_comm_;
+	}
+
+	static auto const & global() {
+		static environment global_env;
+		return global_env;
 	}
 		
 };

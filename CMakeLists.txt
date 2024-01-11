@@ -79,6 +79,29 @@ if(ENABLE_CUDA)
 		target_include_directories(inq INTERFACE ${NCCL_INCLUDE_DIRS})
 		target_link_libraries(inq INTERFACE ${NCCL_LIBRARIES})
   endif()
+
+	set(ENABLE_GPU TRUE)	
+	set(GPU_LANGUAGE CUDA)
+endif()
+
+if(ENABLE_HIP)
+  enable_language(HIP)
+
+	find_package(hip REQUIRED)
+  find_package(hipFFT REQUIRED)
+  find_package(hipblas REQUIRED)
+
+	target_link_libraries(inq INTERFACE hip::host)
+  target_link_libraries(inq INTERFACE hip::hipfft)
+  target_link_libraries(inq INTERFACE roc::hipblas)
+
+	find_package(rocprim REQUIRED CONFIG PATHS "/opt/rocm/rocprim") 	# On ROCm rocThrust requires rocPRIM
+	find_package(rocthrust REQUIRED CONFIG PATHS "/opt/rocm/rocthrust")
+
+	target_link_libraries(inq INTERFACE roc::rocthrust)
+
+	set(ENABLE_GPU TRUE)
+	set(GPU_LANGUAGE HIP)
 endif()
 
 link_libraries(m)
