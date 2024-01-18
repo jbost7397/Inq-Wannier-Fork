@@ -12,13 +12,16 @@
 #include <magnitude/length.hpp>
 
 #include <stdexcept>
-#include <filesystem>
 #include <fstream>
 
 #include <math/vector3.hpp>
 #include <valarray>
 #include <array>
 
+#include <experimental/filesystem>
+namespace std {
+    namespace filesystem = std::experimental::filesystem;
+}
 namespace inq {
 namespace systems {
 
