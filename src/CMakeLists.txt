@@ -12,7 +12,7 @@ add_library(unit_tests_main OBJECT main/unit_tests_main.cpp)
 if(ENABLE_GPU)
 	set_source_files_properties(main/unit_tests_main.cpp PROPERTIES LANGUAGE ${GPU_LANGUAGE})
 endif()
-target_link_libraries(unit_tests_main PRIVATE inq Catch2::Catch2WithMain)
+target_link_libraries(unit_tests_main PRIVATE linq Catch2::Catch2WithMain)
 
 file(GLOB INCLUDE_FILES RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} */*.hpp)
 
@@ -46,4 +46,4 @@ endif()
 
 add_executable(all_unit_tests)
 target_sources(all_unit_tests PRIVATE all_unit_tests.cpp)
-target_link_libraries(all_unit_tests PRIVATE unit_tests_main Catch2::Catch2 inq)
+target_link_libraries(all_unit_tests PRIVATE unit_tests_main Catch2::Catch2 linq)

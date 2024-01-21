@@ -34,15 +34,15 @@ set(FETCHCONTENT_UPDATES_DISCONNECTED ON CACHE BOOL "")
 set(FETCHCONTENT_QUIET FALSE)
 Include(FetchContent)
 
-add_library(inq INTERFACE)
-target_include_directories(inq
+add_library(linq INTERFACE)
+target_include_directories(linq
     INTERFACE
      $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
      $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}>
      $<INSTALL_INTERFACE:src>
 )
 
-target_compile_options(inq INTERFACE
+target_compile_options(linq INTERFACE
   $<$<COMPILE_LANG_AND_ID:CUDA,NVIDIA>:
   --expt-relaxed-constexpr --extended-lambda --Werror=cross-execution-space-call -Xcudafe=--display_error_number -Xcudafe=--diag_error=incompatible_assignment_operands -Xcudafe=--diag_error=returning_ptr_to_local_variable -Xcudafe=--diag_error=subscript_out_of_range -Xcudafe=--diag_error=used_before_set -Xcudafe=--diag_error=undefined_preproc_id -Xcudafe=--diag_error=implicit_func_decl -Xcudafe=--diag_error=implicit_return_from_non_void_function -Xcudafe=--diag_error=missing_type_specifier
   >
@@ -51,7 +51,7 @@ target_compile_options(inq INTERFACE
 enable_testing()
 include(CTest)
 
-target_compile_features(inq INTERFACE cxx_std_17)
+target_compile_features(linq INTERFACE cxx_std_17)
 
 if(ENABLE_CUDA)
   enable_language(CUDA)
@@ -65,19 +65,19 @@ if(ENABLE_CUDA)
   #   string(REPLACE "." "" CUDA_ARCH_LIST "${INSTALLED_GPU_CCS_3}")
   #   SET(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH_LIST})
   #   # set_property(GLOBAL PROPERTY CUDA_ARCHITECTURES "${CUDA_ARCH_LIST}")
-  #   # set_property(TARGET inq PROPERTY CUDA_ARCHITECTURES "${CUDA_ARCH_LIST}")
+  #   # set_property(TARGET linq PROPERTY CUDA_ARCHITECTURES "${CUDA_ARCH_LIST}")
     SET(CMAKE_CUDA_ARCHITECTURES native)
   endif()
 
 
   # string(APPEND CMAKE_CUDA_FLAGS " --forward-unknown-to-host-linker ${ARCH_FLAGS} -std=c++17 --expt-relaxed-constexpr --extended-lambda --Werror=cross-execution-space-call -Xcudafe \"--diag_suppress=implicit_return_from_non_void_function\"")
 
-  target_link_libraries(inq INTERFACE CUDA::cublas CUDA::cufft CUDA::cudart CUDA::cusolver)
+  target_link_libraries(linq INTERFACE CUDA::cublas CUDA::cufft CUDA::cudart CUDA::cusolver)
 
 	if(ENABLE_NCCL)
 		find_package(NCCL REQUIRED)
-		target_include_directories(inq INTERFACE ${NCCL_INCLUDE_DIRS})
-		target_link_libraries(inq INTERFACE ${NCCL_LIBRARIES})
+		target_include_directories(linq INTERFACE ${NCCL_INCLUDE_DIRS})
+		target_link_libraries(linq INTERFACE ${NCCL_LIBRARIES})
   endif()
 
 	set(ENABLE_GPU TRUE)	
@@ -91,14 +91,14 @@ if(ENABLE_HIP)
   find_package(hipFFT REQUIRED)
   find_package(hipblas REQUIRED)
 
-	target_link_libraries(inq INTERFACE hip::host)
-  target_link_libraries(inq INTERFACE hip::hipfft)
-  target_link_libraries(inq INTERFACE roc::hipblas)
+	target_link_libraries(linq INTERFACE hip::host)
+  target_link_libraries(linq INTERFACE hip::hipfft)
+  target_link_libraries(linq INTERFACE roc::hipblas)
 
 	find_package(rocprim REQUIRED CONFIG PATHS "/opt/rocm/rocprim") 	# On ROCm rocThrust requires rocPRIM
 	find_package(rocthrust REQUIRED CONFIG PATHS "/opt/rocm/rocthrust")
 
-	target_link_libraries(inq INTERFACE roc::rocthrust)
+	target_link_libraries(linq INTERFACE roc::rocthrust)
 
 	set(ENABLE_GPU TRUE)
 	set(GPU_LANGUAGE HIP)
@@ -113,7 +113,7 @@ FortranCInterface_VERIFY(CXX)
 FortranCInterface_HEADER(FC.h MACRO_NAMESPACE "FC_")
 
 find_package(MPI REQUIRED COMPONENTS CXX)
-target_link_libraries(inq INTERFACE MPI::MPI_CXX)
+target_link_libraries(linq INTERFACE MPI::MPI_CXX)
 
 message(STATUS "MPI Executable for running programs:" ${MPIEXEC_EXECUTABLE})
 message(STATUS "MPI number of processors detected on the host system: " ${MPIEXEC_MAX_NUMPROCS})
@@ -130,15 +130,15 @@ check_cxx_symbol_exists(MPI_Isendrecv_replace mpi.h HAVE_MPI_ISENDRECV_REPLACE)
 find_package(PkgConfig REQUIRED)
 pkg_search_module(FFTW fftw3 IMPORTED_TARGET)
 if(FFTW_FOUND)
-  target_link_libraries(inq INTERFACE PkgConfig::FFTW)
+  target_link_libraries(linq INTERFACE PkgConfig::FFTW)
 else()  # some systems do not have fftw3 registered in pkg-config, in this case it falls back to good old -lfftw3 which can fail later
   if(NOT DEFINED FFTW_LIBRARIES)
     message(WARNING "FFTW not detected by pkg-config, using fftw3 or define -DFFTW_LIBRARIES (e.g. =-lfftw3) and -DFFTW_INCLUDE_DIRS (e.g. =/usr/include)")
-    target_link_libraries(inq INTERFACE fftw3)
-    target_include_directories(inq INTERFACE ${FFTW_INCLUDE_DIRS})
+    target_link_libraries(linq INTERFACE fftw3)
+    target_include_directories(linq INTERFACE ${FFTW_INCLUDE_DIRS})
   else()
-    target_link_libraries(inq INTERFACE ${FFTW_LIBRARIES})
-    target_include_directories(inq INTERFACE ${FFTW_INCLUDE_DIRS})
+    target_link_libraries(linq INTERFACE ${FFTW_LIBRARIES})
+    target_include_directories(linq INTERFACE ${FFTW_INCLUDE_DIRS})
   endif()
   check_cxx_symbol_exists(fftw_plan_dft_1d fftw3.h FFTW3_CHECKED)
   if(FFTW_FOUND)
@@ -150,24 +150,24 @@ endif()
 if(ENABLE_HEFFTE)
   find_package(Heffte REQUIRED)
   #get_target_property(HEFFTE_INCLUDE_DIRS Heffte::Heffte INTERFACE_INCLUDE_DIRECTORIES)
-  target_link_libraries(inq INTERFACE Heffte::Heffte)
+  target_link_libraries(linq INTERFACE Heffte::Heffte)
 endif()
 
 find_package(BLAS REQUIRED)
-target_link_libraries(inq INTERFACE ${BLAS_LIBRARIES})
+target_link_libraries(linq INTERFACE ${BLAS_LIBRARIES})
 
 # ESSL doesn't implement dgelss_, needed in the code, may need to override set(BLA_VENDOR Generic)
 find_package(LAPACK REQUIRED)
-target_link_libraries(inq INTERFACE ${LAPACK_LIBRARIES})
+target_link_libraries(linq INTERFACE ${LAPACK_LIBRARIES})
 
 #GPU::RUN
 add_subdirectory(${PROJECT_SOURCE_DIR}/external_libs/gpurun)
 set(gpurun_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/external_libs/gpurun/include)
-target_include_directories(inq INTERFACE ${PROJECT_SOURCE_DIR}/external_libs/gpurun/include)
+target_include_directories(linq INTERFACE ${PROJECT_SOURCE_DIR}/external_libs/gpurun/include)
 
 #PSEUDOPOD
 add_subdirectory(external_libs/pseudopod)
-target_include_directories(inq INTERFACE ${PROJECT_BINARY_DIR}/external_libs/pseudopod)
+target_include_directories(linq INTERFACE ${PROJECT_BINARY_DIR}/external_libs/pseudopod)
 
 #LIBXC
 message("\nCONFIGURING LIBXC\n")
@@ -177,19 +177,19 @@ add_subdirectory(external_libs/libxc EXCLUDE_FROM_ALL)
 message("\nDONE CONFIGURING LIBXC\n")
 set(Libxc_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/external_libs/libxc/src/ ${PROJECT_BINARY_DIR}/external_libs/libxc ${PROJECT_BINARY_DIR}/external_libs/libxc/gen_funcidx)
 
-target_include_directories(inq INTERFACE ${Libxc_INCLUDE_DIRS})
-target_link_libraries(inq INTERFACE ${Libxc_LIBRARIES} xc)
+target_include_directories(linq INTERFACE ${Libxc_INCLUDE_DIRS})
+target_link_libraries(linq INTERFACE ${Libxc_LIBRARIES} xc)
 
 # Multi
 #set(multi_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/external_libs/multi/include)
 add_subdirectory(${PROJECT_SOURCE_DIR}/external_libs/multi)
-target_link_libraries(inq INTERFACE multi)
+target_link_libraries(linq INTERFACE multi)
 
 # MPI3
 set(bmpi3_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/external_libs/mpi3/include)
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/external_libs/mpi3)
-target_link_libraries(inq INTERFACE bmpi3)
+target_link_libraries(linq INTERFACE bmpi3)
 
 ########################
 # SPDLOG
@@ -210,8 +210,8 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(spdlog)
 
 set(spdlog_INCLUDE_DIRS ${spdlog_SOURCE_DIR}/include/)
-target_include_directories(inq INTERFACE ${spdlog_INCLUDE_DIRS})
-target_link_libraries(inq INTERFACE spdlog)
+target_include_directories(linq INTERFACE ${spdlog_INCLUDE_DIRS})
+target_link_libraries(linq INTERFACE spdlog)
 
 ########################
 # SPGLIB
@@ -236,12 +236,12 @@ set(CMAKE_BUILD_TYPE ${MAKE_BUILD_TYPE_BACKUP})
 
 set(spglib_INCLUDE_DIRS ${spglib_SOURCE_DIR}/src/)
 
-target_include_directories(inq
+target_include_directories(linq
   INTERFACE
   ${spglib_INCLUDE_DIRS}
 )
-target_link_libraries(inq INTERFACE symspg_static)
-target_link_libraries(inq
+target_link_libraries(linq INTERFACE symspg_static)
+target_link_libraries(linq
    INTERFACE
    ${spglib_LIBRARIES}
 )
@@ -250,14 +250,14 @@ target_link_libraries(inq
 # GEMMI
 ########################
 
-target_include_directories(inq INTERFACE ${PROJECT_SOURCE_DIR}/external_libs/gemmi/include)
+target_include_directories(linq INTERFACE ${PROJECT_SOURCE_DIR}/external_libs/gemmi/include)
 
 ########################
 # ZLIB
 ########################
 
 find_package(ZLIB REQUIRED)
-target_link_libraries(inq INTERFACE ZLIB::ZLIB)
+target_link_libraries(linq INTERFACE ZLIB::ZLIB)
 
 ########################
 # BOOST
@@ -270,8 +270,8 @@ if(Boost_VERSION LESS_EQUAL "1.53.0")  # 105300
 	add_compile_options(-DBOOST_NO_AUTO_PTR)
 endif()
 
-target_include_directories(inq INTERFACE Boost::serialization Boost::system)
-target_link_libraries(inq INTERFACE Boost::serialization Boost::system)
+target_include_directories(linq INTERFACE Boost::serialization Boost::system)
+target_link_libraries(linq INTERFACE Boost::serialization Boost::system)
 
 ########################
 # PYTHON
@@ -286,8 +286,8 @@ add_subdirectory(python)
 
 include_directories(${PROJECT_BINARY_DIR})
 
-target_include_directories(inq INTERFACE ${PROJECT_BINARY_DIR})
-target_include_directories(inq INTERFACE ${PROJECT_SOURCE_DIR}/external_libs)
+target_include_directories(linq INTERFACE ${PROJECT_BINARY_DIR})
+target_include_directories(linq INTERFACE ${PROJECT_SOURCE_DIR}/external_libs)
 
 configure_file(inq_config.h.in inq_config.h)
 configure_file(scripts/run_test.sh.in scripts/run_test.sh @ONLY)

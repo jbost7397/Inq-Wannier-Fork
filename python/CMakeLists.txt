@@ -29,7 +29,7 @@ pybind11_add_module(_pinq MODULE
 )
 
 target_link_libraries(_pinq PUBLIC)
-target_link_libraries(_pinq PRIVATE inq)
+target_link_libraries(_pinq PRIVATE linq)
 
 #DO NOT INSTALL FROM HERE
 #
