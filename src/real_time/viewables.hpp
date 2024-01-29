@@ -98,6 +98,10 @@ public:
 	auto num_electrons() const {
 		return operations::integral(electrons_.density());
 	}
+        
+        auto electrons() const {
+          return electrons_;
+        }
 
   auto current() const {
     return ions_.cell().metric().to_cartesian(observables::current(ions_, electrons_, ham_));
@@ -109,6 +113,32 @@ public:
     auto bc = ions_.cell().metric().to_cartesian(std::get<1>(sc_bc));
     return std::make_tuple(sc,bc);
   }
+
+  auto shift_current_contribs(systems::electrons const & ground_electrons, int band_start, int band_end, int coh_start, int coh_end) const {
+    auto res = observables::shift_current_contribs(ground_electrons, electrons_, ham_, band_start, band_end, coh_start, coh_end);
+    auto sc = std::get<0>(res);
+    auto bc = std::get<1>(res);
+    auto sc_contribs = std::get<2>(res);
+    auto bc_contribs = std::get<3>(res);
+    auto o_contribs = std::get<4>(res);
+
+    auto sc1 = ions_.cell().metric().to_cartesian(sc);
+    auto bc1 = ions_.cell().metric().to_cartesian(bc);
+    
+    gpu::array<vector3<double,cartesian>,1> bc_contribs1(bc_contribs.num_elements());
+    for(int ii=0; ii<bc_contribs.num_elements(); ii++){
+      bc_contribs1[ii] = ions_.cell().metric().to_cartesian(bc_contribs[ii]);
+    }
+
+    gpu::array<vector3<double,cartesian>,1> sc_contribs1(sc_contribs.num_elements());
+    for(int ii=0; ii<sc_contribs.num_elements(); ii++){
+      sc_contribs1[ii] = ions_.cell().metric().to_cartesian(sc_contribs[ii]);
+    }
+
+    return std::make_tuple(sc1, bc1, sc_contribs1, bc_contribs1, o_contribs);
+  }
+
+  void save(std::string filename) const {electrons_.save(filename);}
 
 
 	auto projected_occupation(const systems::electrons & gs) {
