@@ -342,6 +342,7 @@ std::tuple< vector3<double, covariant>, vector3<double, covariant>, gpu::array<v
         if (ib1==ib2){//ballistic current
           gpu::run( npoints_loc,
               [nst = phi.set_part().local_size(),  ib1, ib2, ikpin,
+              st_part = phi.set_part(),
               occ = begin(electrons.occupations()[ikpin]),
               ol = begin(olap),
               pgp = begin(phigradphi),
@@ -349,7 +350,12 @@ std::tuple< vector3<double, covariant>, vector3<double, covariant>, gpu::array<v
               bpbcontribs = begin(bands_pts_bcontribs)]
               GPU_LAMBDA (auto ip){
               for(int ist = 0; ist < nst; ist++){
-              auto value = occ[ist]* conj(ol[ib1][ist]) * ol[ib2][ist] * pgp[ip];
+
+
+              auto ist_global = st_part.local_to_global(ist).value();
+              auto value = occ[ist]* conj(ol[ib1][ist_global]) * ol[ib2][ist_global] * pgp[ip];
+
+              //auto value = occ[ist]* conj(ol[ib1][ist]) * ol[ib2][ist] * pgp[ip];
               //bcdens[ip] += imag(value);
 
               bpbcontribs[ib1][ip] += imag(value);
@@ -361,6 +367,7 @@ std::tuple< vector3<double, covariant>, vector3<double, covariant>, gpu::array<v
         else{//shift current
           gpu::run( npoints_loc,
               [nst = phi.set_part().local_size(),  ib1, ib2, ikpin, coh_start, coh_end, ic,
+              st_part = phi.set_part(),
               occ = begin(electrons.occupations()[ikpin]),
               ol = begin(olap),
               pgp = begin(phigradphi),
@@ -368,8 +375,12 @@ std::tuple< vector3<double, covariant>, vector3<double, covariant>, gpu::array<v
               bpscontribs = begin(bands_pts_scontribs)]
               GPU_LAMBDA (auto ip){
               for(int ist = 0; ist < nst; ist++){
-              auto value = occ[ist]* conj(ol[ib1][ist]) * ol[ib2][ist] * pgp[ip];
-              scdens[ip] += imag(value);
+
+              auto ist_global = st_part.local_to_global(ist).value();
+              auto value = occ[ist]* conj(ol[ib1][ist_global]) * ol[ib2][ist_global] * pgp[ip];
+
+              //auto value = occ[ist]* conj(ol[ib1][ist]) * ol[ib2][ist] * pgp[ip];
+              //scdens[ip] += imag(value);
 
               if(ib1>=coh_start-1 && ib1<=coh_end-1 && ib2>=coh_start-1 && ib2<=coh_end-1){
                 bpscontribs[ic][ip] += imag(value);
@@ -381,9 +392,14 @@ std::tuple< vector3<double, covariant>, vector3<double, covariant>, gpu::array<v
 
         if(ib1==ib2){
           double bo = 0;
-          //should reduce over states if states are distributed
           for(int ist = 0; ist < phi.set_part().local_size(); ist++){
-            bo += real(electrons.occupations()[ikpin][ist] * conj(olap[ib1][ist]) * olap[ib2][ist]);
+            auto ist_global = phi.set_part().local_to_global(ist).value();
+            bo += real(electrons.occupations()[ikpin][ist] * conj(olap[ib1][ist_global]) * olap[ib2][ist_global]);
+          }
+
+          // reduce over states if states are distributed
+          if(electrons.states_comm().size() > 1) {
+            electrons.states_comm().all_reduce_in_place_n(&bo, 1, std::plus<>{});
           }
           bands_k_ocontribs[ib1][ikpin] = bo;
         }
