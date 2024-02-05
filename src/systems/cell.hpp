@@ -278,7 +278,7 @@ namespace systems {
 			auto periodicity = periodicity_;
 			ar & make_nvp("periodicity", periodicity);
 
-			if constexpr(Archive::is_loading::value) {
+			if(Archive::is_loading::value) {
 				operator=({lattice[0], lattice[1], lattice[2], periodicity});
 			}
 		}
