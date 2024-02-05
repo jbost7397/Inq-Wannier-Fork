@@ -12,6 +12,11 @@
 #include <magnitude/length.hpp>
 #include <utils/load_save.hpp>
 
+#include <boost/archive/xml_iarchive.hpp>
+#include <boost/archive/xml_oarchive.hpp>
+
+#include <boost/serialization/nvp.hpp>
+
 #include <stdexcept>
 #include <filesystem>
 #include <fstream>
@@ -30,9 +35,10 @@ namespace systems {
     vector_type reciprocal_[3];
     double volume_;
 		int periodicity_;
-		
-  public:
 
+	cell() = default;  // embrace Partially Formed values
+
+  public:
     cell(vector3<double> const& a0, vector3<double> const& a1, vector3<double> const& a2, int arg_periodicity = 3){
 			
 			periodicity_ = arg_periodicity;
@@ -107,13 +113,12 @@ namespace systems {
 			out << std::endl;
     }
 
-		template<class OStream>
-		friend OStream& operator<<(OStream& os, cell const& self){
-			self.info(os);
-			return os;
-	  }
-		
-		////////////////////////////////////////////////////////////////////////////////
+	friend std::ostream& operator<<(std::ostream& os, cell const& self){
+		self.info(os);
+		return os;
+	}
+
+	////////////////////////////////////////////////////////////////////////////////
 
     bool operator==(const cell& c) const {
 			return ( lattice_[0]==c.lattice_[0] && lattice_[1]==c.lattice_[1] && lattice_[2]==c.lattice_[2] );
@@ -262,6 +267,26 @@ namespace systems {
 			return is_orthogonal() and lattice_[0][1] < 1e-8 and lattice_[0][2] < 1e-8;
 		}
 
+		template<class Archive>
+		void serialize(Archive& arxiv, unsigned int /*version*/) {
+			using boost::serialization::make_nvp;
+
+			auto lattice = lattice_;
+
+			for(int ilat = 0; ilat < 3; ilat++) {
+				for(int idir = 0; idir < 3; idir++) {
+					arxiv & make_nvp("a_ij", lattice[ilat][idir]);
+				}
+			}
+
+			auto periodicity = periodicity_;
+			arxiv & make_nvp("periodicity", periodicity);
+
+			if constexpr(Archive::is_loading::value) {
+				operator=({lattice[0], lattice[1], lattice[2], periodicity});
+			}
+		}
+
 		void save(parallel::communicator & comm, std::string const & dirname) const {
 			auto error_message = "INQ error: Cannot save the cell to directory '" + dirname + "'.";
 
@@ -281,43 +306,37 @@ namespace systems {
 					comm.broadcast_value(exception_happened);					
 					throw std::runtime_error(error_message);
 				}
-				lattice_file.precision(25);
-				
-				lattice_file << lattice_[0] << '\n' << lattice_[1] << '\n' << lattice_[2] << std::endl;
-				
-				utils::save_value(comm, dirname + "/periodicity", periodicity_, error_message);
-				
+
+				boost::archive::xml_oarchive xoa(lattice_file);
+				using boost::serialization::make_nvp;
+
+				xoa << make_nvp("cell", (*this));
+
 				exception_happened = false;
 				comm.broadcast_value(exception_happened);
-				
 			} else {
 				comm.broadcast_value(exception_happened);
 				if(exception_happened) throw std::runtime_error(error_message);
 			}
-			
+
 			comm.barrier();
 		}
 
 		static auto load(std::string const & dirname) {
 			auto error_message = "INQ error: Cannot load the cell from directory '" + dirname + "'.";
-			
-			vector3<double> lat[3];
-			
-			auto lattice_file = std::ifstream(dirname + "/lattice");			
+
+			auto lattice_file = std::ifstream(dirname + "/lattice");
 			if(not lattice_file) throw std::runtime_error(error_message);
-			
-			for(int ilat = 0; ilat < 3; ilat++){
-				for(int idir = 0; idir < 3; idir++){
-					lattice_file >> lat[ilat][idir];
-				}
-			}
-			
-			int per;
-			utils::load_value(dirname + "/periodicity", per, error_message);
-			
-			return cell(lat[0], lat[1], lat[2], per);
+
+			cell ret;
+
+			boost::archive::xml_iarchive xia(lattice_file);
+			using boost::serialization::make_nvp;
+
+			xia >> make_nvp("cell", ret);
+
+			return ret;
 		}
-		
   };
 
 }
