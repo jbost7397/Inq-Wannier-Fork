@@ -15,6 +15,8 @@
 
 #include <inq_config.h>
 
+#include <boost/core/nvp.hpp>  // for boost::serializaiton::nvp // this dependency can go away using Archive traits
+
 #include<array>
 
 namespace inq {
@@ -266,6 +268,17 @@ public:
 	friend std::istream& operator >>(std::istream & in, vector3 & vv){
 		in >> vv.vec_[0] >> vv.vec_[1] >> vv.vec_[2] ;
 		return in;
+	}
+
+	template<class Archive>
+	void serialize(Archive& ar, unsigned int /*version*/) {
+		using boost::serialization::make_nvp;
+
+		ar
+			& make_nvp("v0", vec_[0])
+			& make_nvp("v1", vec_[1])
+			& make_nvp("v2", vec_[2])
+		;
 	}
 
 	// CAST

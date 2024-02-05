@@ -15,7 +15,7 @@
 #include <boost/archive/xml_iarchive.hpp>
 #include <boost/archive/xml_oarchive.hpp>
 
-#include <boost/serialization/nvp.hpp>
+#include <boost/core/nvp.hpp>  // for boost::serializaiton::nvp // this dependency can go away using Archive traits
 
 #include <stdexcept>
 #include <filesystem>
@@ -268,19 +268,15 @@ namespace systems {
 		}
 
 		template<class Archive>
-		void serialize(Archive& arxiv, unsigned int /*version*/) {
+		void serialize(Archive& ar, unsigned int /*version*/) {
 			using boost::serialization::make_nvp;
 
 			auto lattice = lattice_;
 
-			for(int ilat = 0; ilat < 3; ilat++) {
-				for(int idir = 0; idir < 3; idir++) {
-					arxiv & make_nvp("a_ij", lattice[ilat][idir]);
-				}
-			}
+			ar & make_nvp("a_0", lattice[0]) & make_nvp("a_1", lattice[1]) & make_nvp("a_2", lattice[2]);
 
 			auto periodicity = periodicity_;
-			arxiv & make_nvp("periodicity", periodicity);
+			ar & make_nvp("periodicity", periodicity);
 
 			if constexpr(Archive::is_loading::value) {
 				operator=({lattice[0], lattice[1], lattice[2], periodicity});
@@ -303,14 +299,13 @@ namespace systems {
 				
 				auto lattice_file = std::ofstream(dirname + "/lattice");
 				if(not lattice_file) {
-					comm.broadcast_value(exception_happened);					
+					comm.broadcast_value(exception_happened);
 					throw std::runtime_error(error_message);
 				}
 
-				boost::archive::xml_oarchive xoa(lattice_file);
 				using boost::serialization::make_nvp;
 
-				xoa << make_nvp("cell", (*this));
+				boost::archive::xml_oarchive(lattice_file) << make_nvp("cell", (*this));
 
 				exception_happened = false;
 				comm.broadcast_value(exception_happened);
@@ -328,12 +323,10 @@ namespace systems {
 			auto lattice_file = std::ifstream(dirname + "/lattice");
 			if(not lattice_file) throw std::runtime_error(error_message);
 
-			cell ret;
+			cell ret;  // partially formed state
 
-			boost::archive::xml_iarchive xia(lattice_file);
 			using boost::serialization::make_nvp;
-
-			xia >> make_nvp("cell", ret);
+			boost::archive::xml_iarchive(lattice_file) >> make_nvp("cell", ret);
 
 			return ret;
 		}
