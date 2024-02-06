@@ -12,6 +12,8 @@
 #include <magnitude/length.hpp>
 #include <utils/load_save.hpp>
 
+#include <boost/core/nvp.hpp>  // for boost::serializaiton::nvp // this dependency can go away using Archive traits
+
 #include <stdexcept>
 #include <filesystem>
 #include <fstream>
@@ -38,7 +40,7 @@ namespace systems {
 			periodicity_ = arg_periodicity;
 
 			assert(periodicity_ >= 0);
-			assert(periodicity_ <= 3);			
+			assert(periodicity_ <= 3);          
 			
 			lattice_[0] = a0;
 			lattice_[1] = a1;
@@ -257,6 +259,21 @@ namespace systems {
 			return is_orthogonal() and lattice_[0][1] < 1e-8 and lattice_[0][2] < 1e-8;
 		}
 
+		template<class Archive>
+		void serialize(Archive& ar, unsigned int /*version*/) {
+			using boost::serialization::make_nvp;
+
+			auto lattice = lattice_;
+			ar & make_nvp("lattice", lattice);
+
+			auto periodicity = periodicity_;
+			ar & make_nvp("periodicity", periodicity);
+
+			if(Archive::is_loading::value) {
+				new(this) cell({lattice[0], lattice[1], lattice[2], periodicity});
+			}
+		}
+
 		void save(parallel::communicator & comm, std::string const & dirname) const {
 			auto error_message = "INQ error: Cannot save the cell to directory '" + dirname + "'.";
 
@@ -306,6 +323,9 @@ namespace systems {
 #undef INQ_SYSTEMS_CELL_UNIT_TEST
 
 #include <catch2/catch_all.hpp>
+
+#include <boost/archive/xml_iarchive.hpp>
+#include <boost/archive/xml_oarchive.hpp>
 
 TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 
@@ -741,12 +761,12 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 
 			{
 				auto vv = read_cell.metric().to_contravariant(vector3<double, cartesian>{9.627, 7.092, 4.819});
-				CHECK(fabs(vv[0]) < 1e-12);			
+				CHECK(fabs(vv[0]) < 1e-12);         
 				CHECK(vv[1] == 1.0_a);
 				CHECK(fabs(vv[2]) < 1e-12);
 
 				auto vv2 = read_cell.metric().to_cartesian(vv);
-				CHECK(vv2[0] == 9.627_a);				
+				CHECK(vv2[0] == 9.627_a);               
 				CHECK(vv2[1] == 7.092_a);
 				CHECK(vv2[2] == 4.819_a);
 
@@ -775,5 +795,28 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 
 		}
   }
+
+    SECTION("Cell serialization"){
+		auto const cell = systems::cell::cubic(10.2_b).periodic();
+
+		CHECK_THROWS(cell.save(comm, "\0"));
+
+		using boost::serialization::make_nvp;
+
+		if(comm.root()) {
+			std::ofstream ofs("cell_serialization.xml");
+			boost::archive::xml_oarchive xoa(ofs);
+			xoa << make_nvp("cell", cell);
+		}
+		comm.barrier();
+
+		auto cell2 = systems::cell::cubic(999.0_b);
+
+		std::ifstream ifs("cell_serialization.xml");
+		boost::archive::xml_iarchive xia(ifs);
+		xia >> make_nvp("cell2", cell2);
+
+		CHECK(cell == cell2);
+	}
 }
 #endif
