@@ -98,8 +98,7 @@ namespace systems {
 			
     double volume() const { return volume_; }
 
-		template<class OStream>
-		friend OStream & operator<<(OStream & out, cell const& self){
+		friend std::ostream& operator<<(std::ostream& out, cell const& self){
 			out << "Cell:" << '\n';
 			out << "  Lattice vectors [b] = " << self.lattice_[0] << '\n';
 			out << "                        " << self.lattice_[1] << '\n';
