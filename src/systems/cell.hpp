@@ -31,8 +31,8 @@ namespace systems {
   class cell{
 		using vector_type = vector3<double>;
   private:
-    vector_type lattice_[3];
-    vector_type reciprocal_[3];
+		std::array<vector_type, 3> lattice_;
+    std::array<vector_type, 3> reciprocal_;
     double volume_;
 		int periodicity_;
 
@@ -98,27 +98,23 @@ namespace systems {
 			
     double volume() const { return volume_; }
 
-    template <class output_stream>
-    void info(output_stream & out) const {
+		template<class OStream>
+		friend OStream & operator<<(OStream & out, cell const& self){
 			out << "Cell:" << '\n';
-			out << "  Lattice vectors [b] = " << lattice_[0] << '\n';
-			out << "                        " << lattice_[1] << '\n';
-			out << "                        " << lattice_[2] << '\n';
-			out << "  Volume [b^3]        = " << volume_ << '\n';
-			out << "  Periodicity         = " << periodicity_;
-			if(periodicity_ == 0) out << "d (finite)\n";
-			if(periodicity_ == 1) out << "d (wire)\n";
-			if(periodicity_ == 2) out << "d (slab)\n";
-			if(periodicity_ == 3) out << "d (fully periodic)\n";
+			out << "  Lattice vectors [b] = " << self.lattice_[0] << '\n';
+			out << "                        " << self.lattice_[1] << '\n';
+			out << "                        " << self.lattice_[2] << '\n';
+			out << "  Volume [b^3]        = " << self.volume_ << '\n';
+			out << "  Periodicity         = " << self.periodicity_;
+			if(self.periodicity_ == 0) out << "d (finite)\n";
+			if(self.periodicity_ == 1) out << "d (wire)\n";
+			if(self.periodicity_ == 2) out << "d (slab)\n";
+			if(self.periodicity_ == 3) out << "d (fully periodic)\n";
 			out << std::endl;
-    }
-
-	friend std::ostream& operator<<(std::ostream& os, cell const& self){
-		self.info(os);
-		return os;
-	}
-
-	////////////////////////////////////////////////////////////////////////////////
+			return out;
+	  }
+		
+		////////////////////////////////////////////////////////////////////////////////
 
     bool operator==(const cell& c) const {
 			return ( lattice_[0]==c.lattice_[0] && lattice_[1]==c.lattice_[1] && lattice_[2]==c.lattice_[2] );
