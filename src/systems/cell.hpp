@@ -270,7 +270,7 @@ namespace systems {
 			ar & make_nvp("periodicity", periodicity);
 
 			if(Archive::is_loading::value) {
-				new(this) cell({lattice[0], lattice[1], lattice[2], periodicity});
+				operator=({lattice[0], lattice[1], lattice[2], periodicity});
 			}
 		}
 
