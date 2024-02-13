@@ -163,14 +163,26 @@ public:
 	
 	void propagate_induced_vector_potential(double const dt, vector3<double,covariant> const & current) {
 		if(not has_induced_vector_potential()) return;
-		solvers::velocity_verlet::propagate_positions(dt, theory_.alpha_value()*current/density_basis_.cell().volume(), induced_vector_potential_vel_, induced_vector_potential_);
+		if(theory_.has_induced_vector_potential()){
+			solvers::velocity_verlet::propagate_positions(dt, theory_.alpha_value()*current/density_basis_.cell().volume(), induced_vector_potential_vel_, induced_vector_potential_);
+		}
+		else if (theory_.has_proca()){
+			auto accel = (4*M_PI*current/density_basis_.cell().volume() - theory_.a1_value()*induced_vector_potential_vel_ - theory_.a0_value()*induced_vector_potential_)/theory_.a2_value();
+			solvers::velocity_verlet::propagate_positions(dt, accel, induced_vector_potential_vel_, induced_vector_potential_);
+		}
 	}
 
 	////////////////////////////////////////////////////////////////////////////////////////////
 	
 	void propagate_induced_vector_potential_derivative(double const dt, vector3<double, covariant> const & current) {
 		if(not has_induced_vector_potential()) return;
-		solvers::velocity_verlet::propagate_velocities(dt, theory_.alpha_value()*current/density_basis_.cell().volume(), induced_vector_potential_vel_);
+		if(theory_.has_induced_vector_potential()){
+			solvers::velocity_verlet::propagate_velocities(dt, theory_.alpha_value()*current/density_basis_.cell().volume(), induced_vector_potential_vel_);
+		}
+		else if(theory_.has_proca()){
+			auto accel = (4*M_PI*current/density_basis_.cell().volume() - theory_.a1_value()*induced_vector_potential_vel_ - theory_.a0_value()*induced_vector_potential_)/theory_.a2_value();
+			solvers::velocity_verlet::propagate_velocities(dt, accel, induced_vector_potential_vel_);
+		}
 	}
 
 	////////////////////////////////////////////////////////////////////////////////////////////
@@ -183,7 +195,7 @@ public:
 	////////////////////////////////////////////////////////////////////////////////////////////
 
 	bool has_induced_vector_potential() const {
-		return theory_.has_induced_vector_potential();
+		return theory_.has_induced_vector_potential() || theory_.has_proca();
 	}
 		
 	

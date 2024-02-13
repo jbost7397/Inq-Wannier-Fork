@@ -27,6 +27,9 @@ class theory {
 	std::optional<int> correlation_;
 	std::optional<double> alpha_;
 
+	std::optional<double> a2_;
+	std::optional<double> a1_;
+	std::optional<double> a0_;
 public:
 	
 	auto non_interacting() const {
@@ -136,6 +139,33 @@ public:
 	auto alpha_value() const {
 		assert(alpha_.has_value());
 		return alpha_.value();
+	}
+
+	auto proca(const double a2, const double a1, const double a0){
+		theory inter = *this;
+		inter.a2_ = a2;
+		inter.a1_ = a1;
+		inter.a0_ = a0;
+		return inter;
+	}
+
+	auto has_proca() const {
+		return (a2_.has_value() && a1_.has_value() && a0_.has_value());
+	}
+
+	auto a2_value() const {
+		assert(a2_.has_value());
+		return a2_.value();
+	}
+
+	auto a1_value() const {
+		assert(a1_.has_value());
+		return a1_.value();
+	}
+
+	auto a0_value() const {
+		assert(a0_.has_value());
+		return a0_.value();
 	}
 	
 	void save(parallel::communicator & comm, std::string const & dirname) const {
