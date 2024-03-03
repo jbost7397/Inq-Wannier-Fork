@@ -14,4 +14,26 @@
    obj:*libhwloc.so.*
 }
 
+{
+   LIBUCS
+   Memcheck:Leak
+   match-leak-kinds: all
+   ...
+   obj:*libucs.so.*
+}
 
+{
+   NVIDIA OPENCL
+   Memcheck:Leak
+   match-leak-kinds: all
+   ...
+   obj:*libnvidia-opencl.so.*
+}
+
+{
+   DL
+   Memcheck:Leak
+   match-leak-kinds: all
+   ...
+   fun:_dl_catch_exception
+}
