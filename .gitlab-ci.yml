@@ -16,6 +16,7 @@ variables:
   OMPI_MCA_rmaps_base_oversubscribe: "1" 
   CODECOV_TOKEN: "5855e536-b784-400e-b0b2-b1d01c2287a9"
   DEBIAN_FRONTEND: "noninteractive"
+  CUDA_MPS_PIPE_DIRECTORY: "/tmp/nvidia-mps"
 
 stages:
   - config-check
