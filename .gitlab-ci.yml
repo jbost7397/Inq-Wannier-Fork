@@ -704,11 +704,11 @@ nccl-mpich:
       - export PATH=/usr/local/cuda/bin:$PATH
       - nvcc -V
       - cmake ../ -DCMAKE_BUILD_TYPE=Debug --install-prefix=`pwd`/../install -DENABLE_CUDA=yes -DCMAKE_CUDA_ARCHITECTURES=70 -DMPI_EXECUTABLE_SUFFIX=.mpich -DENABLE_NCCL=YES -DNCCL_ROOT=/usr/local/nccl
-      - time make -j16
-      - time make -j16 install
-      - INQ_EXEC_ENV="mpirun.mpich -np 1" ctest --output-on-failure --timeout 600 -j4
-      - cd src ; INQ_EXEC_ENV="mpirun.mpich -np 2 $GPUBIND" ctest --output-on-failure --timeout 600 -j2; cd ..
-      - cd tests ; INQ_EXEC_ENV="mpirun.mpich -np 2 $GPUBIND" ctest --output-on-failure --timeout 1800 -j2; cd ..
+      - time make -j2
+      - time make -j2 install
+      - INQ_EXEC_ENV="mpirun.mpich -np 1" ctest --output-on-failure --timeout 600 -j1
+      - cd src ; INQ_EXEC_ENV="mpirun.mpich -np 2 $GPUBIND" ctest --output-on-failure --timeout 600 -j1; cd ..
+      - cd tests ; INQ_EXEC_ENV="mpirun.mpich -np 2 $GPUBIND" ctest --output-on-failure --timeout 1800 -j1; cd ..
 
 #######################################################################################################################
 
