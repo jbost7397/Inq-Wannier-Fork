@@ -183,6 +183,7 @@ target_link_libraries(inq INTERFACE ${Libxc_LIBRARIES} xc)
 # Multi
 #set(multi_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/external_libs/multi/include)
 add_subdirectory(${PROJECT_SOURCE_DIR}/external_libs/multi)
+add_subdirectory(${PROJECT_SOURCE_DIR}/external_libs/multi/include/multi/adaptors/blas)
 target_link_libraries(inq INTERFACE multi)
 
 # MPI3
