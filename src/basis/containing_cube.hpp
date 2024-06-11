@@ -16,34 +16,51 @@
 namespace inq {
 namespace basis {
 
-//returns the cube that contains the sphere, this makes the initialization O(1) instead of O(N)
-template <class BasisType, typename PosType>
-void containing_cube(const BasisType & grid, PosType const & pos, double radius, vector3<int> & lo, vector3<int> & hi){
+// a cube of grid points that contains a sphere, this makes the
+// initialization O(1) instead of O(N)
+class containing_cube {
 
-	for(int idir = 0; idir < 3; idir++){
-		auto rec = grid.cell().reciprocal(idir);
-		auto lointer = pos - radius/length(rec)*rec;
-		auto hiinter = pos + radius/length(rec)*rec;
+	vector3<int> lo_;
+	vector3<int> hi_;
 
-		auto dlo = grid.cell().metric().to_contravariant(lointer)[idir];
-		auto dhi = grid.cell().metric().to_contravariant(hiinter)[idir];
+public:
+	
+	template <class BasisType, typename PosType>
+	containing_cube(const BasisType & grid, PosType const & pos, double radius) {
+		
+		for(int idir = 0; idir < 3; idir++){
+			auto rec = grid.cell().reciprocal(idir);
+			auto lointer = pos - radius/length(rec)*rec;
+			auto hiinter = pos + radius/length(rec)*rec;
+			
+			auto dlo = grid.cell().metric().to_contravariant(lointer)[idir];
+			auto dhi = grid.cell().metric().to_contravariant(hiinter)[idir];
+			
+			lo_[idir] = floor(dlo/grid.contravariant_spacing()[idir]);
+			hi_[idir] = ceil(dhi/grid.contravariant_spacing()[idir]) + 1;
+			
+			lo_[idir] = std::max(lo_[idir], grid.symmetric_range_begin(idir));
+			lo_[idir] = std::min(lo_[idir], grid.symmetric_range_end  (idir));
+			
+			hi_[idir] = std::max(hi_[idir], grid.symmetric_range_begin(idir));
+			hi_[idir] = std::min(hi_[idir], grid.symmetric_range_end  (idir));
+		}
+	
+	}
 
-		lo[idir] = floor(dlo/grid.contravariant_spacing()[idir]);
-		hi[idir] = ceil(dhi/grid.contravariant_spacing()[idir]) + 1;
+	auto & lo() const {
+		return lo_;
+	}
 
-		#if defined(__cpp_lib_clamp) and  (__cpp_lib_clamp >= 201603L)
-		lo[idir] = std::clamp(lo[idir], grid.symmetric_range_begin(idir), grid.symmetric_range_end(idir));
-		hi[idir] = std::clamp(hi[idir], grid.symmetric_range_begin(idir), grid.symmetric_range_end(idir));
-		#else
-		lo[idir] = std::max(lo[idir], grid.symmetric_range_begin(idir));
-		lo[idir] = std::min(lo[idir], grid.symmetric_range_end  (idir));
+	auto & hi() const {
+		return hi_;
+	}
 
-		hi[idir] = std::max(hi[idir], grid.symmetric_range_begin(idir));
-		hi[idir] = std::min(hi[idir], grid.symmetric_range_end  (idir));
-		#endif
+	auto size() const {
+		return (hi_[0] - lo_[0])*(hi_[1] - lo_[1])*(hi_[2] - lo_[2]);
 	}
 	
-}
+};
 
 }
 }
@@ -71,25 +88,23 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 
 		auto center = vector3{3.0, 2.0, 1.0};
 		auto radius = 3.0;
+		auto cube = basis::containing_cube(rs, center, radius);
 
-		vector3<int> lo, hi;
-		containing_cube(rs, center, radius, lo, hi);
-
-		CHECK(lo[0] == 0);
-		CHECK(lo[1] == -3);
-		CHECK(lo[2] == -6);
-		CHECK(hi[0] == 18);
-		CHECK(hi[1] == 17);
-		CHECK(hi[2] == 13);		
+		CHECK(cube.lo()[0] == 0);
+		CHECK(cube.lo()[1] == -3);
+		CHECK(cube.lo()[2] == -6);
+		CHECK(cube.hi()[0] == 18);
+		CHECK(cube.hi()[1] == 17);
+		CHECK(cube.hi()[2] == 13);		
 		
 		for(int ix = 0; ix < rs.sizes()[0]; ix++){
 			for(int iy = 0; iy < rs.sizes()[1]; iy++){
 				for(int iz = 0; iz < rs.sizes()[2]; iz++){
 					auto ii = rs.point_op().to_symmetric_range(ix, iy, iz);
 					
-					if(ii[0] >= lo[0] and ii[0] < hi[0] and
-						 ii[1] >= lo[1] and ii[1] < hi[1] and
-						 ii[2] >= lo[2] and ii[2] < hi[2]) continue;
+					if(ii[0] >= cube.lo()[0] and ii[0] < cube.hi()[0] and
+						 ii[1] >= cube.lo()[1] and ii[1] < cube.hi()[1] and
+						 ii[2] >= cube.lo()[2] and ii[2] < cube.hi()[2]) continue;
 
 					auto dist2 = norm(center - rs.point_op().rvector_cartesian(parallel::global_index(ix), parallel::global_index(iy), parallel::global_index(iz)));
 					CHECK(dist2 > radius*radius);
@@ -106,16 +121,14 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 
 		auto center = vector3{-0.5, 0.666, -1.0};
 		auto radius = 4.2;
+		auto cube = basis::containing_cube(rs, center, radius);
 
-		vector3<int> lo, hi;
-		containing_cube(rs, center, radius, lo, hi);
-
-		CHECK(lo[0] == -20);
-		CHECK(lo[1] == -26);
-		CHECK(lo[2] == -17);
-		CHECK(hi[0] == 22);
-		CHECK(hi[1] == 16);
-		CHECK(hi[2] == 25);
+		CHECK(cube.lo()[0] == -20);
+		CHECK(cube.lo()[1] == -26);
+		CHECK(cube.lo()[2] == -17);
+		CHECK(cube.hi()[0] == 22);
+		CHECK(cube.hi()[1] == 16);
+		CHECK(cube.hi()[2] == 25);
 
 		for(int ix = 0; ix < rs.sizes()[0]; ix++){
 			for(int iy = 0; iy < rs.sizes()[1]; iy++){
@@ -123,9 +136,9 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 					
 					auto ii = rs.to_symmetric_range(ix, iy, iz);
 					
-					if(ii[0] >= lo[0] and ii[0] < hi[0] and
-						 ii[1] >= lo[1] and ii[1] < hi[1] and
-						 ii[2] >= lo[2] and ii[2] < hi[2]) continue;
+					if(ii[0] >= cube.lo()[0] and ii[0] < cube.hi()[0] and
+						 ii[1] >= cube.lo()[1] and ii[1] < cube.hi()[1] and
+						 ii[2] >= cube.lo()[2] and ii[2] < cube.hi()[2]) continue;
 
 					auto dist2 = norm(center - rs.point_op().rvector_cartesian(parallel::global_index(ix), parallel::global_index(iy), parallel::global_index(iz)));
 					CHECK(dist2 > radius*radius);
@@ -142,25 +155,23 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 
 		auto center = vector3{-0.5, 0.666, -1.0};
 		auto radius = 4.2;
+		auto cube = basis::containing_cube(rs, center, radius);
 
-		vector3<int> lo, hi;
-		containing_cube(rs, center, radius, lo, hi);
-
-		CHECK(lo[0] == -9);
-		CHECK(lo[1] == -9);
-		CHECK(lo[2] == -9);
-		CHECK(hi[0] == 9);
-		CHECK(hi[1] == 9);
-		CHECK(hi[2] == 9);		
+		CHECK(cube.lo()[0] == -9);
+		CHECK(cube.lo()[1] == -9);
+		CHECK(cube.lo()[2] == -9);
+		CHECK(cube.hi()[0] == 9);
+		CHECK(cube.hi()[1] == 9);
+		CHECK(cube.hi()[2] == 9);		
 		
 		for(int ix = 0; ix < rs.sizes()[0]; ix++){
 			for(int iy = 0; iy < rs.sizes()[1]; iy++){
 				for(int iz = 0; iz < rs.sizes()[2]; iz++){
 					auto ii = rs.point_op().to_symmetric_range(ix, iy, iz);
 					
-					if(ii[0] >= lo[0] and ii[0] < hi[0] and
-						 ii[1] >= lo[1] and ii[1] < hi[1] and
-						 ii[2] >= lo[2] and ii[2] < hi[2]) continue;
+					if(ii[0] >= cube.lo()[0] and ii[0] < cube.hi()[0] and
+						 ii[1] >= cube.lo()[1] and ii[1] < cube.hi()[1] and
+						 ii[2] >= cube.lo()[2] and ii[2] < cube.hi()[2]) continue;
 
 					auto dist2 = norm(center - rs.point_op().rvector_cartesian(parallel::global_index(ix), parallel::global_index(iy), parallel::global_index(iz)));					
 					CHECK(dist2 > radius*radius);

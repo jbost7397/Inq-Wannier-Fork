@@ -67,22 +67,17 @@ namespace basis {
 
 			//FIRST PASS: we count the cubes, this gives us an upper bound for the memory allocation
 			for(unsigned irep = 0; irep < rep.size(); irep++){
-				vector3<int> lo, hi;
-				containing_cube(parent_grid, rep[irep], radius, lo, hi);
-				upper_count += (hi[0] - lo[0])*(hi[1] - lo[1])*(hi[2] - lo[2]);
+				auto cube = containing_cube(parent_grid, rep[irep], radius);
+				upper_count += cube.size();
 			}
 
 			points_.reextent({upper_count});
 			
 			upper_count = 0;
 			for(unsigned irep = 0; irep < rep.size(); irep++){
-
-				vector3<int> lo, hi;
-				containing_cube(parent_grid, rep[irep], radius, lo, hi);
-
-				auto cubesize = hi - lo;
-
-				auto upper_local = (hi[0] - lo[0])*(hi[1] - lo[1])*(hi[2] - lo[2]);			
+				auto cube = containing_cube(parent_grid, rep[irep], radius);
+				auto cubesize = cube.hi() - cube.lo();
+				auto upper_local = cube.size();
 
 				if(upper_local == 0) continue;
 				
@@ -93,8 +88,8 @@ namespace basis {
 				assert(std::get<1>(sizes(buffer)) == cubesize[1]);
 				assert(std::get<2>(sizes(buffer)) == cubesize[2]);
 
-				gpu::run((hi[2] - lo[2]), (hi[1] - lo[1]), (hi[0] - lo[0]),
-								 [lo, local_sizes, point_op = parent_grid.point_op(), re = rep[irep], buf = begin(buffer), radius] GPU_LAMBDA (auto iz, auto iy, auto ix){
+				gpu::run((cube.hi()[2] - cube.lo()[2]), (cube.hi()[1] - cube.lo()[1]), (cube.hi()[0] - cube.lo()[0]),
+								 [lo = cube.lo(), local_sizes, point_op = parent_grid.point_op(), re = rep[irep], buf = begin(buffer), radius] GPU_LAMBDA (auto iz, auto iy, auto ix){
 									 
 									 (&buf[ix][iy][iz])->coords_ = local_sizes;
 									 (&buf[ix][iy][iz])->distance_ = -1.0;
