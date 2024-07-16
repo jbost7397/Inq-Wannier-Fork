@@ -46,7 +46,7 @@ namespace input {
 		template <class CommType>
     explicit parallelization(CommType & comm):
 			nproc_kpts_(boost::mpi3::fill),
-			nproc_states_(1),
+			nproc_states_(boost::mpi3::fill),
 			nproc_domains_(boost::mpi3::fill),
       comm_(comm)			
 		{
