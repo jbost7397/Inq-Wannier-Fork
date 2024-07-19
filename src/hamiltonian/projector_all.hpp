@@ -33,11 +33,11 @@ public: // for CUDA
 		max_nlm_ = 0;
 		for(auto it = projectors.cbegin(); it != projectors.cend(); ++it) {
 			max_sphere_size_ = std::max(max_sphere_size_, it->sphere_.size());
-			max_nlm_ = std::max(max_nlm_, it->nproj_);			
+			max_nlm_ = std::max(max_nlm_, it->nproj_);          
 		}
 
 		points_ = decltype(points_)({nprojs_, max_sphere_size_});
-		positions_ = decltype(positions_)({nprojs_, max_sphere_size_});		
+		positions_ = decltype(positions_)({nprojs_, max_sphere_size_});     
     coeff_ = decltype(coeff_)({nprojs_, max_nlm_}, 0.0);
     matrices_ = decltype(matrices_)({nprojs_, max_nlm_, max_sphere_size_});
 		
@@ -46,8 +46,8 @@ public: // for CUDA
 			gpu::run(max_sphere_size_,
 							 [poi = begin(points_), pos = begin(positions_), sph = it->sphere_.ref(), iproj, npoint = it->sphere_.size()] GPU_LAMBDA (auto ipoint){
 								 if(ipoint < unsigned (npoint)){
-									 poi[iproj][ipoint] = sph.grid_point(ipoint);	
-									 pos[iproj][ipoint] = sph.point_pos(ipoint);							 
+									 poi[iproj][ipoint] = sph.grid_point(ipoint);   
+									 pos[iproj][ipoint] = sph.point_pos(ipoint);                             
 								 } else {
 									 poi[iproj][ipoint] = {-1, -1, -1};
 								 }
@@ -58,7 +58,7 @@ public: // for CUDA
 								 if(ipoint < (unsigned) np and ilm < (unsigned) nlm) {
 									 mat[iproj][ilm][ipoint] = itmat[ilm][ipoint];
 								 } else {
-									 mat[iproj][ilm][ipoint] = 0.0;								 
+									 mat[iproj][ilm][ipoint] = 0.0;                              
 								 }
 							 });
 								 
@@ -93,7 +93,7 @@ public:
 		constructor(projectors);
 	}
 
-	////////////////////////////////////////////////////////////////////////////////////////////		
+	////////////////////////////////////////////////////////////////////////////////////////////        
 	
 	template <typename KpointType>
 	gpu::array<complex, 3> project(states::orbital_set<basis::real_space, complex> const & phi, KpointType const & kpoint) const {
@@ -125,7 +125,7 @@ public:
 		}
 #else
 		if(max_sphere_size_ > 0) {
-			CALI_CXX_MARK_SCOPE("projector_gemm_1");			
+			CALI_CXX_MARK_SCOPE("projector_gemm_1");            
 
 			const double zero = 0.0;
 			const double vol = phi.basis().volume_element();
@@ -215,7 +215,7 @@ public:
 			
 	}
 
-	////////////////////////////////////////////////////////////////////////////////////////////		
+	////////////////////////////////////////////////////////////////////////////////////////////        
 
 	template <typename SpherePhiType, typename KpointType>
 	void apply(SpherePhiType & sphere_vnlphi, states::orbital_set<basis::real_space, complex> & vnlphi, KpointType const & kpoint) const {
@@ -293,8 +293,8 @@ public:
 			phi.basis().comm().all_reduce_in_place_n(raw_pointer_cast(projections_all.data_elements()), projections_all.num_elements(), std::plus<>{});
 		}
 		
-		for(auto iproj = 0; iproj < nprojs_; iproj++){		
-			blas::real_doubled(sphere_phi_all[iproj]) = blas::gemm(1.0, blas::transposed(matrices_[iproj]), blas::real_doubled(projections_all[iproj]));
+		for(auto iproj = 0; iproj < nprojs_; iproj++) {
+			blas::real_doubled(sphere_phi_all[iproj]) = blas::gemm(1.0, blas::T(matrices_[iproj]), blas::real_doubled(projections_all[iproj]));
 		}
 
 		gpu::array<vector3<double, covariant>, 1> force(nprojs_, {0.0, 0.0, 0.0});
@@ -317,12 +317,12 @@ public:
 
 	////////////////////////////////////////////////////////////////////////////////////////////
 	// Calculates |cphi> += [Vnl, r] | phi>
-	////////////////////////////////////////////////////////////////////////////////////////////	
+	////////////////////////////////////////////////////////////////////////////////////////////    
 	template <typename KpointType>
 	void position_commutator(states::orbital_set<basis::real_space, complex> const & phi, states::orbital_set<basis::real_space, vector3<complex, covariant>> & cphi, KpointType const & kpoint) const {
 		
 		gpu::array<complex, 3> sphere_phi_all({nprojs_, max_sphere_size_, phi.local_set_size()});
-		gpu::array<vector3<complex, contravariant>, 3> sphere_rphi_all({nprojs_, max_sphere_size_, phi.local_set_size()});		
+		gpu::array<vector3<complex, contravariant>, 3> sphere_rphi_all({nprojs_, max_sphere_size_, phi.local_set_size()});      
 
 		gpu::array<complex, 3> projections_all({nprojs_, max_nlm_, phi.local_set_size()}, 0.0);
 		gpu::array<vector3<complex, contravariant>, 3> rprojections_all({nprojs_, max_nlm_, phi.local_set_size()}, zero<vector3<complex, contravariant>>());
@@ -345,7 +345,7 @@ public:
 							 });
 		}
 
-	 	for(auto iproj = 0; iproj < nprojs_; iproj++){
+	    for(auto iproj = 0; iproj < nprojs_; iproj++){
 			CALI_CXX_MARK_SCOPE("position_commutator_gemm_1");
 
 			if(locally_empty_[iproj]) continue;
@@ -365,7 +365,7 @@ public:
                [proj = begin(projections_all), rproj = begin(rprojections_all), coe = begin(coeff_)]
                GPU_LAMBDA (auto ist, auto ilm, auto iproj){
                  proj[iproj][ilm][ist] *= coe[iproj][ilm];
-                 proj[iproj][ilm][ist] *= coe[iproj][ilm];								 
+                 proj[iproj][ilm][ist] *= coe[iproj][ilm];                               
                });
 		}
 
@@ -384,7 +384,7 @@ public:
 
 			auto rpa = rprojections_all[iproj].template reinterpret_array_cast<complex>(3).rotated().flatted().unrotated();
 			auto sra = sphere_rphi_all[iproj].template reinterpret_array_cast<complex>(3).rotated().flatted().unrotated();
-			blas::real_doubled(sra) = blas::gemm(1., blas::T(matrices_[iproj]), blas::real_doubled(rpa));			
+			blas::real_doubled(sra) = blas::gemm(1., blas::T(matrices_[iproj]), blas::real_doubled(rpa));           
 		}
 
 		for(auto iproj = 0; iproj < nprojs_; iproj++){
@@ -404,7 +404,7 @@ public:
 		}
 	}
 
-	////////////////////////////////////////////////////////////////////////////////////////////		
+	////////////////////////////////////////////////////////////////////////////////////////////        
 
 
 private:
