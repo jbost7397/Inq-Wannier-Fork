@@ -23,10 +23,10 @@ class ixs : public perturbations::none {
 public:
 	ixs(quantity<magnitude::energy> amplitude, vector3<int> q, quantity<magnitude::time> tdelay, quantity<magnitude::time> twidth, std::string envtype="exp"):
 		amplitude_(amplitude.in_atomic_units()),
-        q_(q),
+        	q_(q),
 		tdelay_(tdelay.in_atomic_units()),
 		twidth_(twidth.in_atomic_units()),
-        envtype_(envtype)
+        	envtype_(envtype)
 	{}
 
 	auto has_potential() const {
@@ -84,10 +84,10 @@ public:
 
 private:
 	double amplitude_;
+	vector3<int> q_;
 	double tdelay_;
 	double twidth_;
-    vector3<int> q_;
-    std::string envtype_;
+	std::string envtype_;
 };
 
 }
