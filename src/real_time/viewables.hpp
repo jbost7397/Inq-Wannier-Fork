@@ -89,6 +89,10 @@ public:
 		return pert_.uniform_electric_field(time_);
 	}
 
+	auto ixs_envelope() const {
+        	return pert_.envelope(time_);
+    	}
+
 	auto uniform_vector_potential() const{
 		return ions_.cell().metric().to_cartesian(ham_.uniform_vector_potential());
 	}
@@ -97,9 +101,15 @@ public:
 		return operations::integral(electrons_.density());
 	}
 
-  auto current() const {
-    return ions_.cell().metric().to_cartesian(observables::current(ions_, electrons_, ham_));
-  }
+	auto density_q(vector3<int> q) const {
+        	auto density_fs = operations::transform::to_fourier(basis::complex_field(electrons_.density()));
+        	return density_fs.cubic()[q[0]][q[1]][q[2]] / (1.0*density_fs.basis().size()) * ions_.cell().volume();
+    	}
+
+  	auto current() const {
+    		return ions_.cell().metric().to_cartesian(observables::current(ions_, electrons_, ham_));
+  	}
+
 	auto projected_occupation(const systems::electrons & gs) {
 		auto calc = [] (auto occ, auto v) {
 			return occ*norm(v);
