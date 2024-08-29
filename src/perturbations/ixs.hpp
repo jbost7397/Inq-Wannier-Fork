@@ -8,10 +8,7 @@
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
-TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
-    perturbations::ixs probe(1.0_Ha, {0,0,1}, 0.3_fs, 0.1_fs);
-    CHECK(not probe.has_uniform_electric_field());
-}
+
 #include <inq_config.h>
 
 #include <math/vector3.hpp>
@@ -113,6 +110,6 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 	CHECK(not probe.has_uniform_electric_field());
 	CHECK(not probe.has_uniform_vector_potential());
 	CHECK(probe.has_potential());
-	CHECK(probe.envelope(tdelay) == amplitude/sqrt(2.0*M_PI));
+	CHECK(probe.envelope(tdelay.in_atomic_units()) == amplitude.in_atomic_units()/sqrt(2.0*M_PI));
 }
 #endif
