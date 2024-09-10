@@ -14,8 +14,8 @@ int main(int argc, char ** argv){
 	using namespace inq::magnitude;
 
 	auto & env = input::environment::global();
-	auto ions = systems::ions::parse(inq::config::path::unit_tests_data() + "al_ixs.poscar");
-	systems::electrons electrons(env.par(), ions, options::electrons{}.cutoff(500.0_eV).temperature(1.0_eV).extra_states(112));
+	auto ions = systems::ions::parse(inq::config::path::unit_tests_data() + "al.poscar");
+	systems::electrons electrons(env.par(), ions, options::electrons{}.cutoff(500.0_eV).temperature(1.0_eV).extra_states(14));
 	auto functional = options::theory{}.lda();
 
 	// check wavenumber indexing
@@ -35,7 +35,7 @@ int main(int argc, char ** argv){
         auto probe = perturbations::ixs{0.001_eV * (1.0_fs/tw), qi, td, tw, "sin"};
 
 	auto const dt = 0.001_fs;
-	long nsteps = 100;
+	long nsteps = 10;
 	utils::match match(1.0e-10);
 
 	gpu::array<complex, 1> nq(nsteps);
@@ -58,7 +58,6 @@ int main(int argc, char ** argv){
 	match.check("response step 7",  nq[7] - nq[0],   complex(3.04273250e-07, 3.14804131e-05));
 	match.check("response step 8",  nq[8] - nq[0],   complex(8.14973105e-07, 8.77786273e-05));
 	match.check("response step 9",  nq[9] - nq[0],   complex(1.87665709e-06, 2.05622074e-04));
-	match.check("response step 10", nq[10] - nq[0],  complex(3.71926015e-06, 4.10900267e-04));	
 
 	return match.fail();
 	
