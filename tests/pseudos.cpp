@@ -72,7 +72,7 @@ int main(int argc, char ** argv){
 		
 		ground_state::initial_guess(ions, electrons);
 		
-		auto result = ground_state::calculate(ions, electrons, options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-8_Ha));
+		auto result = ground_state::calculate(ions, electrons, options::theory{}.non_interacting(), inq::options::ground_state{}.energy_tolerance(1e-8_Ha));
 		
 		energy_match.check("total energy",        result.energy.total()    ,       -5.364217589921);
 		energy_match.check("kinetic energy",      result.energy.kinetic()  ,        3.177120187949);
