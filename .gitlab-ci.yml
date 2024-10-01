@@ -358,6 +358,84 @@ gcc-ompi-fast-5proc:
       - cd tests; INQ_EXEC_ENV="mpirun.openmpi --allow-run-as-root -np 5" ctest --output-on-failure --timeout 3600; cd ..
 
 #########################################################################################################################
+# CLANG-OMPI-SANITIZE
+#########################################################################################################################
+
+clang-ompi-sanitize:
+    stage: build
+    script:
+      - apt update -qq
+      - apt install --no-install-recommends -y -qq libasan8 libasan6 libclang-rt-dev 
+      - clang++ --version
+      - mkdir build
+      - cd build
+      - CXXFLAGS="-O3 -g -fsanitize=address -fno-omit-frame-pointer -pipe -Wall -Werror"
+      - CXX=clang++ CC=clang cmake ../ -DCMAKE_BUILD_TYPE=Debug --install-prefix=$HOME -DMPI_EXECUTABLE_SUFFIX=.openmpi
+      - ls -l
+      - time make
+      - time make install
+      - cd ../
+      - time tar -Ipixz -cvf clang-ompi-sanitize-build.tar.xz build/
+    artifacts:
+      paths:
+      - clang-ompi-sanitize-build.tar.xz
+
+clang-ompi-sanitize-1proc:
+    stage: test
+    needs: ["clang-ompi-sanitize"]    
+    script:
+      - apt update -qq
+      - apt install --no-install-recommends -y -qq libasan8 libasan6 libclang-rt-dev     
+      - time tar -Ipixz -xvf clang-ompi-sanitize-build.tar.xz
+      - cd build
+      - cmake --build . --target install/fast
+      - ctest --output-on-failure --timeout 360
+
+clang-ompi-sanitize-2proc:
+    stage: test
+    needs: ["clang-ompi-sanitize"]
+    script:
+      - apt update -qq
+      - apt install --no-install-recommends -y -qq libasan8 libasan6 libclang-rt-dev     
+      - time tar -Ipixz -xvf clang-ompi-sanitize-build.tar.xz
+      - cd build
+      - cmake --build . --target install/fast
+      - INQ_EXEC_ENV="mpirun.openmpi --allow-run-as-root -np 2" ctest --output-on-failure --timeout 3600
+      
+clang-ompi-sanitize-3proc:
+    stage: test
+    needs: ["clang-ompi-sanitize"]
+    script:
+      - apt update -qq
+      - apt install --no-install-recommends -y -qq libasan8 libasan6 libclang-rt-dev     
+      - time tar -Ipixz -xvf clang-ompi-sanitize-build.tar.xz
+      - cd build
+      - cmake --build . --target install/fast
+      - INQ_EXEC_ENV="mpirun.openmpi --allow-run-as-root -np 3" ctest --output-on-failure --timeout 3600
+
+clang-ompi-sanitize-4proc:
+    stage: test
+    needs: ["clang-ompi-sanitize"]
+    script:
+      - apt update -qq
+      - apt install --no-install-recommends -y -qq libasan8 libasan6 libclang-rt-dev     
+      - time tar -Ipixz -xvf clang-ompi-sanitize-build.tar.xz
+      - cd build
+      - cmake --build . --target install/fast
+      - INQ_EXEC_ENV="mpirun.openmpi --allow-run-as-root -np 4" ctest --output-on-failure --timeout 3600
+
+clang-ompi-sanitize-5proc:
+    stage: test
+    needs: ["clang-ompi-sanitize"]
+    script:
+      - apt update -qq
+      - apt install --no-install-recommends -y -qq libasan8 libasan6 libclang-rt-dev     
+      - time tar -Ipixz -xvf clang-ompi-sanitize-build.tar.xz
+      - cd build
+      - cmake --build . --target install/fast
+      - cd tests; INQ_EXEC_ENV="mpirun.openmpi --allow-run-as-root -np 5" ctest --output-on-failure --timeout 3600; cd ..
+      
+#########################################################################################################################
 # CLANG-OMPI-DEBUG
 #########################################################################################################################
 
