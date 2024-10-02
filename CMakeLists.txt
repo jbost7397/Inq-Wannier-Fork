@@ -53,6 +53,8 @@ include(CTest)
 
 target_compile_features(inq INTERFACE cxx_std_17)
 
+target_link_libraries(inq INTERFACE stdc++fs)
+
 if(ENABLE_CUDA)
   enable_language(CUDA)
   find_package(CUDAToolkit 11.5 REQUIRED)
