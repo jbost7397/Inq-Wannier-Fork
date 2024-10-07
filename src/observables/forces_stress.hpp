@@ -45,7 +45,10 @@ struct forces_stress {
 		calculate(ions, electrons, ham, energy);
 	}
 
+#ifndef ENABLE_GPU
 private:
+#endif
+	
 
 	GPU_FUNCTION static void stress_component(int const index, int & alpha, int & beta) {
 		alpha = index;
