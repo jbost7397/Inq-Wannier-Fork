@@ -82,7 +82,7 @@ int jade_complex(int maxsweep, double tol, std::vector<inq::matrix::distributed<
                         apq[iapq + 1] = complex{0.0, 0.0};
                         apq[iapq + 2] = complex{0.0, 0.0};
                         
-                        const complex* ap = (top[ipair] < mloc) ? gathered_a[k].data() + top[ipair] * mloc : &a_aux[k][0];
+                        const complex ap = (top[ipair] < mloc) ? gathered_a[k].data() + top[ipair] * mloc : &a_aux[k][0];
                         const complex* aq = (bot[ipair] < mloc) ? gathered_a[k].data() + bot[ipair] * mloc : &a_aux[k][0];
                         const complex* up = (top[ipair] < mloc) ? u.block().data() + top[ipair] * mloc : &u_aux[0];
                         const complex* uq = (bot[ipair] < mloc) ? u.block().data() + bot[ipair] * mloc : &u_aux[0];
