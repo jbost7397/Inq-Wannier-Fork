@@ -60,6 +60,9 @@ GPU_FUNCTION inline auto fabs(complex const & z){
 	return abs(z);
 }
 
+GPU_FUNCTION inline double sqroot(const double & x){  //CS
+	return sqrt(x);
+}
 }
 #endif
 
@@ -79,13 +82,14 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG){
 	CHECK(imag(xx) == 0.0_a);
 	CHECK(norm(xx) == 41379.696_a);
 	CHECK(conj(xx) == xx);
-
+	CHECK(sqroot(xx) ==  14.26_a);
 	complex zz{-654.21, 890.74};
 
 	CHECK(real(zz) == -654.21_a);
 	CHECK(imag(zz) == 890.74);
 	CHECK(norm(zz) == 1221408.5_a);
 	CHECK(fabs(zz) == 1105.1735_a);
+	//CHECK(conj(zz) == complex{-654.21_a, -890.74_a}); //CS doesn't work 
 	CHECK(conj_cplx(zz) == complex{-654.21, -890.74});  //CS
 }
 #endif
