@@ -1,7 +1,7 @@
 /* -*- indent-tabs-mode: t -*- */
 
-#ifndef INQ__WANNIER__JACOBI_EIGENVALUE
-#define INQ__WANNIER__JACOBI_EIGENVALUE
+#ifndef INQ__AWANNIER__JACOBI_EIGENVALUE
+#define INQ__AWANNIER__JACOBI_EIGENVALUE
 
 // Copyright (C) 2019-2023 Lawrence Livermore National Security, LLC., Xavier Andrade, Alfredo A. Correa
 //
@@ -170,8 +170,8 @@ void jacobi_eigenvalue(T n, VectorType& a, VectorType& v, VectorType& d) {
 }
 }
 
-#ifdef INQ_WANNIER_JACOBI_EIGENVALUE_UNIT_TEST
-#undef INQ_WANNIER_JACOBI_EIGENVALUE_UNIT_TEST
+#ifdef INQ_AWANNIER_JACOBI_EIGENVALUE_UNIT_TEST
+#undef INQ_AWANNIER_JACOBI_EIGENVALUE_UNIT_TEST
 
 #include <gpu/array.hpp>
 #include <catch2/catch_all.hpp>
