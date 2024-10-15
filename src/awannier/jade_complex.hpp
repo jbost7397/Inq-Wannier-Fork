@@ -140,26 +140,26 @@ int jade_complex(int maxsweep, double tol, std::vector<inq::matrix::distributed<
                             x = -x; y = -y; z = -z;
                         }
 			
-			//CS need std::complex for rotation function 
+			//CS need std::complex for rotation function , this is now fixed 
                         double r = sqroot((x + 1) / 2.0);
                         complex c = complex(r, 0.0);
-			std::complex<double> c_rot = c; 
+			//std::complex<double> c_rot = c; 
                         complex s = complex(y / (2.0 * r), -z / (2.0 * r));
 			complex sconj = conj_cplx(s);
-			std::complex<double> s_rot = sconj;
+			//std::complex<double> s_rot = sconj;
 
           		//CS alternative can use operations::rotate(rot_array,array); zrot here since passing two arrays and getting two back, test performance later
                         for (int k = 0; k < a.size(); ++k) {
                             gpu::array<complex,1> ap = (top[ipair] < mloc) ? gathered_a[k].data() + top[ipair] * mloc : &a_aux[k][0];
                             gpu::array<complex,1> aq = (bot[ipair] < mloc) ? gathered_a[k].data() + bot[ipair] * mloc : &a_aux[k][0];
 
-                            plane_rot(ap, aq, c_rot, s_rot);
+                            plane_rot(ap, aq, c, sconj);
                         }
 
                         gpu::array<complex,1> up = (top[ipair] < mloc) ? u.block().data() + top[ipair] * mloc : &u_aux[0];
                         gpu::array<complex,1> uq = (bot[ipair] < mloc) ? u.block().data() + bot[ipair] * mloc : &u_aux[0];
 
-                        plane_rot(up, uq, c_rot, s_rot);
+                        plane_rot(up, uq, c, sconj);
 
                         double diag_change_ipair = 0.0;
                         for (int k = 0; k < a.size(); ++k) {

@@ -21,7 +21,7 @@
 #include <utils/profiling.hpp>
 
 #define zrot FC_GLOBAL(zrot, ZROT) 
-extern "C" void zrot(int*, inq::complex *, int*, inq::complex *, int*, std::complex<double>*, std::complex<double>*);
+extern "C" void zrot(int*, inq::complex *, int*, inq::complex *, int*, inq::complex*, inq::complex*);
 
 namespace inq {
 namespace wannier {
@@ -64,10 +64,10 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		gpu::array<complex,1> vector1 = {1.0, 2.0, 3.0, 4.0}; 
   		gpu::array<complex,1> vector2 = {-1.0, -2.0, -3.0, -4.0};
 
-		std::complex<double> c1 = 0.5;
-		std::complex<double> s1 = std::sqrt(3.0)/2.0;
-		//complex c1 = 0.5;
-		//complex s1 = sqrt(3.0)/2.0;
+		//std::complex<double> c1 = 0.5;
+		//std::complex<double> s1 = std::sqrt(3.0)/2.0;
+		complex c1 = 0.5;
+		complex s1 = sqrt(3.0)/2.0;
  
 		wannier::plane_rot(vector1, vector2, c1, s1);
 
@@ -94,8 +94,8 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		gpu::array<complex,1> vector1 = {complex(1.0,2.0), complex(2.0,3.0), complex(3.0,4.0)};
 		gpu::array<complex,1> vector2 = {complex(-1.0,5.0), complex(-2.0,4.0), complex(-3.0,3.0)};
 
-		std::complex<double> c1 = 0.5;
-		std::complex<double> s1 = complex(0.75,0.50);
+		complex c1 = 0.5;
+		complex s1 = complex(0.75,0.50);
 
 		wannier::plane_rot(vector1, vector2, c1, s1);
 
@@ -122,8 +122,8 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
                 gpu::array<complex,1> vector1 = {complex(1.0,2.0), complex(2.0,3.0), complex(3.0,4.0)};
                 gpu::array<complex,1> vector2 = {complex(-1.0,5.0), complex(-2.0,4.0), complex(-3.0,3.0)};
 
-                std::complex<double> c1 = 0.5;
-                std::complex<double> s1 = std::sqrt(3.0)/2.0;
+                complex c1 = 0.5;
+                complex s1 = std::sqrt(3.0)/2.0;
 
                 wannier::plane_rot(vector1, vector2, c1, s1);
 
