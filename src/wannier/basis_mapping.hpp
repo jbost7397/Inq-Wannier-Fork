@@ -13,7 +13,7 @@
 #include <cmath>
 #include <vector>
 #include <math/complex.hpp>
-#include <parallel/arbitrary_partition>
+#include <parallel/arbitrary_partition.hpp>
 
 //JB: for Wannierization, basically all functionality from Qbach's BasisMapping class is required, including this particular
 //    block_cyclic distribution system + accompanying helper functions. Certain aspects of code from Qbach lack a direct equivalent
@@ -23,35 +23,39 @@ namespace inq {
 namespace wannier {
 
 class block_cyclic_partition : public parallel::arbitrary_partition {
+
 public:
-    block_cyclic_partition(long size, int comm_size, int comm_rank, int block_size) :
-        parallel::arbitrary_partition(0, comm_size, comm_rank) {  
+	template <typename CommType>
+	block_cyclic_partition(long size, CommType comm, int block_size) :
+        parallel::arbitrary_partition(size, comm) {
 
-        int num_blocks = (size + block_size - 1) / block_size;
-        int blocks_per_proc = (num_blocks + comm_size - 1) / comm_size;
-        local_size_ = std::min((long)blocks_per_proc * block_size, size - (long)comm_rank * blocks_per_proc * block_size);
-        lsizes_.resize(comm_size);
-        for (int i = 0; i < comm_size; i++) {
-            int num_blocks_proc = (num_blocks + comm_size - 1) / comm_size;
-            if (i < num_blocks % comm_size) num_blocks_proc++;
-            lsizes_[i] = std::min((long)num_blocks_proc * block_size, size - (long)i * num_blocks_proc * block_size);
+		auto comm_size = comm.size();
+		auto comm_rank = comm.rank();
+        	int num_blocks = (size + block_size - 1) / block_size;
+        	int blocks_per_proc = (num_blocks + comm_size - 1) / comm_size;
+        	auto local_size = std::min((long)blocks_per_proc * block_size, size - (long)comm_rank * blocks_per_proc * block_size);
+		std::vector<long> lsizes;
+        	lsizes.resize(comm_size);
+        	for (int i = 0; i < comm_size; i++) {
+        		int num_blocks_proc = (num_blocks + comm_size - 1) / comm_size;
+        		if (i < num_blocks % comm_size) num_blocks_proc++;
+            		lsizes[i] = std::min((long)num_blocks_proc * block_size, size - (long)i * num_blocks_proc * block_size);
 
-        }
-        size_ = size;
-        start_ = 0;
-        for (int i = 0; i < comm_rank; ++i) start_ += lsizes_[i];
-        end_ = start_ + local_size_;
-    }
+        	}
+        	auto start = 0;
+        	for (int i = 0; i < comm_rank; ++i) start += lsizes[i];
+        	auto end = start + local_size;
+	}
 
 
 };
 
 std::vector<int> generate_ipack(const block_cyclic_partition& partition, int nvec, int np2) {
     std::vector<int> ipack;
-    ipack.reserve(nvec * np2); 
+    ipack.reserve(nvec * np2);
 
     long global_index = 0;
-    for (int iproc = 0; iproc < comm_.size(); ++iproc) {
+    for (int iproc = 0; iproc < partition.size(); ++iproc) {
         for (int ivec = 0; ivec < nvec; ++ivec) {
             for (long i = partition.start(iproc); i < partition.end(iproc); ++i) {
                 ipack.push_back(global_index);
@@ -62,6 +66,7 @@ std::vector<int> generate_ipack(const block_cyclic_partition& partition, int nve
     return ipack;
 }
 
+/*
 //need to recover functionality from Qb@ll's 'rod' structure... need to think about equivalent functionality in Inq
 //implementation for when the basis is real
 std::vector<int> generate_iunpack(const block_cyclic_partition& partition, int np0, int np1, int np2, int nvec) {
@@ -69,7 +74,7 @@ std::vector<int> generate_iunpack(const block_cyclic_partition& partition, int n
     iunpack.reserve((2 * basis_.nrods() -1) * partition.local_size());
 
     for (int l = 0; l < partition.local_size(); ++l) {
-        iunpack.push_back(l * np0 * np1); 
+        iunpack.push_back(l * np0 * np1);
     }
     int isource_p = partition.local_size();
     int isource_m = 2 * partition.local_size();
@@ -156,7 +161,7 @@ void TDMLWFTransform::transpose_fwd(const inq::gpu::array<std::complex<double>, 
     int np1 = basis_.sizes()[1];
     int np2 = basis_.sizes()[2];
     int nvec = ...; //how to get this in Inq?
-    int block_size = ...; 
+    int block_size = ...;
 
 
     block_cyclic_partition partition(np2, comm_.size(), comm_.rank(), block_size);
@@ -208,8 +213,8 @@ void TDMLWFTransform::transpose_bwd(const inq::gpu::array<std::complex<double>, 
     int np0 = basis_.sizes()[0];
     int np1 = basis_.sizes()[1];
     int np2 = basis_.sizes()[2];
-    int nvec = ...; 
-    int block_size = ...; 
+    int nvec = ...;
+    int block_size = ...;
 
 
     block_cyclic_partition partition(np2, comm_.size(), comm_.rank(), block_size);
@@ -283,13 +288,14 @@ void TDMLWFTransform::zvec_to_vector_inq(const inq::gpu::array<std::complex<doub
         c[ig] = zvec[ip_[ig]];
     });
 }
+*/
 
 }  // namespace wannier
 }  // namespace inq
 
 #endif  // INQ__WANNIER__BASIS_MAPPING
-	
-	
+
+
 ///////////////////////////////////////////////////////////////////
 #ifdef INQ_WANNIER_BASIS_MAPPING_UNIT_TEST
 #undef INQ_WANNIER_BASIS_MAPPING_UNIT_TEST
@@ -300,5 +306,4 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
     using namespace Catch::literals;
     using Catch::Approx;
 }
-#endif 
-
+#endif
