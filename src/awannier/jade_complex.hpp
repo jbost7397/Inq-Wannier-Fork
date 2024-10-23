@@ -29,7 +29,7 @@ namespace inq {
 namespace wannier {
 
 template <typename T, typename T1, class MatrixType1, class MatrixType2, class MatrixType3>      //JB: proper function declaration consistent w/inq style
-double jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType3& adiag) {
+int jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType3& adiag) {
 
     const double eps = std::numeric_limits<double>::epsilon();
     assert(tol > eps);
@@ -39,24 +39,31 @@ double jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixTy
     int n = a.size(); // 6 for all wannier 
 
     // Initialize u as identity
-    gpu::array<complex,2> u_tmp({mloc,mloc});
-    for (int i = 0; i < mloc; ++i) {
-        u_tmp[i][i] = 1.0;
+    u = std::vector<std::vector<complex>> (mloc, std::vector<complex>(nloc)); //CS same size as a[k]
+    for(int m = 0; m < mloc; ++m){
+      for(int n = 0; n < nloc; ++n){
+        u[m][n] = complex{0.0, 0.0};
+          if(m == n) u[m][n] = complex{1.0,0.0};
+      } //n
+    } //m
+ 
+    // eigenvalue array
+    adiag.resize(a.size());
+    for ( int k = 0; k < a.size(); k++ ){
+      adiag[k].resize(mloc);
     }
-    u = u_tmp; //CS same size as a[k]
 
-    gpu::array<complex,2> adiag_tmp(a.size(), gpu::array<complex,1>(mloc));
-    adiag = adiag_tmp; //CS a[k][i] will store diagonals of a[k]
-
-    //CS check if number of rows is odd //local check when in parallel
+    //check if number of rows is odd
     const bool nloc_odd = (mloc % 2 != 0);
 
     //if nloc is odd need auxiliary arrays for an extra column 
-    gpu::array<complex,2> a_aux(a.size(), gpu::array<complex,1>(mloc));
-    gpu::array<complex,1> u_aux(mloc);
-
-    //CS here is where columns should be distibuted
-    //same for a, u and adiag
+    std::vector<std::vector<complex>> a_aux(a.size());
+    std::vector<complex> u_aux;
+    if (nloc_odd) {
+      for (int k=0; k < a.size(); ++k)
+	a_aux[k].resize(mloc);
+      u_aux.resize(mloc);
+     }
 
     const int nploc = (nloc + 1) / 2; //when parallel replace nloc with column distributor 
     std::deque<int> top(nploc), bot(nploc);
@@ -80,13 +87,13 @@ double jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixTy
     for (int k = 0; k < a.size(); ++k) {
       acol[k].resize(2*nploc);
       for (int i = 0; i < a[k].size(); ++i ){
-        acol[k][i] = &a[k][i][0]; 
+        acol[k][i] = &a[k][i][i*mloc]; //a[k] will always be square 
       }
       if (nloc_odd)
        acol[k][2*nploc-1] = &a_aux[k][0];
     } // for k 
     for ( int i = 0; i < u.size(); ++i ) {
-      ucol[i] = &u[i][0];
+      ucol[i] = &u[i][i*mloc];
     }
     if (nloc_odd) 
       ucol[2*nploc-1] = &u_aux[0];  
@@ -100,7 +107,7 @@ double jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixTy
     // apq[3*ipair+2 + k*3*nploc] = aqq[k][ipair]
     std::vector<complex> apq(a.size()*3*nploc);
     std::vector<double> tapq(a.size()*3*2*nploc); //CS need for summation over all
-
+/*
     while (!done && nsweep < maxsweep) {
         ++nsweep;
        // sweep local pairs and rotate 2*np -1 times 
@@ -174,7 +181,7 @@ double jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixTy
                     complex s = complex(y / (2.0 * r), -z / (2.0 * r));
                     complex sconj = conj_cplx(s);
 
-                    /*for (int k = 0; k < a.size(); ++k) {
+                    for (int k = 0; k < a.size(); ++k) {
                         complex* tmp = (top[ipair] < mloc) ? acol[k][top[ipair]*mloc] : &a_aux[k][0];
                         gpu::array<complex,1> ap = {*tmp};
 			complex* tmp1 = (bot[ipair] < mloc) ? acol[k][bot[ipair]*mloc] : &a_aux[k][0];
@@ -194,7 +201,7 @@ double jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixTy
 		    delete tmp3;
 
                     plane_rot(up, uq, c, sconj);
-*/
+
                     double diag_change_ipair = 0.0;
                     for (int k = 0; k < a.size(); ++k) {
                         const int iapq = 3 * ipair + k * 3 * nploc;
@@ -224,7 +231,7 @@ double jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixTy
 	    }
 	} //irot 
         done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
-    } //while 
+    } //while */
 /*
     // Reorder matrix columns and compute diagonal elements
     std::vector<complex> tmpmat(nloc * mloc);
