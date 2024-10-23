@@ -29,7 +29,7 @@ namespace inq {
 namespace wannier {
 
 template <typename T, typename T1, class MatrixType1, class MatrixType2, class MatrixType3>      //JB: proper function declaration consistent w/inq style
-int jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType3& adiag) {
+auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType3& adiag) {
 
     const double eps = std::numeric_limits<double>::epsilon();
     assert(tol > eps);
@@ -107,7 +107,7 @@ int jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType3
     // apq[3*ipair+2 + k*3*nploc] = aqq[k][ipair]
     std::vector<complex> apq(a.size()*3*nploc);
     std::vector<double> tapq(a.size()*3*2*nploc); //CS need for summation over all
-/*
+
     while (!done && nsweep < maxsweep) {
         ++nsweep;
        // sweep local pairs and rotate 2*np -1 times 
@@ -133,9 +133,11 @@ int jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType3
                     } //for ii
                 } //for ipair
             }; //for k 
+//CS all correct until here 
 
 	   //now need summation routine for parallel, probably from sum.hpp
-	   //sum into tapq and pass back 
+	   //sum into tapq and pass back (dsum w/qbach)
+	   //or a gather, sum, scatter routine or comm_allreduce 
 
             for (int ipair = 0; ipair < nploc; ++ipair) {
                 if (top[ipair] >= 0 && bot[ipair] >= 0) {
@@ -216,7 +218,7 @@ int jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType3
  
                 }
             }//for ipair
-
+/*
             // Rotate top and bot arrays
             if (nploc > 0) {
                     bot.push_back(top.back());
@@ -256,7 +258,7 @@ int jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType3
         }
     }
 */
-    return nsweep;
+    return apq[0];
 
 } //jade_complex
 } // namespace wannier
@@ -277,40 +279,30 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
     int maxsweep = 100;
     double tol = 1e-6;
 
-    // Create a vector of 2 matrices (2x2 matrices)
-    std::vector<std::vector<std::vector<complex>>> a(2, std::vector<std::vector<complex>>(2, std::vector<complex>(2))); 
+    // Create a vector of 6 1x1 matrices (H2 test case) //coressponds to gs in a 20x20x20 cell 
+    std::vector<std::vector<std::vector<complex>>> a(6, std::vector<std::vector<complex>>(1, std::vector<complex>(1))); 
 
-    // Fill first matrix a[0]
-    a[0][0][0] = complex(1.0, 0.0);   // 1 + 0i
-    a[0][0][1] = complex(0.5, 0.5);   // 0.5 + 0.5i
-    a[0][1][0] = complex(0.5, -0.5);  // 0.5 - 0.5i
-    a[0][1][1] = complex(1.0, 1.0);   // 1 + 1i
-
-    // Fill second matrix a[1]
-    a[1][0][0] = complex(2.0, 0.0);   // 2 + 0i
-    a[1][0][1] = complex(1.0, 1.0);   // 1 + 1i
-    a[1][1][0] = complex(1.0, -1.0);  // 1 - 1i
-    a[1][1][1] = complex(2.0, 2.0);   // 2 + 2i
+    // Fill a mats 
+    a[0][0][0] = complex(0.96182096,0.00000000); 
+    a[1][0][0] = complex(0.00000001,-0.00000000);   
+    a[2][0][0] = complex(0.96182097,0.00000000);
+    a[3][0][0] = complex(-0.00000000,-0.00000000);
+    a[4][0][0] = complex(0.92596980,-0.00000001);
+    a[5][0][0] = complex(0.20697845,0.00000004);
 
     // Create matrix u (initially identity)
-    std::vector<std::vector<complex>> u(2, std::vector<complex>(2));
+    std::vector<std::vector<complex>> u(1, std::vector<complex>(1));
     u[0][0] = complex(1.0, 0.0);  // Identity element
-    u[0][1] = complex(0.0, 0.0);
-    u[1][0] = complex(0.0, 0.0);
-    u[1][1] = complex(1.0, 0.0);  // Identity element
 
     // Prepare adiag to hold diagonal elements (size should match number of a matrices and their dimensions)
-    std::vector<std::vector<complex>> adiag(a.size(), std::vector<complex>(2)); // Assuming single diagonal element per input matrix
+    std::vector<std::vector<complex>> adiag(a.size(), std::vector<complex>(1)); // Assuming single diagonal element per input matrix
 
     // Call the jade_complex function
-    int sweep = wannier::jade_complex(maxsweep, tol, a, u, adiag);
+    auto sweep = wannier::jade_complex(maxsweep, tol, a, u, adiag);
 
-
-
-
-
-
-
-
+    	CHECK(u.size() == 1);
+    	CHECK(adiag.size() == 6);
+    	CHECK(adiag[0].size() == 1);
+        CHECK(real(sweep) == 0.0_a );
 }
 #endif
