@@ -87,13 +87,13 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     for (int k = 0; k < a.size(); ++k) {
       acol[k].resize(2*nploc);
       for (int i = 0; i < a[k].size(); ++i ){
-        acol[k][i] = &a[k][i][i*mloc]; //a[k] will always be square
+        acol[k][i] = &conj_cplx(a[k][0][i]); //a[k] will always be square //why does QBACH return the conjugate?? 
       }
       if (nloc_odd)
        acol[k][2*nploc-1] = &a_aux[k][0];
     } // for k
     for ( int i = 0; i < u.size(); ++i ) {
-      ucol[i] = &u[i][i*mloc];
+      ucol[i] = &u[0][i];
     }
     if (nloc_odd)
       ucol[2*nploc-1] = &u_aux[0];
@@ -262,7 +262,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
         }
     }
 */
-    return apq.size();
+    return apq;
 
 } //jade_complex
 } // namespace wannier
@@ -309,8 +309,8 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
     a[4][1][1] = complex(0.0000,0.0000);
     a[5][0][0] = complex(-0.0977,0.0000);
     a[5][0][1] = complex(0.0073,0.6826);
-    a[5][1][0] = complex(0.0000,0.0000);
-    a[5][1][1] = complex(0.0000,0.0000);
+    a[5][1][0] = complex(0.0073,0.6826);
+    a[5][1][1] = complex(-0.1186,-0.0000);
 
     // Create matrix u (initially identity)
     std::vector<std::vector<complex>> u(2, std::vector<complex>(2));
@@ -328,6 +328,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
     	CHECK(u.size() == 2);
     	CHECK(adiag.size() == 6);
     	CHECK(adiag[0].size() == 2);
-        CHECK(real(sweep) == 18_a );
+        CHECK(real(sweep[0]) == -0.0010_a );
+	CHECK(imag(sweep[0]) == 0.1081_a);
 }
 #endif
