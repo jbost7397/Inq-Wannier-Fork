@@ -34,9 +34,9 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     const double eps = std::numeric_limits<double>::epsilon();
     assert(tol > eps);
 
-    int nloc = a[0].size();  //cols 
-    int mloc = a[0][0].size();  //rows //CS nloc = mloc (NxN) for all wannier routines 
-    int n = a.size(); // 6 for all wannier 
+    int nloc = a[0].size();  //cols
+    int mloc = a[0][0].size();  //rows //CS nloc = mloc (NxN) for all wannier routines
+    int n = a.size(); // 6 for all wannier
 
     // Initialize u as identity
     u = std::vector<std::vector<complex>> (mloc, std::vector<complex>(nloc)); //CS same size as a[k]
@@ -46,7 +46,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
           if(m == n) u[m][n] = complex{1.0,0.0};
       } //n
     } //m
- 
+
     // eigenvalue array
     adiag.resize(a.size());
     for ( int k = 0; k < a.size(); k++ ){
@@ -56,7 +56,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     //check if number of rows is odd
     const bool nloc_odd = (mloc % 2 != 0);
 
-    //if nloc is odd need auxiliary arrays for an extra column 
+    //if nloc is odd need auxiliary arrays for an extra column
     std::vector<std::vector<complex>> a_aux(a.size());
     std::vector<complex> u_aux;
     if (nloc_odd) {
@@ -65,7 +65,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
       u_aux.resize(mloc);
      }
 
-    const int nploc = (nloc + 1) / 2; //when parallel replace nloc with column distributor 
+    const int nploc = (nloc + 1) / 2; //when parallel replace nloc with column distributor
     std::deque<int> top(nploc), bot(nploc);
     int np = nploc; //CS this will always be true when non-parallel
 
@@ -78,25 +78,25 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
         bot[nploc - i - 1] = nploc + i;
     }
 
-    //when parallel need routine to store global column address for reordering 
+    //when parallel need routine to store global column address for reordering
 
-    //std::vec here since this will depend on parralelization 
-    std::vector<std::vector<complex*>> acol(a.size());  
-    std::vector<complex*> ucol(2*nploc);            
+    //std::vec here since this will depend on parralelization
+    std::vector<std::vector<complex*>> acol(a.size());
+    std::vector<complex*> ucol(2*nploc);
 
     for (int k = 0; k < a.size(); ++k) {
       acol[k].resize(2*nploc);
       for (int i = 0; i < a[k].size(); ++i ){
-        acol[k][i] = &a[k][i][i*mloc]; //a[k] will always be square 
+        acol[k][i] = &a[k][i][i*mloc]; //a[k] will always be square
       }
       if (nloc_odd)
        acol[k][2*nploc-1] = &a_aux[k][0];
-    } // for k 
+    } // for k
     for ( int i = 0; i < u.size(); ++i ) {
       ucol[i] = &u[i][i*mloc];
     }
-    if (nloc_odd) 
-      ucol[2*nploc-1] = &u_aux[0];  
+    if (nloc_odd)
+      ucol[2*nploc-1] = &u_aux[0];
 
     int nsweep = 0;
     bool done = false;
@@ -110,7 +110,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
     while (!done && nsweep < maxsweep) {
         ++nsweep;
-       // sweep local pairs and rotate 2*np -1 times 
+       // sweep local pairs and rotate 2*np -1 times
         for (int irot = 0; irot < 2 * np - 1; ++irot) {
             //jacobi rotations for local pairs
             //of diagonal elements for all pairs (apq)
@@ -121,24 +121,28 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                     apq[iapq + 1] = complex{0.0, 0.0};
                     apq[iapq + 2] = complex{0.0, 0.0};
 
-                    const complex* ap = (top[ipair] < mloc) ? acol[k][top[ipair] * mloc] : &a_aux[k][0];
-                    const complex* aq = (bot[ipair] < mloc) ? acol[k][bot[ipair] * mloc] : &a_aux[k][0];
-                    const complex* up = (top[ipair] < mloc) ? ucol[top[ipair] * mloc] : &u_aux[0];
-                    const complex* uq = (bot[ipair] < mloc) ? ucol[bot[ipair] * mloc] : &u_aux[0];
+		    if (top[ipair] >= 0 && bot[ipair] >= 0 ){
+                    const complex* ap = acol[k][top[ipair]];
+                    const complex* aq = acol[k][bot[ipair]];
+                    const complex* up = ucol[top[ipair]];
+                    const complex* uq = ucol[bot[ipair]];
 
                     for (int ii = 0; ii < mloc; ++ii) {
                       apq[iapq] += conj_cplx(ap[ii]) * uq[ii];
                       apq[iapq + 1] += conj_cplx(ap[ii]) * up[ii];
                       apq[iapq + 2] += conj_cplx(aq[ii]) * uq[ii];
                     } //for ii
+		  } //top bot
                 } //for ipair
-            }; //for k 
-//CS all correct until here 
-
+            }; //for k
+//CS all correct until here
+  }
+}
+/*
 	   //now need summation routine for parallel, probably from sum.hpp
 	   //sum into tapq and pass back (dsum w/qbach)
-	   //or a gather, sum, scatter routine or comm_allreduce 
-/*
+	   //or a gather, sum, scatter routine or comm_allreduce
+
             for (int ipair = 0; ipair < nploc; ++ipair) {
                 if (top[ipair] >= 0 && bot[ipair] >= 0) {
                     double g11 = 0.0, g12 = 0.0, g13 = 0.0;
@@ -164,13 +168,13 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                         g31 += real(conj_cplx(h3) * h1);
                         g32 += real(conj_cplx(h3) * h2);
                         g33 += real(conj_cplx(h3) * h3);
-                    } //for k 
+                    } //for k
 
                     int N = 3; // For Wannier 3x3 matrix size
                     gpu::array<double,1> G = {g11, g12, g13, g21, g22, g23, g31, g32, g33};  // Matrix to be diagonalized
                     gpu::array<double,1> Q(9); // Eigenvectors
                     gpu::array<double,1> D(3); // Eigenvalues
-                    jacobi_eigenvalue(N, G, Q, D); 
+                    jacobi_eigenvalue(N, G, Q, D);
 
                     // Extract the largest eigenvalue's vector
                     double x = Q[6], y = Q[7], z = Q[8];
@@ -213,9 +217,9 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
                         double apq_new = real(v1 * (aii - ajj) + 2.0 * c * s * apq[iapq] + 2.0 * sconj * c * apq[iapq]);
                         diag_change_ipair += 2.0 * fabs(apq_new - real(aii - ajj));
-			} 
+			}
                     diag_change += diag_change_ipair;
- 
+
                 }
             }//for ipair
 
@@ -231,7 +235,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 	    } else {
 	      std::swap(top[0], bot[1]);
 	    }
-	} //irot 
+	} //irot
         done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
     } //while */
 /*
@@ -258,7 +262,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
         }
     }
 */
-    return u[1][1];
+    return apq.size();
 
 } //jade_complex
 } // namespace wannier
@@ -272,58 +276,58 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
 TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 
-	using namespace inq;
-    	using namespace Catch::literals;
-	using Catch::Approx;
+    using namespace inq;
+    using namespace Catch::literals;
+    using Catch::Approx;
 
-	int maxsweep = 100;
-    	double tol = 1e-6;
+    int maxsweep = 100;
+    double tol = 1e-6;
 
-	std::vector<std::vector<std::vector<complex>>> a(6, std::vector<std::vector<complex>>(2, std::vector<complex>(2)));
+    // Create a vector of 6 1x1 matrices (H2 test case) //coressponds to gs in a 20x20x20 cell
+    std::vector<std::vector<std::vector<complex>>> a(6, std::vector<std::vector<complex>>(2, std::vector<complex>(2)));
 
-	//dummy a mats to pass 
-	a[0][0][0] = complex(-0.6843,-0.0000);
-	a[0][0][1] = complex(-0.0010,-0.1081);
-        a[0][1][0] = complex(-0.6810,0.0000);
-        a[0][1][1] = complex(0.0000,0.0000);
-	a[1][0][0] = complex(-0.0977,0.0000);
-	a[1][0][1] = complex(0.0073,0.6826);
-	a[1][1][0] = complex(0.0000,0.0000);
-	a[1][1][1] = complex(0.0000,0.0000);
-	a[2][0][0] = complex(-0.6843,-0.0000);
-	a[2][0][1] = complex(-0.0010,-0.1081);
-	a[2][1][0] = complex(0.0000,0.0000);
-	a[2][1][1] = complex(0.0000,0.0000);
-	a[3][0][0] = complex(-0.0977,0.0000);
-	a[3][0][1] = complex(0.0073,0.6826);
-	a[3][1][0] = complex(0.0000,0.0000);
-	a[3][1][1] = complex(0.0000,0.0000);
-	a[4][0][0] = complex(-0.6843,-0.0000);
-	a[4][0][1] = complex(-0.0010,-0.1081);
-	a[4][1][0] = complex(0.0000,0.0000);
-	a[4][1][1] = complex(0.0000,0.0000);
-	a[5][0][0] = complex(-0.0977,0.0000);
-	a[5][0][1] = complex(0.0073,0.6826);
-	a[5][1][0] = complex(0.0000,0.0000);
-	a[5][1][1] = complex(0.0000,0.0000);
+    // Fill a mats
+    a[0][0][0] = complex(-0.6843,-0.0000);
+    a[0][0][1] = complex(-0.0010,-0.1081);
+    a[0][1][0] = complex(-0.6810,0.0000);
+    a[0][1][1] = complex(0.0000,0.0000);
+    a[1][0][0] = complex(-0.0977,0.0000);
+    a[1][0][1] = complex(0.0073,0.6826);
+    a[1][1][0] = complex(0.0000,0.0000);
+    a[1][1][1] = complex(0.0000,0.0000);
+    a[2][0][0] = complex(-0.6843,-0.0000);
+    a[2][0][1] = complex(-0.0010,-0.1081);
+    a[2][1][0] = complex(0.0000,0.0000);
+    a[2][1][1] = complex(0.0000,0.0000);
+    a[3][0][0] = complex(-0.0977,0.0000);
+    a[3][0][1] = complex(0.0073,0.6826);
+    a[3][1][0] = complex(0.0000,0.0000);
+    a[3][1][1] = complex(0.0000,0.0000);
+    a[4][0][0] = complex(-0.6843,-0.0000);
+    a[4][0][1] = complex(-0.0010,-0.1081);
+    a[4][1][0] = complex(0.0000,0.0000);
+    a[4][1][1] = complex(0.0000,0.0000);
+    a[5][0][0] = complex(-0.0977,0.0000);
+    a[5][0][1] = complex(0.0073,0.6826);
+    a[5][1][0] = complex(0.0000,0.0000);
+    a[5][1][1] = complex(0.0000,0.0000);
 
-	// Create matrix u (initially identity)
-	std::vector<std::vector<complex>> u(2, std::vector<complex>(2));
-	u[0][0] = complex(1.0, 0.0);  // Identity element
-	u[0][1] = complex(0.0, 0.0);  
-	u[1][0] = complex(0.0, 0.0);  
-	u[1][1] = complex(1.0, 0.0);  // Identity element
+    // Create matrix u (initially identity)
+    std::vector<std::vector<complex>> u(2, std::vector<complex>(2));
+    u[0][0] = complex(1.0, 0.0);  // Identity element
+    u[0][1] = complex(0.0, 0.0);
+    u[1][0] = complex(0.0, 0.0);
+    u[1][1] = complex(1.0, 0.0);  // Identity element
 
-	// Prepare adiag to hold diagonal elements (size should match number of a matrices and their dimensions)
-	std::vector<std::vector<complex>> adiag(a.size(), std::vector<complex>(2)); // Assuming single diagonal element per input matrix
+    // Prepare adiag to hold diagonal elements (size should match number of a matrices and their dimensions)
+    std::vector<std::vector<complex>> adiag(a.size(), std::vector<complex>(2)); // Assuming single diagonal element per input matrix
 
-	// Call the jade_complex function
-	auto sweep = wannier::jade_complex(maxsweep, tol, a, u, adiag);
+    // Call the jade_complex function
+    auto sweep = wannier::jade_complex(maxsweep, tol, a, u, adiag);
 
-	CHECK(u.size() == 2);
-	CHECK(adiag.size() == 6);
-	CHECK(adiag[0].size() == 2);
-	CHECK(real(sweep) == 1.0);
-		
+    	CHECK(u.size() == 2);
+    	CHECK(adiag.size() == 6);
+    	CHECK(adiag[0].size() == 2);
+        CHECK(real(sweep) == 18_a );
 }
 #endif
