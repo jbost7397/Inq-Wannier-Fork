@@ -412,9 +412,8 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
         using namespace Catch::literals;
         using Catch::Approx;
 
-		//auto cell = systems::cell::cubic(15.0_b).periodicity(3); 
-	
         //CS adiag_ values correspond to H2 gs. Should give <mlwf center="    0.000000    0.000000    0.711503 " spread=" 1.578285 "/>
+	//pass two identical centers in test to verify distance fxns 
 
 	SECTION("Wannier Centers"){
 
