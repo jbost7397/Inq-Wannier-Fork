@@ -135,7 +135,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                 } //for ipair
             } //for k
 //CS all correct until here
-/*
+
 	   //now need summation routine for parallel, probably from sum.hpp
 	   //sum into tapq and pass back (dsum w/qbach)
 	   //or a gather, sum, scatter routine or comm_allreduce
@@ -179,32 +179,46 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                         x = -x; y = -y; z = -z;
                     }
 
-                    double r = sqroot((x + 1) / 2.0);
+		    double one = 1.0;
+                    double r = sqroot((x + one) / 2.0); 
                     complex c = complex(r, 0.0);
                     complex s = complex(y / (2.0 * r), -z / (2.0 * r));
                     complex sconj = conj_cplx(s);
 
                     for (int k = 0; k < a.size(); ++k) {
-                        complex* tmp = (top[ipair] < mloc) ? acol[k][top[ipair]*mloc] : &a_aux[k][0];
-                        gpu::array<complex,1> ap = {*tmp};
-			complex* tmp1 = (bot[ipair] < mloc) ? acol[k][bot[ipair]*mloc] : &a_aux[k][0];
-			gpu::array<complex,1> aq = {*tmp1};
-			delete tmp;
-			delete tmp1;
+                      complex *ap = acol[k][top[ipair]];
+                      complex *aq = acol[k][bot[ipair]];
+                      //Apply plane rotation
+                      //plane_rot(ap, aq, c, sconj); //CS skip using plane_rot, probably until clarity on cublas zrot functionality 
+		      //routine now internal
+		      std::vector<complex> ap_tmp(mloc);
+                      std::vector<complex> aq_tmp(mloc);
+            		for (int ii = 0; ii < mloc; ++ii) {
+              		  ap_tmp[ii] = c * ap[ii] + sconj * aq[ii];
+          		  aq_tmp[ii] = -s*ap[ii] + c * aq[ii];
+            		}
+            		for (int ii = 0; ii < mloc; ++ii) {
+              		ap[ii] = ap_tmp[ii];
+              		aq[ii] = aq_tmp[ii];
+              		}
+		    }
 
-                        // Apply plane rotation
-                        plane_rot(ap, aq, c, sconj);
-                    }
+		    //rotate u 
+                    //plane_rot(up, uq, c, sconj);
+          	    complex *up = ucol[top[ipair]];
+         	    complex *uq = ucol[bot[ipair]];
+          	    std::vector<complex> up_tmp(mloc);
+          	    std::vector<complex> uq_tmp(mloc);
+          	    for (int ii = 0; ii < mloc; ++ii) {
+            	      up_tmp[ii] = c * up[ii] + sconj * uq[ii];
+            	      uq_tmp[ii] = -s*up[ii] + c * uq[ii];
+          	     }
+          	     for (int ii = 0; ii < mloc; ++ii) {
+            	       up[ii] = up_tmp[ii];
+            	       uq[ii] = uq_tmp[ii];
+                     }
 
-                    complex* tmp2 = {(top[ipair] < mloc) ? ucol[top[ipair]*mloc] : &u_aux[0]};
-		    gpu::array<complex,1> up = {*tmp2};
-                    complex* tmp3 = {(bot[ipair] < mloc) ? ucol[bot[ipair]*mloc] : &u_aux[0]};
-		    gpu::array<complex,1> uq = {*tmp3};
-		    delete tmp2;
-		    delete tmp3;
-
-                    plane_rot(up, uq, c, sconj);
-
+                    // new value of off-diag element apq
                     double diag_change_ipair = 0.0;
                     for (int k = 0; k < a.size(); ++k) {
                         const int iapq = 3 * ipair + k * 3 * nploc;
@@ -216,10 +230,9 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                         diag_change_ipair += 2.0 * fabs(apq_new - real(aii - ajj));
 			}
                     diag_change += diag_change_ipair;
-
                 }
             }//for ipair
-
+/*
             // Rotate top and bot arrays
             if (nploc > 0) {
                     bot.push_back(top.back());
@@ -236,30 +249,14 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
         done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
     } //while 
 /*
-    // Reorder matrix columns and compute diagonal elements
-    std::vector<complex> tmpmat(nloc * mloc);
-    for (int k = 0; k < a.size(); ++k) {
-        for (int ipair = 0; ipair < nploc; ++ipair) {
-            if (top[ipair] >= 0) {
-                std::copy(a[k].begin() + top[ipair] * mloc, a[k].begin() + (top[ipair] + 1) * mloc, tmpmat.begin() + ipair * mloc);
-            }
-        }
-
-        for (int ipair = 0; ipair < nploc; ++ipair) {
-            if (bot[nploc-ipair-1] >= 0) {
-                std::copy(a[k].begin() + bot[ipair] * mloc, a[k].begin() + (bot[ipair] + 1) * mloc, tmpmat.begin() + (nploc + ipair) * mloc);
-            }
-        }
-    }
-
-    // Store diagonal elements
+    // Compute diagonal elements
     for (int k = 0; k < a.size(); ++k) {
         for (int ipair = 0; ipair < nploc; ++ipair) {
             adiag[k][ipair] = tmpmat[ipair * mloc];  // Store first element or use a more refined approach based on your needs
         }
     }
 */
-    return apq;
+    return diag_change;
 
 } //jade_complex
 } // namespace wannier
@@ -325,7 +322,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
     	CHECK(u.size() == 2);
     	CHECK(adiag.size() == 6);
     	CHECK(adiag[0].size() == 2);
-        CHECK(real(sweep[0]) == -0.00103429_a);
+        /*CHECK(real(sweep[0]) == -0.00103429_a);
 	CHECK(imag(sweep[0]) == 0.10810876_a);
         CHECK(real(sweep[1]) == -0.68433137_a);
         CHECK(imag(sweep[1]) == 0.00000000_a);
@@ -342,6 +339,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
         CHECK(real(sweep[7]) == -0.68433137_a);
         CHECK(imag(sweep[7]) == 0.0000000_a);
         CHECK(real(sweep[8]) == -0.68104162_a);
-        CHECK(imag(sweep[8]) == 0.0000000_a);	
+        CHECK(imag(sweep[8]) == 0.0000000_a);*/ //for apq 0-8, all check out 	
+        CHECK(sweep == 0.14215246_a ); 
 }
 #endif
