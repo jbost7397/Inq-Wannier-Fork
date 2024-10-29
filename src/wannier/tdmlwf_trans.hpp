@@ -22,65 +22,83 @@
 #include <basis/real_space.hpp>
 #include <states/ks_states.hpp>
 #include <states/orbital_set.hpp>
-#include <wannier/jade_complex.hpp>
+//#include <wannier/jade_complex.hpp>
+#include <gpu/array.hpp>
 #include <iostream>
-#include <vector> 
+#include <vector>
 
 namespace inq {
 namespace wannier {
 
-class tdmlwf_transform {
+class tdmlwf_trans {
 
+private:
+	//gpu::array<complex,2> u_; //JB: have to consider between gpu::array, std::vector of std::vectors, or perhaps matrix::distributed for parallelism?
+	//gpu::array<complex,3> a_;
+	//gpu::array<complex,2> adiag_;
+	std::vector<std::unique_ptr<matrix::distributed<complex>>> a_;
+  	std::unique_ptr<matrix::distributed<complex>> u_;
+  	std::vector<std::vector<complex>> adiag_;
+  	states::ks_states states_;
+  	basis::real_space basis_;
 
 public:
 
 ////////////////////////////////////////////////////////////////////////////////
-tdmlwf_transform(const basis::real_space & basis, states::ks_states const & states): basis_(basis), states_(states), comm_(basis_.comm())  {
+tdmlwf_trans(const basis::real_space & basis, states::ks_states const & states) :
+      basis_(basis), states_(states) {
+
+  const int n = states_.num_states();
+  int nprocs = basis_.comm().size();
+  std::array<int, 2> shape;
+  int dim_x = std::round(std::cbrt(nprocs));
+  shape[0] = dim_x;
+  shape[1] = nprocs / dim_x;
+  auto comm = parallel::cartesian_communicator<2>(basis_.comm(), shape);
   a_.resize(6);
   adiag_.resize(6);
-  const int n = states_.num_states();
-  int k; 
+  int k;
   for (k = 0; k < 6; k++) {
     //gpu::array<complex,2> a_[k];
-    a_[k] = std::make_unique<inq::matrix::distributed<std::complex<double>>>(matrix::scatter(comm_, inq::gpu::array<std::complex<double>, 2>(n, n), 0));
+    a_[k] = std::make_unique<matrix::distributed<complex>>(matrix::scatter(comm, gpu::array<complex, 2>({n, n}), 0));
     adiag_[k].resize(n);
   }
 
   //gpu::array<complex,2> u_({n,n});
-  u_ = std::make_unique<inq::matrix::distributed<std::complex<double>>>(matrix::scatter(comm_, inq::gpu::array<std::complex<double>, 2>(n, n), 0));
-
-  /* JB Testing
-
-  sd_ = std::make_unique<states::orbital_set<basis::real_space, std::complex<double>>>(basis, n, 1, {0.0, 0.0, 0.0}, 0, comm_);
-  sdcosx_ = std::make_unique<states::orbital_set<basis::real_space, std::complex<double>>>(basis, n, 1, {0.0, 0.0, 0.0}, 0, comm_);
-  sdcosy_ = std::make_unique<states::orbital_set<basis::real_space, std::complex<double>>>(basis, n, 1, {0.0, 0.0, 0.0}, 0, comm_);
-  sdcosz_ = std::make_unique<states::orbital_set<basis::real_space, std::complex<double>>>(basis, n, 1, {0.0, 0.0, 0.0}, 0, comm_);
-  sdsinx_ = std::make_unique<states::orbital_set<basis::real_space, std::complex<double>>>(basis, n, 1, {0.0, 0.0, 0.0}, 0, comm_);
-  sdsiny_ = std::make_unique<states::orbital_set<basis::real_space, std::complex<double>>>(basis, n, 1, {0.0, 0.0, 0.0}, 0, comm_);
-  sdsinz_ = std::make_unique<states::orbital_set<basis::real_space, std::complex<double>>>(basis, n, 1, {0.0, 0.0, 0.0}, 0, comm_);
-  */
-}	  
+  u_ = std::make_unique<matrix::distributed<complex>>(matrix::scatter(comm, gpu::array<complex, 2>({n, n}), 0));
 
 
 
-void TDMLWFTransform::update(void)
+}
+
+
+
+void update(void)
 {
-  auto& c = sd_->matrix();
-  auto& ccosx = sdcosx_->matrix();
-  auto& csinx = sdsinx_->matrix();
-  auto& ccosy = sdcosy_->matrix();
-  auto& csiny = sdsiny_->matrix();
-  auto& ccosz = sdcosz_->matrix();
-  auto& csinz = sdsinz_->matrix();
-  /*
-  vector<complex<double> > zvec(bm_.zvec_size()),
-    zvec_cos(bm_.zvec_size()), zvec_sin(bm_.zvec_size()),
-    ct(bm_.np012loc()), ct_cos(bm_.np012loc()), ct_sin(bm_.np012loc());
-  */
+  int nprocs = basis_.comm().size();
+  std::array<int, 2> shape;
+  int dim_x = std::round(std::cbrt(nprocs));
+  shape[0] = dim_x;
+  shape[1] = nprocs / dim_x;
+  auto comm = parallel::cartesian_communicator<2>(basis_.comm(), shape);
+  auto sd = std::make_unique<states::orbital_set<basis::real_space, complex>>(basis_, n, 1, {0.0, 0.0, 0.0}, 0, comm);
+  //auto sdcosx = std::make_unique<states::orbital_set<basis::real_space, complex>>(basis_, n, 1, {0.0, 0.0, 0.0}, 0, comm);
+  //auto sdcosy = std::make_unique<states::orbital_set<basis::real_space, complex>>(basis_, n, 1, {0.0, 0.0, 0.0}, 0, comm);
+  //auto sdcosz = std::make_unique<states::orbital_set<basis::real_space, complex>>(basis_, n, 1, {0.0, 0.0, 0.0}, 0, comm);
+  //auto sdsinx = std::make_unique<states::orbital_set<basis::real_space, complex>>(basis_, n, 1, {0.0, 0.0, 0.0}, 0, comm);
+  //auto sdsiny = std::make_unique<states::orbital_set<basis::real_space, complex>>(basis_, n, 1, {0.0, 0.0, 0.0}, 0, comm);
+  //auto sdsinz = std::make_unique<states::orbital_set<basis::real_space, complex>>(basis_, n, 1, {0.0, 0.0, 0.0}, 0, comm);
+  auto& c = sd->matrix();
+  auto f = operations::transform::to_fourier(c);
+  //auto& ccosx = sdcosx->matrix();
+  //auto& csinx = sdsinx->matrix();
+  //auto& ccosy = sdcosy->matrix();
+  //auto& csiny = sdsiny->matrix();
+  //auto& ccosz = sdcosz->matrix();
+  //auto& csinz = sdsinz->matrix();
 
   for ( int i = 0; i < 6; i++ )
   {
-    //a_[i]->resize(c.n(), c.n(), c.nb(), c.nb());
     a_[i]->resize(c.size(), c.size());
     //adiag_[i].resize(c.n());
     adiag_[i].resize(c.size());
@@ -89,26 +107,20 @@ void TDMLWFTransform::update(void)
   u_->resize(c.size(), c.size());
 
   // loop over all local states
-  const int np0 = basis_.sizes()[0];
-  const int np1 = basis_.sizes()[1];
-  const int np2 = basis_.sizes()[2];
-  const int np01 = np0 * np1;
-  //const int np2loc = bm_.np2loc();
-  //const int nvec = bm_.nvec();
+  //const int np0 = basis_.sizes()[0];
+  //const int np1 = basis_.sizes()[1];
+  //const int np2 = basis_.sizes()[2];
+  //const int np01 = np0 * np1;
   //for ( int n = 0; n < c.nloc(); n++ )
-  for ( int n = 0; n < c.size(); n++ )
+  for ( int n = 0; n < c.local_set_size(); n++ )
   {
-    //cout << "mlwf_n = " << n << endl;
-    auto f = c.rotated()[n];
-    auto fcx = ccosx.rotated()[n];
-    auto fsx = csinx.rotated()[n];
-    auto fcy = ccosy.rotated()[n];
-    auto fsy = csiny.rotated()[n];
-    auto fcz = ccosz.rotated()[n];
-    auto fsz = csinz.rotated()[n];
-    // direction z
-    // map state to array zvec_
-    bm_.vector_to_zvec(&f[0],&zvec[0]);
+    //auto f = c.rotated()[n];
+    //auto fcx = ccosx.rotated()[n];
+    //auto fsx = csinx.rotated()[n];
+    //auto fcy = ccosy.rotated()[n];
+    //auto fsy = csiny.rotated()[n];
+    //auto fcz = ccosz.rotated()[n];
+    //auto fsz = csinz.rotated()[n];
 
     for ( int ivec = 0; ivec < nvec; ivec++ )
     {
@@ -117,13 +129,6 @@ void TDMLWFTransform::update(void)
       //compute_sincos(np2, zvec.data() + ibase, zvec_cos.data() + ibase, zvec_sin.data() + ibase);
       compute_sincos(np2, zvec({ibase, ibase + np2}), zvec_cos({ibase, ibase + np2}), zvec_sin({ibase, ibase + np2}));
     }
-    // map back zvec_cos to sdcos and zvec_sin to sdsin
-    bm_.zvec_to_vector(&zvec_cos[0],&fcz[0]);
-    bm_.zvec_to_vector(&zvec_sin[0],&fsz[0]);
-
-    // x direction
-    // map zvec to ct
-    bm_.transpose_fwd(&zvec[0],&ct[0]);
 
     for ( int iz = 0; iz < np2loc; iz++ )
     {
@@ -134,44 +139,7 @@ void TDMLWFTransform::update(void)
 	compute_sincos(np0, ct({ibase, ibase + len}), ct_cos({ibase, ibase + len}), ct_sin({ibase, ibase + len}));
       }
     }
-    // transpose back ct_cos to zvec_cos
-    bm_.transpose_bwd(&ct_cos[0],&zvec_cos[0]);
-    // transpose back ct_sin to zvec_sin
-    bm_.transpose_bwd(&ct_sin[0],&zvec_sin[0]);
 
-    // map back zvec_cos to sdcos and zvec_sin to sdsin
-    bm_.zvec_to_vector(&zvec_cos[0],&fcx[0]);
-    bm_.zvec_to_vector(&zvec_sin[0],&fsx[0]);
-
-    // y direction
-    vector<complex<double> > c_tmp(np1),ccos_tmp(np1),csin_tmp(np1);
-    int len = np1;
-    int stride = np0;
-    int one = 1;
-    for ( int iz = 0; iz < np2loc; iz++ )
-    {
-      for ( int ix = 0; ix < np0; ix++ )
-      {
-        const int ibase = iz * np01 + ix;
-        //zcopy(&len,&ct[ibase],&stride,&c_tmp[0],&one);
-        //compute_sincos(np1,&c_tmp[0],&ccos_tmp[0],&csin_tmp[0]);
-        //zcopy(&len,&ccos_tmp[0],&one,&ct_cos[ibase],&stride);
-        //zcopy(&len,&csin_tmp[0],&one,&ct_sin[ibase],&stride);
-	gpu::copy(len, ct({ibase, ibase + len}), c_tmp);
-	//compute_sincos(np1, c_tmp.data(), ccos_tmp.data(), csin_tmp.data());
-	compute_sincos(np1, c_tmp({ibase, ibase + len}), ccos_tmp({ibase, ibase + len}), csin_tmp({ibase, ibase + len}));
-	gpu::copy(len, ccos_tmp, ct_cos({ibase, ibase + len}));
-	gpu::copy(len, csin_tmp, ct_sin({ibase, ibase + len}));
-      }
-    }
-    // transpose back ct_cos to zvec_cos
-    bm_.transpose_bwd(&ct_cos[0],&zvec_cos[0]);
-    // transpose back ct_sin to zvec_sin
-    bm_.transpose_bwd(&ct_sin[0],&zvec_sin[0]);
-
-    // map back zvec_cos and zvec_sin
-    bm_.zvec_to_vector(&zvec_cos[0],&fcy[0]);
-    bm_.zvec_to_vector(&zvec_sin[0],&fsy[0]);
   }
 
   // dot products a_[0] = <cos x>, a_[1] = <sin x>
@@ -194,8 +162,8 @@ void TDMLWFTransform::update(void)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-template <typename T, class vector_type1, class vector_type2 > 
-void compute_sincos(T n, vector_type1* f, vector_type2* fc, vector_type2* fs) { 
+template <typename T, class vector_type1, class vector_type2 >
+void compute_sincos(T n, vector_type1* f, vector_type2* fc, vector_type2* fs) {
 //void compute_sincos(const int n, const std::complex<double>* f, std::complex<double>* fc, std::complex<double>* fs) {
 
   // fc[i] =     0.5 * ( f[i-1] + f[i+1] )
@@ -222,14 +190,14 @@ void compute_sincos(T n, vector_type1* f, vector_type2* fc, vector_type2* fs) {
   zdiff = zp - zm;
   fs[n-1] = 0.5 * std::complex<double>(imag(zdiff),-real(zdiff));
 }
-
-void TDMLWFTransform::compute_transform(void)
+/*
+void compute_transform(void)
 {
   const int maxsweep = 100;
   const double tol = 1.e-8;
   int nsweep = jade_complex(maxsweep,tol,a_,*u_,adiag_);
 }
-
+*/
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 auto center(T i, const systems::cell & cell_) {
@@ -291,7 +259,7 @@ bool overlap(T1 epsilon, T2 i, T2 j, const systems::cell & cell_) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-template <typename T>
+/*template <typename T>
 double total_overlaps(T epsilon, const systems::cell & cell_) {
   int sum = 0;
   for ( int i = 0; i < st.num_states(); i++ )
@@ -305,10 +273,10 @@ double total_overlaps(T epsilon, const systems::cell & cell_) {
     sum += count;
   }
     return ((double) sum)/(st.num_states()*st.num_states());
-}
+}*/
 
 ////////////////////////////////////////////////////////////////////////////////
-template <typename T>
+/*template <typename T>
 double pair_fraction(T epsilon, const systems::cell & cell) {
   // pair_fraction: return fraction of pairs having non-zero overlap
   // count pairs (i,j) having non-zero overlap for i != j only
@@ -326,10 +294,10 @@ double pair_fraction(T epsilon, const systems::cell & cell) {
   // add overlap with self: (i,i)
   sum += st.num_states();
   return ((double) sum)/((st.num_states()*(st.num_states()+1))/2);
-}
+}*/
 
 ////////////////////////////////////////////////////////////////////////////////
-template <typename T>
+/*template <typename T>
 double spread2(T i, T j, const systems::cell & cell) {
   assert(i >= 0 && i < st.num_states());
   assert(j >= 0 && j < 3);
@@ -340,7 +308,7 @@ double spread2(T i, T j, const systems::cell & cell) {
   double length = sqrt(recip[0]*recip[0]+ recip[1]*recip[1] + recip[2]*recip[2]);
   const double fac = 1.0 / length;
   return fac*fac * ( 1.0 - std::norm(c) - std::norm(s) );
-}
+}*/
 
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
@@ -356,42 +324,33 @@ double spread(T i, const systems::cell & cell) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-double spread2(const systems::cell & cell) {
+/*double spread2(const systems::cell & cell) {
   double sum = 0.0;
   for ( int i = 0; i < st.num_states(); i++ )
     sum += spread2(i, cell);
   return sum;
-}
+}*/
 
 ////////////////////////////////////////////////////////////////////////////////
-double spread(const systems::cell & cell) {
+/*double spread(const systems::cell & cell) {
   return sqrt(spread2(cell));
-}
+}*/
 
 ////////////////////////////////////////////////////////////////////////////////
-auto dipole(const systems::cell & cell) {
+/*auto dipole(const systems::cell & cell) {
   // total electronic dipole
   vector3<double> sum{0.0,0.0,0.0};
   for ( int i = 0; i < st.num_states(); i++ )
     sum -= 2.0 * center(i,cell);  //CS need to pass state occupations (assume fully occupied for now) How?
   return sum;
-}
+}*/
 
-private:
-  std::vector<complex*> a_;
-  std::vector<complex>* u_;
-  std::vector<std::vector<std::complex<double>>> adiag_;
-  states::ks_states states_;
-  //basis::real_space cell_;
-  //gpu::array<complex,2>* a_;
-  //gpu::array<complex,2> adiag_;
-  //gpu::array<complex,2>* u_;
 
 ////////////////////////////////////////////////////////////////////////////////
 };
 }
 }
-#endif 
+#endif
 
 ///////////////////////////////////////////////////////////////////
 #ifdef INQ_WANNIER_TDMLWF_TRANS_UNIT_TEST
@@ -403,30 +362,30 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
         using namespace Catch::literals;
         using Catch::Approx;
 
+	/*
+		//auto cell = systems::cell::cubic(15.0_b).periodicity(3);
 
-		//auto cell = systems::cell::cubic(15.0_b).periodicity(3); 
-	
         //CS adiag_ values correspond to H2 gs. Should give <mlwf center="    0.000000    0.000000    0.711503 " spread=" 1.578285 "/>
 
 	SECTION("Wannier Centers"){
 
-		//systems::cell cell(vector3<double>(15.0, 0.0, 0.0), vector3<double>(0.0, 15.0, 0.0), vector3<double>(0.0, 0.0, 15.0)); 
+		//systems::cell cell(vector3<double>(15.0, 0.0, 0.0), vector3<double>(0.0, 15.0, 0.0), vector3<double>(0.0, 0.0, 15.0));
 		auto cell = systems::cell::cubic(15.0_b).periodicity(3); //CS more conventional call to a cubic cell with pbc
 		int i = 0;
-		auto center = wannier::center(i, cell); 
+		auto center = wannier::center(i, cell);
 
 		CHECK(center[0] == 0.000000_a);
 		CHECK(center[1] == 0.000000_a);
-		CHECK(center[2] == 0.711503_a); 
-		
+		CHECK(center[2] == 0.711503_a);
+
 		int j = 0;
 		auto dist = wannier::wannier_distance(i, j, cell);
 		CHECK(dist == 0.00_a);
-		
+
 		double epsilon = 10.0;
 		auto overlap = wannier::overlap(epsilon, i, j, cell);
 		CHECK(overlap == true);
-		
+
 		auto ols = wannier::total_overlaps(epsilon, cell);
 		CHECK(ols == 1.00_a);
 		auto pair = wannier::pair_fraction(epsilon,cell);
@@ -446,7 +405,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
                 CHECK(dp[0] == 0.000000_a);
                 CHECK(dp[1] == 0.000000_a);
                 CHECK(dp[2] == -2.846012_a);
-  }	
-  	
+  }*/
+
 }
-#endif  
+#endif
