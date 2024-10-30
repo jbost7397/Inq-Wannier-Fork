@@ -245,25 +245,31 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 	            } 
 	      } //if nploc >0 
 	} //irot
-        //done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
-       done = (nsweep >= maxsweep); 
+       done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
     } //while 
-/*
+
     // Compute diagonal elements
-    for (int k = 0; k < a.size(); ++k) {
-        for (int ipair = 0; ipair < nploc; ++ipair) {
-            adiag[k][ipair] = tmpmat[ipair * mloc];  // Store first element or use a more refined approach based on your needs
-        }
+  for (int k = 0; k < a.size(); ++k) {
+    for (int i = 0; i < a[k].size(); ++i) {
+      adiag[k][i] = complex(0.0, 0.0);    
     }
-*/
-    return *acol[1][1];
+    for (int i = 0; i < a[k].size(); ++i) {
+      const complex *ap = acol[k][i];
+      const complex *up = ucol[i];
+      for (int ii = 0; ii < mloc; ii++)
+      {
+        adiag[k][i] += conj(ap[ii])*up[ii];
+      }
+   }
+ }
+    return adiag;
+    //return nsweep 
 
 } //jade_complex
 } // namespace wannier
 } // namespace inq
 
 #endif
-
 ///////////////////////////////////////////////////////////////////
 #ifdef INQ_AWANNIER_JADE_COMPLEX_UNIT_TEST
 #undef INQ_AWANNIER_JADE_COMPLEX_UNIT_TEST
@@ -340,7 +346,24 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
         CHECK(imag(sweep[7]) == 0.0000000_a);
         CHECK(real(sweep[8]) == -0.68104162_a);
         CHECK(imag(sweep[8]) == 0.0000000_a);*/ //for apq 0-8, all check out 	
-        CHECK(real(sweep) == 0.00590959_a ); 
-	CHECK(imag(sweep) == -0.55484695_a ); //acol is correct upon return (this is for acol[1][1]) thus a is returned correctly 
+        //CHECK(real(sweep) == 0.00590959_a ); 
+	//CHECK(imag(sweep) == -0.55484695_a ); //acol is correct upon return (this is for acol[1][1]) thus a is returned correctly 
+	//CHECK(sweep == 2);
+        CHECK(real(sweep[0][0]) == -0.79081263_a);
+        CHECK(imag(sweep[0][0]) == 0.00000000_a);
+        CHECK(real(sweep[0][1]) == -0.57456037_a);
+        CHECK(imag(sweep[0][1]) == -0.00000000_a);
+        CHECK(real(sweep[1][0]) == 0.57455456_a);
+        CHECK(imag(sweep[1][0]) == -0.00000001_a);
+        CHECK(real(sweep[1][1]) == -0.79080839_a);
+        CHECK(imag(sweep[1][1]) == 0.00000001_a);
+        CHECK(real(sweep[2][0]) == -0.79081263_a);
+        CHECK(imag(sweep[2][0]) == 0.00000000_a);
+        CHECK(real(sweep[2][1]) == -0.57456037_a);
+        CHECK(imag(sweep[2][1]) == -0.00000000_a);
+        CHECK(real(sweep[3][0]) == 0.57455456_a);
+        CHECK(imag(sweep[3][0]) == -0.00000001_a);
+        CHECK(real(sweep[3][1]) == -0.79080840_a);
+        CHECK(imag(sweep[3][1]) == 0.00000001_a);
 }
 #endif
