@@ -100,7 +100,6 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
     int nsweep = 0;
     bool done = false;
-    double diag_change = 0.0;
     // allocate matrix element packed array apq
     // apq[3*ipair   + k*3*nploc] = apq[k][ipair]
     // apq[3*ipair+1 + k*3*nploc] = app[k][ipair]
@@ -110,7 +109,8 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
     while (!done) {
         ++nsweep;
-       // sweep local pairs and rotate 2*np -1 times
+        double diag_change = 0.0;
+        // sweep local pairs and rotate 2*np -1 times
         for (int irot = 0; irot < 2 * np - 1; ++irot) {
             //jacobi rotations for local pairs
             //of diagonal elements for all pairs (apq)
@@ -134,7 +134,6 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 		    } //top bot
                 } //for ipair
             } //for k
-//CS all correct until here
 
 	   //now need summation routine for parallel, probably from sum.hpp
 	   //sum into tapq and pass back (dsum w/qbach)
@@ -232,7 +231,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                     diag_change += diag_change_ipair;
                 }
             }//for ipair
-/*
+
             // Rotate top and bot arrays
             if (nploc > 0) {
                     bot.push_back(top.back());
@@ -240,13 +239,14 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                     top.push_front(bot.front());
                     bot.pop_front();
             }
-	    if (nploc > 1) {
-	      std::swap(top[0], top[1]);
-	    } else {
-	      std::swap(top[0], bot[1]);
-	    } */
+	    //if (nploc > 1) {
+	    //  std::swap(top[0], top[1]);
+	    //} else {
+	    //  std::swap(top[0], bot[1]);
+	    //} 
 	} //irot
-        done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
+        //done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
+       done = (nsweep >= maxsweep); 
     } //while 
 /*
     // Compute diagonal elements
@@ -256,7 +256,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
         }
     }
 */
-    return diag_change;
+    return *acol[1][1];
 
 } //jade_complex
 } // namespace wannier
@@ -274,7 +274,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
     using namespace Catch::literals;
     using Catch::Approx;
 
-    int maxsweep = 1;
+    int maxsweep = 100;
     double tol = 1e-6;
 
     // Create a vector of 6 1x1 matrices (H2 test case) //coressponds to gs in a 20x20x20 cell
@@ -340,6 +340,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
         CHECK(imag(sweep[7]) == 0.0000000_a);
         CHECK(real(sweep[8]) == -0.68104162_a);
         CHECK(imag(sweep[8]) == 0.0000000_a);*/ //for apq 0-8, all check out 	
-        CHECK(sweep == 0.14215246_a ); 
+        CHECK(real(sweep) == 0.00590959_a ); 
+	CHECK(imag(sweep) == -0.55484695_a ); //acol is correct upon return (this is for acol[1][1]) thus a is returned correctly 
 }
 #endif
