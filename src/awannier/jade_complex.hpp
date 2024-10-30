@@ -238,12 +238,12 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                     top.pop_back();
                     top.push_front(bot.front());
                     bot.pop_front();
-            }
-	    //if (nploc > 1) {
-	    //  std::swap(top[0], top[1]);
-	    //} else {
-	    //  std::swap(top[0], bot[1]);
-	    //} 
+            	    if (nploc > 1) {
+	              std::swap(top[0], top[1]);
+	            } else {
+	              std::swap(top[0], bot[0]);
+	            } 
+	      } //if nploc >0 
 	} //irot
         //done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
        done = (nsweep >= maxsweep); 
