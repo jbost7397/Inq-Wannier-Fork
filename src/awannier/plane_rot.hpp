@@ -10,6 +10,8 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 //CS specific call for plane rotation used in jade_complex
+//this works, but not used in jade right now
+//once cublasCzrot is added can think about using this jade_complex
 
 #include <inq_config.h>
 #include <math/complex.hpp>

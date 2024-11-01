@@ -22,7 +22,7 @@
 #include <basis/real_space.hpp>
 #include <states/ks_states.hpp>
 #include <states/orbital_set.hpp>
-//#include <wannier/jade_complex.hpp>
+#include <awannier/jade_complex.hpp>
 #include <iostream>
 #include <vector> 
 
@@ -417,8 +417,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 
 	SECTION("Wannier Centers"){
 
-		//systems::cell cell(vector3<double>(15.0, 0.0, 0.0), vector3<double>(0.0, 15.0, 0.0), vector3<double>(0.0, 0.0, 15.0)); 
-		auto cell = systems::cell::cubic(15.0_b).periodic(); //CS more conventional call to a cubic cell with pbc, now updated 
+		auto cell = systems::cell::cubic(15.0_b).periodic(); //CS more conventional call to a cubic cell with pbc 
 		int i = 0;
 		auto center = wannier::center(i, cell); 
 
