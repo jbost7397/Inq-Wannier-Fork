@@ -75,6 +75,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG){
 
 	using namespace inq;
 	using namespace Catch::literals;
+        using Catch::Approx;
 
 	double xx = 203.42;
 
@@ -82,7 +83,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG){
 	CHECK(imag(xx) == 0.0_a);
 	CHECK(norm(xx) == 41379.696_a);
 	CHECK(conj(xx) == xx);
-	CHECK(sqroot(xx) ==  14.26_a);
+	CHECK(sqroot(xx) ==  14.2625383435_a);
 	complex zz{-654.21, 890.74};
 
 	CHECK(real(zz) == -654.21_a);
