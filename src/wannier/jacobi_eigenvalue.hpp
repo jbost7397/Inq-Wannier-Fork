@@ -66,35 +66,35 @@ void jacobi_eigenvalue(T n, VectorType& a, VectorType& v, VectorType& d) {
             }
         }
 
-        thresh = std::sqrt(thresh) / (4 * n);
+        thresh = sqroot(thresh) / (4 * n);
         if (thresh == 0.0) {
             break;
         }
 
         for (int p = 0; p < n; ++p) {
             for (int q = p + 1; q < n; ++q) {
-                double gapq = 10.0 * std::fabs(a[p + q * n]);
-                double termp = gapq + std::fabs(d[p]);
-                double termq = gapq + std::fabs(d[q]);
+                double gapq = 10.0 * fabs(a[p + q * n]);
+                double termp = gapq + fabs(d[p]);
+                double termq = gapq + fabs(d[q]);
 
-                if (4 < it_num && termp == std::fabs(d[p]) && termq == std::fabs(d[q])) {
+                if (4 < it_num && termp == fabs(d[p]) && termq == fabs(d[q])) {
                     a[p + q * n] = 0.0;
-                } else if (thresh <= std::fabs(a[p + q * n])) {
+                } else if (thresh <= fabs(a[p + q * n])) {
                     double h = d[q] - d[p];
-                    double term = std::fabs(h) + gapq;
+                    double term = fabs(h) + gapq;
 
                     double t;
-                    if (term == std::fabs(h)) {
+                    if (term == fabs(h)) {
                         t = a[p + q * n] / h;
                     } else {
                         double theta = 0.5 * h / a[p + q * n];
-                        t = 1.0 / (std::fabs(theta) + std::sqrt(1.0 + theta * theta));
+                        t = 1.0 / (fabs(theta) + sqroot(1.0 + theta * theta));
                         if (theta < 0.0) {
                             t = -t;
                         }
                     }
 
-                    double c = 1.0 / std::sqrt(1.0 + t * t);
+                    double c = 1.0 / sqroot(1.0 + t * t);
                     double s = t * c;
                     double tau = s / (1.0 + c);
                     h = t * a[p + q * n];

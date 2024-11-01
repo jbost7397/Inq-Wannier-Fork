@@ -22,10 +22,10 @@
 #include <basis/real_space.hpp>
 #include <states/ks_states.hpp>
 #include <states/orbital_set.hpp>
-//#include <wannier/jade_complex.hpp>
+#include <wannier/jade_complex.hpp>
 #include <gpu/array.hpp>
 #include <iostream>
-#include <vector>
+#include <vector> 
 
 namespace inq {
 namespace wannier {
@@ -36,11 +36,11 @@ private:
 	//gpu::array<complex,2> u_; //JB: have to consider between gpu::array, std::vector of std::vectors, or perhaps matrix::distributed for parallelism?
 	//gpu::array<complex,3> a_;
 	//gpu::array<complex,2> adiag_;
-	std::vector<std::unique_ptr<matrix::distributed<complex>>> a_;
-  	std::unique_ptr<matrix::distributed<complex>> u_;
-  	std::vector<std::vector<complex>> adiag_;
+	std::vector<std::vector<std::vector<complex>>> a_; 
+	std::vector<std::vector<inq::complex>> adiag_;
+	std::vector<std::vector<complex>> u_;
   	states::ks_states states_;
-  	basis::real_space basis_;
+  	basis::real_space basis_; 
 
 public:
 
@@ -51,96 +51,110 @@ tdmlwf_trans(const basis::real_space & basis, states::ks_states const & states) 
   const int n = states_.num_states();
   int nprocs = basis_.comm().size();
   std::array<int, 2> shape;
-  int dim_x = std::round(std::cbrt(nprocs));
+  int dim_x = std::round(std::cbrt(nprocs)); 
   shape[0] = dim_x;
   shape[1] = nprocs / dim_x;
   auto comm = parallel::cartesian_communicator<2>(basis_.comm(), shape);
   a_.resize(6);
   adiag_.resize(6);
-  int k;
+  int k; 
   for (k = 0; k < 6; k++) {
     //gpu::array<complex,2> a_[k];
-    a_[k] = std::make_unique<matrix::distributed<complex>>(matrix::scatter(comm, gpu::array<complex, 2>({n, n}), 0));
+    a_[k].resize(n);
     adiag_[k].resize(n);
   }
 
   //gpu::array<complex,2> u_({n,n});
-  u_ = std::make_unique<matrix::distributed<complex>>(matrix::scatter(comm, gpu::array<complex, 2>({n, n}), 0));
+  std::vector<std::vector<complex>> u_(n, std::vector<complex>(n));
 
 
+  
+}	  
 
-}
-
-
-
-void update(void)
-{
+//JB: compute a matrices in real space. Should give exact result, but obviously inefficent (O(n^4)) for larger systems so still need to implement reciprocal space algorithm
+void update(void) {
+  int n_states = states_.num_states();
   int nprocs = basis_.comm().size();
   std::array<int, 2> shape;
-  int dim_x = std::round(std::cbrt(nprocs));
+  int dim_x = std::round(std::cbrt(nprocs)); 
   shape[0] = dim_x;
   shape[1] = nprocs / dim_x;
   auto comm = parallel::cartesian_communicator<2>(basis_.comm(), shape);
-  auto sd = std::make_unique<states::orbital_set<basis::real_space, complex>>(basis_, n, 1, {0.0, 0.0, 0.0}, 0, comm);
-  //auto sdcosx = std::make_unique<states::orbital_set<basis::real_space, complex>>(basis_, n, 1, {0.0, 0.0, 0.0}, 0, comm);
-  //auto sdcosy = std::make_unique<states::orbital_set<basis::real_space, complex>>(basis_, n, 1, {0.0, 0.0, 0.0}, 0, comm);
-  //auto sdcosz = std::make_unique<states::orbital_set<basis::real_space, complex>>(basis_, n, 1, {0.0, 0.0, 0.0}, 0, comm);
-  //auto sdsinx = std::make_unique<states::orbital_set<basis::real_space, complex>>(basis_, n, 1, {0.0, 0.0, 0.0}, 0, comm);
-  //auto sdsiny = std::make_unique<states::orbital_set<basis::real_space, complex>>(basis_, n, 1, {0.0, 0.0, 0.0}, 0, comm);
-  //auto sdsinz = std::make_unique<states::orbital_set<basis::real_space, complex>>(basis_, n, 1, {0.0, 0.0, 0.0}, 0, comm);
+  int nx = basis_.local_sizes()[0];
+  int ny = basis_.local_sizes()[1];
+  int nz = basis_.local_sizes()[2];
+
+  double lx = basis_.cell()[0].norm();
+  double ly = basis_.cell()[1].norm();
+  double lz = basis_.cell()[2].norm();
+
+  states::orbital_set<basis::real_space, complex> orbital_set(basis_, n_states, 1, {0.0, 0.0, 0.0}, 0, comm);
+
+  const auto& wavefunctions = orbital_set.hypercubic();
+
+  for (int iwf = 0; iwf < n_states; ++iwf) {
+    for (int ix = 0; ix < nx; ++ix) {
+      for (int iy = 0; iy < ny; ++iy) {
+        for (int iz = 0; iz < nz; ++iz) {
+          auto coords = basis_.point_op().rvector_cartesian(ix, iy, iz);
+
+          double cos_x = cos(2.0 * M_PI * coords[0] / lx);
+          double sin_x = sin(2.0 * M_PI * coords[0] / lx);
+          double cos_y = cos(2.0 * M_PI * coords[1] / ly);
+          double sin_y = sin(2.0 * M_PI * coords[1] / ly);
+          double cos_z = cos(2.0 * M_PI * coords[2] / lz);
+          double sin_z = sin(2.0 * M_PI * coords[2] / lz);
+
+	  complex wf_coeff = wavefunctions[ix][iy][iz][iwf];
+
+          a_[0][iwf][ix * ny * nz + iy * nz + iz] += wf_coeff * cos_x;
+          a_[1][iwf][ix * ny * nz + iy * nz + iz] += wf_coeff * sin_x;
+          a_[2][iwf][ix * ny * nz + iy * nz + iz] += wf_coeff * cos_y;
+          a_[3][iwf][ix * ny * nz + iy * nz + iz] += wf_coeff * sin_y;
+          a_[4][iwf][ix * ny * nz + iy * nz + iz] += wf_coeff * cos_z;
+          a_[5][iwf][ix * ny * nz + iy * nz + iz] += wf_coeff * sin_z;
+        }
+      }
+    }
+  }
+}
+
+
+//JB: actual update implementation, wip
+/*
+void update(void)
+{
+  const int n = states_.num_states();
+  int nprocs = basis_.comm().size();
+  std::array<int, 2> shape;
+  int dim_x = std::round(std::cbrt(nprocs)); 
+  shape[0] = dim_x;
+  shape[1] = nprocs / dim_x;
+  auto comm = parallel::cartesian_communicator<2>(basis_.comm(), shape);
+  auto sd = std::make_unique<states::orbital_set<basis::real_space, math::complex>>(basis_, n, 1, {0.0, 0.0, 0.0}, 0, comm);
   auto& c = sd->matrix();
   auto f = operations::transform::to_fourier(c);
-  //auto& ccosx = sdcosx->matrix();
-  //auto& csinx = sdsinx->matrix();
-  //auto& ccosy = sdcosy->matrix();
-  //auto& csiny = sdsiny->matrix();
-  //auto& ccosz = sdcosz->matrix();
-  //auto& csinz = sdsinz->matrix();
-
+ 
   for ( int i = 0; i < 6; i++ )
   {
     a_[i]->resize(c.size(), c.size());
-    //adiag_[i].resize(c.n());
     adiag_[i].resize(c.size());
   }
-  //u_->resize(c.n(), c.n(), c.nb(), c.nb());
   u_->resize(c.size(), c.size());
 
-  // loop over all local states
-  //const int np0 = basis_.sizes()[0];
-  //const int np1 = basis_.sizes()[1];
-  //const int np2 = basis_.sizes()[2];
-  //const int np01 = np0 * np1;
-  //for ( int n = 0; n < c.nloc(); n++ )
-  for ( int n = 0; n < c.local_set_size(); n++ )
+  for ( int ist = 0; ist < c.local_set_size(); ist++ )
   {
-    //auto f = c.rotated()[n];
-    //auto fcx = ccosx.rotated()[n];
-    //auto fsx = csinx.rotated()[n];
-    //auto fcy = ccosy.rotated()[n];
-    //auto fsy = csiny.rotated()[n];
-    //auto fcz = ccosz.rotated()[n];
-    //auto fsz = csinz.rotated()[n];
+    auto state_view_fourier = f.matrix()[ist]; 
+    auto fs = std::make_unique<gpu::array<math::complex,1>>(state_view_fourier.size());
+    auto fc = std::make_unique<gpu::array<math::complex,1>>(state_view_fourier.size());
 
-    for ( int ivec = 0; ivec < nvec; ivec++ )
-    {
-      const int ibase = ivec * np2;
-      //compute_sincos(np2,&zvec[ibase],&zvec_cos[ibase],&zvec_sin[ibase]);
-      //compute_sincos(np2, zvec.data() + ibase, zvec_cos.data() + ibase, zvec_sin.data() + ibase);
-      compute_sincos(np2, zvec({ibase, ibase + np2}), zvec_cos({ibase, ibase + np2}), zvec_sin({ibase, ibase + np2}));
-    }
+    std::vector<inq::math::complex> flattened_fourier_data(state_view_fourier.size());
+    std::copy(state_view_fourier.data(), state_view_fourier.data() + state_view_fourier.size(), flattened_fourier_data.begin());
 
-    for ( int iz = 0; iz < np2loc; iz++ )
-    {
-      for ( int iy = 0; iy < np1; iy++ )
-      {
-        const int ibase = iz * np01 + iy * np0;
-        //compute_sincos(np0,&ct[ibase],&ct_cos[ibase],&ct_sin[ibase]);
-	compute_sincos(np0, ct({ibase, ibase + len}), ct_cos({ibase, ibase + len}), ct_sin({ibase, ibase + len}));
-      }
-    }
-
+    compute_sincos(state_view_fourier.size(), flattened_fourier_data.data(), fc.get(), fs.get()); 
   }
+
+  auto real_c = operations::transform::to_real(f);
 
   // dot products a_[0] = <cos x>, a_[1] = <sin x>
   a_[0]->gemm('c','n',1.0,c,ccosx,0.0);
@@ -159,11 +173,11 @@ void update(void)
   a_[4]->zger(-1.0,c,0,ccosz,0);
   a_[5]->gemm('c','n',1.0,c,csinz,0.0);
   a_[5]->zger(-1.0,c,0,csinz,0);
-}
+}*/
 
 ////////////////////////////////////////////////////////////////////////////////
-template <typename T, class vector_type1, class vector_type2 >
-void compute_sincos(T n, vector_type1* f, vector_type2* fc, vector_type2* fs) {
+template <typename T, class vector_type1, class vector_type2 > 
+void compute_sincos(T n, vector_type1* f, vector_type2* fc, vector_type2* fs) { 
 //void compute_sincos(const int n, const std::complex<double>* f, std::complex<double>* fc, std::complex<double>* fs) {
 
   // fc[i] =     0.5 * ( f[i-1] + f[i+1] )
@@ -190,14 +204,14 @@ void compute_sincos(T n, vector_type1* f, vector_type2* fc, vector_type2* fs) {
   zdiff = zp - zm;
   fs[n-1] = 0.5 * std::complex<double>(imag(zdiff),-real(zdiff));
 }
-/*
+
 void compute_transform(void)
 {
   const int maxsweep = 100;
   const double tol = 1.e-8;
-  int nsweep = jade_complex(maxsweep,tol,a_,*u_,adiag_);
+  auto sweep = jade_complex(maxsweep,tol,a_,u_,adiag_);
 }
-*/
+
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 auto center(T i, const systems::cell & cell_) {
@@ -350,7 +364,7 @@ double spread(T i, const systems::cell & cell) {
 };
 }
 }
-#endif
+#endif 
 
 ///////////////////////////////////////////////////////////////////
 #ifdef INQ_WANNIER_TDMLWF_TRANS_UNIT_TEST
@@ -363,29 +377,29 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
         using Catch::Approx;
 
 	/*
-		//auto cell = systems::cell::cubic(15.0_b).periodicity(3);
-
+		//auto cell = systems::cell::cubic(15.0_b).periodicity(3); 
+	
         //CS adiag_ values correspond to H2 gs. Should give <mlwf center="    0.000000    0.000000    0.711503 " spread=" 1.578285 "/>
 
 	SECTION("Wannier Centers"){
 
-		//systems::cell cell(vector3<double>(15.0, 0.0, 0.0), vector3<double>(0.0, 15.0, 0.0), vector3<double>(0.0, 0.0, 15.0));
+		//systems::cell cell(vector3<double>(15.0, 0.0, 0.0), vector3<double>(0.0, 15.0, 0.0), vector3<double>(0.0, 0.0, 15.0)); 
 		auto cell = systems::cell::cubic(15.0_b).periodicity(3); //CS more conventional call to a cubic cell with pbc
 		int i = 0;
-		auto center = wannier::center(i, cell);
+		auto center = wannier::center(i, cell); 
 
 		CHECK(center[0] == 0.000000_a);
 		CHECK(center[1] == 0.000000_a);
-		CHECK(center[2] == 0.711503_a);
-
+		CHECK(center[2] == 0.711503_a); 
+		
 		int j = 0;
 		auto dist = wannier::wannier_distance(i, j, cell);
 		CHECK(dist == 0.00_a);
-
+		
 		double epsilon = 10.0;
 		auto overlap = wannier::overlap(epsilon, i, j, cell);
 		CHECK(overlap == true);
-
+		
 		auto ols = wannier::total_overlaps(epsilon, cell);
 		CHECK(ols == 1.00_a);
 		auto pair = wannier::pair_fraction(epsilon,cell);
@@ -405,7 +419,8 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
                 CHECK(dp[0] == 0.000000_a);
                 CHECK(dp[1] == 0.000000_a);
                 CHECK(dp[2] == -2.846012_a);
-  }*/
-
+  }*/	
+  	
 }
-#endif
+#endif  
+
