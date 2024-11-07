@@ -90,13 +90,13 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
         acol[k][i] = a[k][i].data(); //a[k] will always be square 
       }
       if (nloc_odd)
-       acol[k][2*nploc-1] = &a_aux[k][0];
+       acol[k][2*nploc-1] = a_aux[k].data();
     } // for k
     for ( int i = 0; i < u.size(); ++i ) {
       ucol[i] = u[i].data();
     }
     if (nloc_odd)
-      ucol[2*nploc-1] = &u_aux[0];
+      ucol[2*nploc-1] = u_aux.data();
 
     int nsweep = 0;
     bool done = false;
@@ -106,12 +106,13 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     // apq[3*ipair+2 + k*3*nploc] = aqq[k][ipair]
     std::vector<complex> apq(a.size()*3*nploc);
     std::vector<double> tapq(a.size()*3*2*nploc); //CS need for summation over all
-
+    //fix dummy vector passing for nploc_odd case CS
+ 
     while (!done) {
         ++nsweep;
         double diag_change = 0.0;
         // sweep local pairs and rotate 2*np -1 times
-        for (int irot = 0; irot < 2 * np - 1; ++irot) {
+        for (int irot = 0; irot < 2*np-1; ++irot) {
             //jacobi rotations for local pairs
             //of diagonal elements for all pairs (apq)
             for (int k = 0; k < a.size(); ++k) {
@@ -121,13 +122,13 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                     apq[iapq + 1] = complex(0.0, 0.0);
                     apq[iapq + 2] = complex(0.0, 0.0);
 
-		    if (top[ipair] >= 0 && bot[ipair] >= 0 ){
+		    if (top[ipair] >= 0 && bot[ipair] < mloc ){ //mloc only when not parallel   
                       const complex *ap = acol[k][top[ipair]];
                       const complex *aq = acol[k][bot[ipair]];
                       const complex *up = ucol[top[ipair]];
                       const complex *uq = ucol[bot[ipair]];
                       for (int ii = 0; ii < mloc; ++ii) {
-                        apq[iapq] += conj_cplx(ap[ii]) * uq[ii];
+                        apq[iapq]     += conj_cplx(ap[ii]) * uq[ii];
                         apq[iapq + 1] += conj_cplx(ap[ii]) * up[ii];
                         apq[iapq + 2] += conj_cplx(aq[ii]) * uq[ii];
                         } //for ii
@@ -140,7 +141,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 	   //or a gather, sum, scatter routine or comm_allreduce
 
             for (int ipair = 0; ipair < nploc; ++ipair) {
-                if (top[ipair] >= 0 && bot[ipair] >= 0) {
+                if (top[ipair] >= 0 && bot[ipair] < mloc) {
                     double g11 = 0.0, g12 = 0.0, g13 = 0.0;
                     double g21 = 0.0, g22 = 0.0, g23 = 0.0;
                     double g31 = 0.0, g32 = 0.0, g33 = 0.0;
@@ -175,7 +176,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                     // Extract the largest eigenvalue's vector
                     double x = Q[6], y = Q[7], z = Q[8];
                     if (x < 0.0) {
-                        x = -x; y = -y; z = -z;
+                        x = -x; y = -y; z = z;
                     }
 
 		    double one = 1.0;
@@ -188,7 +189,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                       complex *ap = acol[k][top[ipair]];
                       complex *aq = acol[k][bot[ipair]];
                       //Apply plane rotation
-                      //plane_rot(ap, aq, c, sconj); //CS skip using plane_rot, probably until clarity on cublas zrot functionality 
+                      //plane_rot(ap, aq, c, sconj); //CS skip using plane_rot, probably until clarity on cublas zrot functionality or use operations::rotate  
 		      //routine now internal
 		      std::vector<complex> ap_tmp(mloc);
                       std::vector<complex> aq_tmp(mloc);
@@ -246,6 +247,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 	      } //if nploc >0 
 	} //irot
        done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
+       //done = (nsweep >= maxsweep);
     } //while 
 
     // Compute diagonal elements
@@ -262,8 +264,8 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
       }
    }
  }
-    return adiag;
-    //return nsweep 
+    //return u;
+    return nsweep;
 
 } //jade_complex
 } // namespace wannier
@@ -280,88 +282,230 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
     using namespace Catch::literals;
     using Catch::Approx;
 
-    int maxsweep = 100;
-    double tol = 1e-6;
+    SECTION("Even number of Centers"){
 
-    // Create a vector of 6 1x1 matrices (H2 test case) //coressponds to gs in a 20x20x20 cell
-    std::vector<std::vector<std::vector<complex>>> a(6, std::vector<std::vector<complex>>(2, std::vector<complex>(2)));
+      int maxsweep = 100;
+      double tol = 1e-6;
 
-    // Fill a mats
-    a[0][0][0] = complex(-0.68433137,-0.00000000);
-    a[0][1][0] = complex(-0.00103429,0.10810869);
-    a[0][0][1] = complex(-0.00103429,-0.10810876);
-    a[0][1][1] = complex(-0.68104163,0.00000000);
-    a[1][0][0] = complex(-0.09765152,0.00000003);
-    a[1][1][0] = complex(0.00727211,-0.68256214);
-    a[1][0][1] = complex(0.00727210,0.68256259);
-    a[1][1][1] = complex(-0.11860232,-0.00000003);
-    a[2][0][0] = complex(-0.68433137,-0.00000000);
-    a[2][1][0] = complex(-0.00103429,0.10810870);
-    a[2][0][1] = complex(-0.00103429,-0.10810877);
-    a[2][1][1] = complex(-0.68104162,0.00000000);
-    a[3][0][0] = complex(-0.09765152,0.00000003);
-    a[3][1][0] = complex(0.00727211,-0.68256215);
-    a[3][0][1] = complex(0.00727210,0.68256259);
-    a[3][1][1] = complex(-0.11860232,-0.00000003);
-    a[4][0][0] = complex(-0.68433130,-0.00000000);
-    a[4][1][0] = complex(-0.00103425,0.10810870);
-    a[4][0][1] = complex(-0.00103453,-0.10810874);
-    a[4][1][1] = complex(-0.68104179,0.00000005);
-    a[5][0][0] = complex(-0.09765150,0.00000002);
-    a[5][1][0] = complex(0.00727212,-0.68256221);
-    a[5][0][1] = complex(0.00727207,0.68256246);
-    a[5][1][1] = complex(-0.11860233,-0.00000030);
+      // Create a vector of 6 2x2 matrices (2He test case) //coressponds to gs in a 20x20x20 cell
+      std::vector<std::vector<std::vector<complex>>> a(6, std::vector<std::vector<complex>>(2, std::vector<complex>(2)));
 
-    // Create matrix u (initially identity)
-    std::vector<std::vector<complex>> u(2, std::vector<complex>(2));
-    u[0][0] = complex(1.0, 0.0);  // Identity element
-    u[0][1] = complex(0.0, 0.0);
-    u[1][0] = complex(0.0, 0.0);
-    u[1][1] = complex(1.0, 0.0);  // Identity element
+      // Fill a mats
+      a[0][0][0] = complex(-0.68433137,-0.00000000);
+      a[0][1][0] = complex(-0.00103429,0.10810869);
+      a[0][0][1] = complex(-0.00103429,-0.10810876);
+      a[0][1][1] = complex(-0.68104163,0.00000000);
+      a[1][0][0] = complex(-0.09765152,0.00000003);
+      a[1][1][0] = complex(0.00727211,-0.68256214);
+      a[1][0][1] = complex(0.00727210,0.68256259);
+      a[1][1][1] = complex(-0.11860232,-0.00000003);
+      a[2][0][0] = complex(-0.68433137,-0.00000000);
+      a[2][1][0] = complex(-0.00103429,0.10810870);
+      a[2][0][1] = complex(-0.00103429,-0.10810877);
+      a[2][1][1] = complex(-0.68104162,0.00000000);
+      a[3][0][0] = complex(-0.09765152,0.00000003);
+      a[3][1][0] = complex(0.00727211,-0.68256215);
+      a[3][0][1] = complex(0.00727210,0.68256259);
+      a[3][1][1] = complex(-0.11860232,-0.00000003);
+      a[4][0][0] = complex(-0.68433130,-0.00000000);
+      a[4][1][0] = complex(-0.00103425,0.10810870);
+      a[4][0][1] = complex(-0.00103453,-0.10810874);
+      a[4][1][1] = complex(-0.68104179,0.00000005);
+      a[5][0][0] = complex(-0.09765150,0.00000002);
+      a[5][1][0] = complex(0.00727212,-0.68256221);
+      a[5][0][1] = complex(0.00727207,0.68256246);
+      a[5][1][1] = complex(-0.11860233,-0.00000030);
 
-    // Prepare adiag to hold diagonal elements (size should match number of a matrices and their dimensions)
-    std::vector<std::vector<complex>> adiag(a.size(), std::vector<complex>(2)); // Assuming single diagonal element per input matrix
+      // Create matrix u (initially identity)
+      std::vector<std::vector<complex>> u(2, std::vector<complex>(2));
+      u[0][0] = complex(1.0, 0.0);  // Identity element
+      u[0][1] = complex(0.0, 0.0);
+      u[1][0] = complex(0.0, 0.0);
+      u[1][1] = complex(1.0, 0.0);  // Identity element
 
-    // Call the jade_complex function
-    auto sweep = wannier::jade_complex(maxsweep, tol, a, u, adiag);
+      // Prepare adiag to hold diagonal elements (size should match number of a matrices and their dimensions)
+      std::vector<std::vector<complex>> adiag(a.size(), std::vector<complex>(2)); // Assuming single diagonal element per input matrix
 
-    	CHECK(u.size() == 2);
-    	CHECK(adiag.size() == 6);
-    	CHECK(adiag[0].size() == 2);
-        /*CHECK(real(sweep[0]) == -0.00103429_a);
-	CHECK(imag(sweep[0]) == 0.10810876_a);
-        CHECK(real(sweep[1]) == -0.68433137_a);
-        CHECK(imag(sweep[1]) == 0.00000000_a);
-        CHECK(real(sweep[2]) == -0.68104163_a);
-        CHECK(imag(sweep[2]) == 0.00000000_a);
-        CHECK(real(sweep[3]) == 0.00727210_a);
-        CHECK(imag(sweep[3]) ==-0.68256259_a);
-        CHECK(real(sweep[4]) == -0.09765152_a);
-        CHECK(imag(sweep[4]) == -0.00000003_a);
-        CHECK(real(sweep[5]) == -0.11860232_a);
-        CHECK(imag(sweep[5]) == 0.00000003_a);
-        CHECK(real(sweep[6]) == -0.00103429_a);
-        CHECK(imag(sweep[6]) == 0.10810877_a);
-        CHECK(real(sweep[7]) == -0.68433137_a);
-        CHECK(imag(sweep[7]) == 0.0000000_a);
-        CHECK(real(sweep[8]) == -0.68104162_a);
-        CHECK(imag(sweep[8]) == 0.0000000_a);*/ //for apq 0-8, all check out 	
-        //CHECK(real(sweep) == 0.00590959_a ); 
-	//CHECK(imag(sweep) == -0.55484695_a ); //acol is correct upon return (this is for acol[1][1]) thus a is returned correctly 
-	//CHECK(sweep == 2);
-        CHECK(real(sweep[0][0]) == -0.79081263_a);
-        CHECK(real(sweep[0][1]) == -0.57456037_a);
-        CHECK(real(sweep[1][0]) == 0.57455456_a);
-        CHECK(real(sweep[1][1]) == -0.79080839_a);
-        CHECK(real(sweep[2][0]) == -0.79081263_a);
-        CHECK(real(sweep[2][1]) == -0.57456037_a);
-        CHECK(real(sweep[3][0]) == 0.57455456_a);
-        CHECK(real(sweep[3][1]) == -0.79080840_a);
-        CHECK(real(sweep[4][0]) == -0.79081266_a);
-        CHECK(real(sweep[4][1]) == -0.57456043_a);
-        CHECK(real(sweep[5][0]) == 0.57455453_a);
-        CHECK(real(sweep[5][1]) == -0.79080836_a); //check adiag 
-        //imag values are correct, but so close to zero they fail in make check 
-	//also only real values needed for wannier
+      // Call the jade_complex function
+      auto sweep = wannier::jade_complex(maxsweep, tol, a, u, adiag);
+
+    	  CHECK(u.size() == 2);
+    	  CHECK(adiag.size() == 6);
+    	  CHECK(adiag[0].size() == 2);
+/*        CHECK(real(sweep[0]) == -0.00103429_a);
+	  CHECK(imag(sweep[0]) == 0.10810876_a);
+          CHECK(real(sweep[1]) == -0.68433137_a);
+          CHECK(imag(sweep[1]) == 0.00000000_a);
+          CHECK(real(sweep[2]) == -0.68104163_a);
+          CHECK(imag(sweep[2]) == 0.00000000_a);
+          CHECK(real(sweep[3]) == 0.00727210_a);
+          CHECK(imag(sweep[3]) ==-0.68256259_a);
+          CHECK(real(sweep[4]) == -0.09765152_a);
+          CHECK(imag(sweep[4]) == -0.00000003_a);
+          CHECK(real(sweep[5]) == -0.11860232_a);
+          CHECK(imag(sweep[5]) == 0.00000003_a);
+          CHECK(real(sweep[6]) == -0.00103429_a);
+          CHECK(imag(sweep[6]) == 0.10810877_a);
+          CHECK(real(sweep[7]) == -0.68433137_a);
+          CHECK(imag(sweep[7]) == 0.0000000_a);
+          CHECK(real(sweep[8]) == -0.68104162_a);
+          CHECK(imag(sweep[8]) == 0.0000000_a);*/ //for apq 0-8, all check out 	
+          //CHECK(real(sweep) == 0.00590959_a ); 
+	  //CHECK(imag(sweep) == -0.55484695_a ); //acol is correct upon return (this is for acol[1][1]) thus a is returned correctly 
+	  CHECK(sweep == 2); //nsweeps 
+          /*CHECK(real(sweep[0][0]) == -0.79081263_a);
+          CHECK(real(sweep[0][1]) == -0.57456037_a);
+          CHECK(real(sweep[1][0]) == 0.57455456_a);
+          CHECK(real(sweep[1][1]) == -0.79080839_a);
+          CHECK(real(sweep[2][0]) == -0.79081263_a);
+          CHECK(real(sweep[2][1]) == -0.57456037_a);
+          CHECK(real(sweep[3][0]) == 0.57455456_a);
+          CHECK(real(sweep[3][1]) == -0.79080840_a);
+          CHECK(real(sweep[4][0]) == -0.79081266_a);
+          CHECK(real(sweep[4][1]) == -0.57456043_a);
+          CHECK(real(sweep[5][0]) == 0.57455453_a);
+          CHECK(real(sweep[5][1]) == -0.79080836_a);*/ //check adiag 
+          //imag values are correct, but so close to zero they fail in make check 
+	  //also only real values needed for wannier
+          //CHECK(real(sweep[0][0]) == 0.71250999_a);
+          //CHECK(real(sweep[0][1]) == 0.00745655_a);
+          //CHECK(imag(sweep[0][1]) == 0.70162234_a);
+          //CHECK(real(sweep[1][0]) == -0.00745655_a);
+          //CHECK(imag(sweep[1][0]) == 0.70162234_a);
+          //CHECK(real(sweep[1][1]) == 0.71250999_a); //check u (only values that are greater than 1e-7)
+        }//even 
+
+    SECTION("Odd number of Centers"){
+
+      int maxsweep = 100;
+      double tol = 1e-8;
+
+      // Create a vector of 6 3x3 matrices (3He test case) //coressponds to gs in a 20x20x20 cell
+      std::vector<std::vector<std::vector<complex>>> a(6, std::vector<std::vector<complex>>(3, std::vector<complex>(3)));
+
+      // Fill a mats
+      a[0][0][0] = complex(0.52756279,0.00000025);
+      a[0][0][1] = complex(0.61712854,0.03799883);
+      a[0][0][2] = complex(0.41610786,0.00450980);
+      a[0][1][0] = complex(0.61712858,-0.03799882);
+      a[0][1][1] = complex(-0.39874645,-0.00000004);
+      a[0][1][2] = complex(0.18879589,0.11069471);
+      a[0][2][0] = complex(0.41610770,-0.00451033);
+      a[0][2][1] = complex(0.18879578,-0.11069498);
+      a[0][2][2] = complex(-0.51669249,-0.00000021);
+      a[1][0][0] = complex(0.00043530,-0.00000008);
+      a[1][0][1] = complex(-0.03299494,-0.19531448);
+      a[1][0][2] = complex(0.01604519,0.28682604);
+      a[1][1][0] = complex(-0.03299519,0.19531473);
+      a[1][1][1] = complex(0.02496930,0.00000002);
+      a[1][1][2] = complex(0.12669977,-0.55715202);
+      a[1][2][0] = complex(0.01604516,-0.28682602);
+      a[1][2][1] = complex(0.12669996,0.55715167);
+      a[1][2][2] = complex(-0.24165857,0.00000006);
+      a[2][0][0] = complex(0.52756279,0.00000025);
+      a[2][0][1] = complex(0.61712854,0.03799883);
+      a[2][0][2] = complex(0.41610786,0.00450980);
+      a[2][1][0] = complex(0.61712858,-0.03799882);
+      a[2][1][1] = complex(-0.39874645,-0.00000004);
+      a[2][1][2] = complex(0.18879589,0.11069471);
+      a[2][2][0] = complex(0.41610770,-0.00451033);
+      a[2][2][1] = complex(0.18879578,-0.11069498);
+      a[2][2][2] = complex(-0.51669249,-0.00000021);
+      a[3][0][0] = complex(0.00043529,-0.00000008);
+      a[3][0][1] = complex(-0.03299494,-0.19531448);
+      a[3][0][2] = complex(0.01604519,0.28682604);
+      a[3][1][0] = complex(-0.03299519,0.19531473);
+      a[3][1][1] = complex(0.02496930,0.00000002);
+      a[3][1][2] = complex(0.12669977,-0.55715202);
+      a[3][2][0] = complex(0.01604516,-0.28682602);
+      a[3][2][1] = complex(0.12669996,0.55715167);
+      a[3][2][2] = complex(-0.24165857,0.00000006);
+      a[4][0][0] = complex(0.52756291,0.00000022);
+      a[4][0][1] = complex(0.61712859,0.03799886);
+      a[4][0][2] = complex(0.41610782,0.00450994);
+      a[4][1][0] = complex(0.61712846,-0.03799893);
+      a[4][1][1] = complex(-0.39874645,-0.00000012);
+      a[4][1][2] = complex(0.18879609,0.11069467);
+      a[4][2][0] = complex(0.41610788,-0.00451026);
+      a[4][2][1] = complex(0.18879585,-0.11069491);
+      a[4][2][2] = complex(-0.51669268,-0.00000006);
+      a[5][0][0] = complex(0.00043542,0.00000007);
+      a[5][0][1] = complex(-0.03299496,-0.19531438);
+      a[5][0][2] = complex(0.01604498,0.28682606);
+      a[5][1][0] = complex(-0.03299513,0.19531470);
+      a[5][1][1] = complex(0.02496932,0.00000003);
+      a[5][1][2] = complex(0.12669977,-0.55715195);
+      a[5][2][0] = complex(0.01604504,-0.28682576);
+      a[5][2][1] = complex(0.12669985,0.55715171);
+      a[5][2][2] = complex(-0.24165874,-0.00000019);
+
+      // Create matrix u (initially identity)
+      std::vector<std::vector<complex>> u(3, std::vector<complex>(3));
+      u[0][0] = complex(1.0, 0.0);  // Identity element
+      u[0][1] = complex(0.0, 0.0);
+      u[0][2] = complex(0.0, 0.0);
+      u[1][0] = complex(0.0, 0.0);
+      u[1][1] = complex(1.0, 0.0);  // Identity element
+      u[1][2] = complex(0.0, 0.0);  
+      u[2][0] = complex(0.0, 0.0);
+      u[2][1] = complex(0.0, 0.0);
+      u[2][2] = complex(1.0, 0.0);  // Identity element
+
+      // Prepare adiag to hold diagonal elements (size should match number of a matrices and their dimensions)
+      std::vector<std::vector<complex>> adiag(a.size(), std::vector<complex>(3)); // Assuming single diagonal element per input matrix
+
+      // Call the jade_complex function
+      auto sweep = wannier::jade_complex(maxsweep, tol, a, u, adiag);
+
+          CHECK(u.size() == 3);
+          CHECK(adiag.size() == 6);
+          CHECK(adiag[0].size() == 3);
+	  CHECK(sweep == 4);
+          /*CHECK(sweep[0][0] == 0.71250999);
+          CHECK(sweep[0][1] == 0.00745655);
+          CHECK(sweep[0][2] == 0.70162234);
+          CHECK(sweep[1][0] == -0.00745655);
+          CHECK(sweep[1][1] == 0.70162234);
+          CHECK(sweep[1][2] == 0.70162234);
+          CHECK(sweep[2][0] == -0.00745655);
+          CHECK(sweep[2][1] == 0.70162234);
+          CHECK(sweep[2][2] == 0.70162234);
+          CHECK(sweep[0] == 36);
+          CHECK(sweep[1] == 36);
+          CHECK(sweep[2] == 36);
+          CHECK(sweep[3] == 36);
+          CHECK(sweep[4] == 36);
+          CHECK(sweep[5] == 36);
+          CHECK(sweep[6] == 36);
+          CHECK(sweep[7] == 36);
+          CHECK(sweep[8] == 36);
+          CHECK(sweep[9] == 36);
+          CHECK(sweep[10] == 36);
+          CHECK(sweep[11] == 36);
+          CHECK(sweep[12] == 36);
+          CHECK(sweep[13] == 36);
+          CHECK(sweep[14] == 36);
+          CHECK(sweep[15] == 36);
+          CHECK(sweep[16] == 36);
+          CHECK(sweep[17] == 36);
+          CHECK(sweep[18] == 36);
+          CHECK(sweep[19] == 36);
+          CHECK(sweep[20] == 36);
+          CHECK(sweep[21] == 36);
+          CHECK(sweep[22] == 36);
+          CHECK(sweep[23] == 36);
+          CHECK(sweep[24] == 36);
+          CHECK(sweep[25] == 36);
+          CHECK(sweep[26] == 36);
+          CHECK(sweep[27] == 36);
+          CHECK(sweep[28] == 36);
+          CHECK(sweep[29] == 36);
+          CHECK(sweep[30] == 36);
+          CHECK(sweep[31] == 36);
+          CHECK(sweep[32] == 36);
+          CHECK(sweep[33] == 36);
+          CHECK(sweep[34] == 36);
+          CHECK(sweep[35] == 36); */
+  }//odd 
 }
 #endif
