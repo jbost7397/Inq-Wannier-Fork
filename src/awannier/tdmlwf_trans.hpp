@@ -31,185 +31,42 @@ namespace wannier {
 
 ////////////////////////////////////////////////////////////////////////////////
 // CS tmp stuff to be able to test these functions
-// array here is for single Wannier function for testing
-// typically these arrays output from jade_complex
 states::ks_states st(states::spin_config::UNPOLARIZED, 4.0); //will be added to inital declaration later
-gpu::array<complex,2> adiag_ = {
-        {complex(0.931907,0.0), complex(0.931907,0.0)},
-        {complex(0.000000,0.0), complex(0.000000,0.0)},
-        {complex(0.931907,0.0), complex(0.931907,0.0)},
-        {complex(0.000000,0.0), complex(0.000000,0.0)},
-        {complex(0.868796,0.0), complex(0.868796,0.0)},
-        {complex(0.266879,0.0), complex(0.266879,0.0)}
+
+std::vector<std::vector<std::vector<complex>>> a = {
+    {{complex(-0.68433137, -0.00000000), complex(-0.00103429,  0.10810869)},
+     {complex(-0.00103429, -0.10810876), complex(-0.68104163,  0.00000000)}},
+
+    {{complex(-0.09765152,  0.00000003), complex( 0.00727211, -0.68256214)},
+     {complex( 0.00727210,  0.68256259), complex(-0.11860232, -0.00000003)}},
+
+    {{complex(-0.68433137, -0.00000000), complex(-0.00103429,  0.10810870)},
+     {complex(-0.00103429, -0.10810877), complex(-0.68104162,  0.00000000)}},
+
+    {{complex(-0.09765152,  0.00000003), complex( 0.00727211, -0.68256215)},
+     {complex( 0.00727210,  0.68256259), complex(-0.11860232, -0.00000003)}},
+
+    {{complex(-0.68433130, -0.00000000), complex(-0.00103425,  0.10810870)},
+     {complex(-0.00103453, -0.10810874), complex(-0.68104179,  0.00000005)}},
+
+    {{complex(-0.09765150,  0.00000002), complex( 0.00727212, -0.68256221)},
+     {complex( 0.00727207,  0.68256246), complex(-0.11860233, -0.00000030)}}
+};
+	
+std::vector<std::vector<complex>> u = {
+    {{complex(1.0, 0.0), complex(0.0, 0.0)},
+     {complex(0.0, 0.0), complex(1.0, 0.0)}}
 };
 
+std::vector<std::vector<complex>> adiag(a.size(), std::vector<complex>(2)); // Assuming single diagonal element per input matrix
 
-//class tdmlwf_transform {
-
-/*
-public:
+const int maxsweep = 100;
+const double tol = 1.e-8;
+auto nsweep = wannier::jade_complex(maxsweep,tol,a,u,adiag);
+// Joint approximate diagonalization step.
 
 ////////////////////////////////////////////////////////////////////////////////
-tdmlwf_transform(const basis::real_space & basis, states::ks_states const & states): basis_(basis), states_(states), comm_(basis_.comm())  {
-  a_.resize(6);
-  adiag_.resize(6);
-  const int n = states_.num_states();
-  int k; 
-  for (k = 0; k < 6; k++) {
-    //gpu::array<complex,2> a_[k];
-    a_[k] = std::make_unique<inq::matrix::distributed<std::complex<double>>>(matrix::scatter(comm_, inq::gpu::array<std::complex<double>, 2>(n, n), 0));
-    adiag_[k].resize(n);
-  }
-
-  //gpu::array<complex,2> u_({n,n});
-  u_ = std::make_unique<inq::matrix::distributed<std::complex<double>>>(matrix::scatter(comm_, inq::gpu::array<std::complex<double>, 2>(n, n), 0));
-
-  // JB Testing
-
-  sd_ = std::make_unique<states::orbital_set<basis::real_space, std::complex<double>>>(basis, n, 1, {0.0, 0.0, 0.0}, 0, comm_);
-  sdcosx_ = std::make_unique<states::orbital_set<basis::real_space, std::complex<double>>>(basis, n, 1, {0.0, 0.0, 0.0}, 0, comm_);
-  sdcosy_ = std::make_unique<states::orbital_set<basis::real_space, std::complex<double>>>(basis, n, 1, {0.0, 0.0, 0.0}, 0, comm_);
-  sdcosz_ = std::make_unique<states::orbital_set<basis::real_space, std::complex<double>>>(basis, n, 1, {0.0, 0.0, 0.0}, 0, comm_);
-  sdsinx_ = std::make_unique<states::orbital_set<basis::real_space, std::complex<double>>>(basis, n, 1, {0.0, 0.0, 0.0}, 0, comm_);
-  sdsiny_ = std::make_unique<states::orbital_set<basis::real_space, std::complex<double>>>(basis, n, 1, {0.0, 0.0, 0.0}, 0, comm_);
-  sdsinz_ = std::make_unique<states::orbital_set<basis::real_space, std::complex<double>>>(basis, n, 1, {0.0, 0.0, 0.0}, 0, comm_);
-  
-}	  
-
-
-
-void TDMLWFTransform::update(void)
-{
-  auto& c = sd_->matrix();
-  auto& ccosx = sdcosx_->matrix();
-  auto& csinx = sdsinx_->matrix();
-  auto& ccosy = sdcosy_->matrix();
-  auto& csiny = sdsiny_->matrix();
-  auto& ccosz = sdcosz_->matrix();
-  auto& csinz = sdsinz_->matrix();
-  
-  vector<complex<double> > zvec(bm_.zvec_size()),
-    zvec_cos(bm_.zvec_size()), zvec_sin(bm_.zvec_size()),
-    ct(bm_.np012loc()), ct_cos(bm_.np012loc()), ct_sin(bm_.np012loc());
-  
-
-  for ( int i = 0; i < 6; i++ )
-  {
-    //a_[i]->resize(c.n(), c.n(), c.nb(), c.nb());
-    a_[i]->resize(c.size(), c.size());
-    //adiag_[i].resize(c.n());
-    adiag_[i].resize(c.size());
-  }
-  //u_->resize(c.n(), c.n(), c.nb(), c.nb());
-  u_->resize(c.size(), c.size());
-
-  // loop over all local states
-  const int np0 = basis_.sizes()[0];
-  const int np1 = basis_.sizes()[1];
-  const int np2 = basis_.sizes()[2];
-  const int np01 = np0 * np1;
-  //const int np2loc = bm_.np2loc();
-  //const int nvec = bm_.nvec();
-  //for ( int n = 0; n < c.nloc(); n++ )
-  for ( int n = 0; n < c.size(); n++ )
-  {
-    //cout << "mlwf_n = " << n << endl;
-    auto f = c.rotated()[n];
-    auto fcx = ccosx.rotated()[n];
-    auto fsx = csinx.rotated()[n];
-    auto fcy = ccosy.rotated()[n];
-    auto fsy = csiny.rotated()[n];
-    auto fcz = ccosz.rotated()[n];
-    auto fsz = csinz.rotated()[n];
-    // direction z
-    // map state to array zvec_
-    bm_.vector_to_zvec(&f[0],&zvec[0]);
-
-    for ( int ivec = 0; ivec < nvec; ivec++ )
-    {
-      const int ibase = ivec * np2;
-      //compute_sincos(np2,&zvec[ibase],&zvec_cos[ibase],&zvec_sin[ibase]);
-      //compute_sincos(np2, zvec.data() + ibase, zvec_cos.data() + ibase, zvec_sin.data() + ibase);
-      compute_sincos(np2, zvec({ibase, ibase + np2}), zvec_cos({ibase, ibase + np2}), zvec_sin({ibase, ibase + np2}));
-    }
-    // map back zvec_cos to sdcos and zvec_sin to sdsin
-    bm_.zvec_to_vector(&zvec_cos[0],&fcz[0]);
-    bm_.zvec_to_vector(&zvec_sin[0],&fsz[0]);
-
-    // x direction
-    // map zvec to ct
-    bm_.transpose_fwd(&zvec[0],&ct[0]);
-
-    for ( int iz = 0; iz < np2loc; iz++ )
-    {
-      for ( int iy = 0; iy < np1; iy++ )
-      {
-        const int ibase = iz * np01 + iy * np0;
-        //compute_sincos(np0,&ct[ibase],&ct_cos[ibase],&ct_sin[ibase]);
-	compute_sincos(np0, ct({ibase, ibase + len}), ct_cos({ibase, ibase + len}), ct_sin({ibase, ibase + len}));
-      }
-    }
-    // transpose back ct_cos to zvec_cos
-    bm_.transpose_bwd(&ct_cos[0],&zvec_cos[0]);
-    // transpose back ct_sin to zvec_sin
-    bm_.transpose_bwd(&ct_sin[0],&zvec_sin[0]);
-
-    // map back zvec_cos to sdcos and zvec_sin to sdsin
-    bm_.zvec_to_vector(&zvec_cos[0],&fcx[0]);
-    bm_.zvec_to_vector(&zvec_sin[0],&fsx[0]);
-
-    // y direction
-    vector<complex<double> > c_tmp(np1),ccos_tmp(np1),csin_tmp(np1);
-    int len = np1;
-    int stride = np0;
-    int one = 1;
-    for ( int iz = 0; iz < np2loc; iz++ )
-    {
-      for ( int ix = 0; ix < np0; ix++ )
-      {
-        const int ibase = iz * np01 + ix;
-        //zcopy(&len,&ct[ibase],&stride,&c_tmp[0],&one);
-        //compute_sincos(np1,&c_tmp[0],&ccos_tmp[0],&csin_tmp[0]);
-        //zcopy(&len,&ccos_tmp[0],&one,&ct_cos[ibase],&stride);
-        //zcopy(&len,&csin_tmp[0],&one,&ct_sin[ibase],&stride);
-	gpu::copy(len, ct({ibase, ibase + len}), c_tmp);
-	//compute_sincos(np1, c_tmp.data(), ccos_tmp.data(), csin_tmp.data());
-	compute_sincos(np1, c_tmp({ibase, ibase + len}), ccos_tmp({ibase, ibase + len}), csin_tmp({ibase, ibase + len}));
-	gpu::copy(len, ccos_tmp, ct_cos({ibase, ibase + len}));
-	gpu::copy(len, csin_tmp, ct_sin({ibase, ibase + len}));
-      }
-    }
-    // transpose back ct_cos to zvec_cos
-    bm_.transpose_bwd(&ct_cos[0],&zvec_cos[0]);
-    // transpose back ct_sin to zvec_sin
-    bm_.transpose_bwd(&ct_sin[0],&zvec_sin[0]);
-
-    // map back zvec_cos and zvec_sin
-    bm_.zvec_to_vector(&zvec_cos[0],&fcy[0]);
-    bm_.zvec_to_vector(&zvec_sin[0],&fsy[0]);
-  }
-
-  // dot products a_[0] = <cos x>, a_[1] = <sin x>
-  a_[0]->gemm('c','n',1.0,c,ccosx,0.0);
-  a_[0]->zger(-1.0,c,0,ccosx,0);
-  a_[1]->gemm('c','n',1.0,c,csinx,0.0);
-  a_[1]->zger(-1.0,c,0,csinx,0);
-
-  // dot products a_[2] = <cos y>, a_[3] = <sin y>
-  a_[2]->gemm('c','n',1.0,c,ccosy,0.0);
-  a_[2]->zger(-1.0,c,0,ccosy,0);
-  a_[3]->gemm('c','n',1.0,c,csiny,0.0);
-  a_[3]->zger(-1.0,c,0,csiny,0);
-
-  // dot products a_[4] = <cos z>, a_[5] = <sin z>
-  a_[4]->gemm('c','n',1.0,c,ccosz,0.0);
-  a_[4]->zger(-1.0,c,0,ccosz,0);
-  a_[5]->gemm('c','n',1.0,c,csinz,0.0);
-  a_[5]->zger(-1.0,c,0,csinz,0);
-}
-*/
-////////////////////////////////////////////////////////////////////////////////
-template <typename T, class vector_type1, class vector_type2 > 
+template <typename T, class vector_type1, class vector_type2> 
 void compute_sincos(T n, vector_type1* f, vector_type2* fc, vector_type2* fs) { 
 //void compute_sincos(const int n, const std::complex<double>* f, std::complex<double>* fc, std::complex<double>* fs) {
 
@@ -242,12 +99,12 @@ void compute_sincos(T n, vector_type1* f, vector_type2* fc, vector_type2* fs) {
 template <typename T>
 auto center(T i, const systems::cell & cell_) {
   assert(i >= 0 && i < st.num_states());
-  const double cx = real(adiag_[0][i]);
-  const double sx = real(adiag_[1][i]);
-  const double cy = real(adiag_[2][i]);
-  const double sy = real(adiag_[3][i]);
-  const double cz = real(adiag_[4][i]);
-  const double sz = real(adiag_[5][i]);
+  const double cx = real(adiag[0][i]);
+  const double sx = real(adiag[1][i]);
+  const double cy = real(adiag[2][i]);
+  const double sy = real(adiag[3][i]);
+  const double cz = real(adiag[4][i]);
+  const double sz = real(adiag[5][i]);
   // Ratios for inputs into atan functions below
   //const complex<double> sxcx = sx / cx;
   //const complex<double> sycy = sy / cy;
@@ -290,7 +147,7 @@ bool overlap(T1 epsilon, T2 i, T2 j, const systems::cell & cell_) {
   double x = cell_[0][0]*cell_[0][0] + cell_[0][1]*cell_[0][1] + cell_[0][2]*cell_[0][2];
   double y = cell_[1][1]*cell_[1][1] + cell_[1][2]*cell_[1][2] + cell_[1][2]*cell_[1][2];
   double z = cell_[2][2]*cell_[2][2] + cell_[2][1]*cell_[2][1] + cell_[2][2]*cell_[2][2];
-  double len = sqrt(x+y+z);
+  double len = sqroot(x+y+z);
   if (wannier_distance(i,j, cell_) <= epsilon || wannier_distance(i,j, cell_) >= (len - epsilon) )
       return true;  //need sqrt(a0^2 + a1^2 + a2^2) for cell diagonal distance. Diagonal dist - epsilon for pbc
 
@@ -341,8 +198,8 @@ template <typename T>
 double spread2(T i, T j, const systems::cell & cell) {
   assert(i >= 0 && i < st.num_states());
   assert(j >= 0 && j < 3);
-  const complex c = adiag_[2*j][i]; //DCY
-  const complex s = adiag_[2*j+1][i]; //DCY
+  const complex c = adiag[2*j][i]; //DCY
+  const complex s = adiag[2*j+1][i]; //DCY
   // Next line: M_1_PI = 1.0/pi
   auto recip = cell.reciprocal(j);
   double length = sqrt(recip[0]*recip[0]+ recip[1]*recip[1] + recip[2]*recip[2]);
@@ -384,21 +241,10 @@ auto dipole(const systems::cell & cell) {
     sum -= 2.0 * center(i,cell);  //CS need to pass state occupations (assume fully occupied for now) How?
   return sum;
 }
-/*
-private:
-  std::vector<complex*> a_;
-  std::vector<complex>* u_;
-  std::vector<std::vector<std::complex<double>>> adiag_;
-  states::ks_states states_;
-  //basis::real_space cell_;
-  //gpu::array<complex,2>* a_;
-  //gpu::array<complex,2> adiag_;
-  //gpu::array<complex,2>* u_;
-*/
-////////////////////////////////////////////////////////////////////////////////
-//};
-}
-}
+///////////////////////////////////////////////////////////////////
+
+} //wannier
+} //inq
 #endif 
 
 ///////////////////////////////////////////////////////////////////
@@ -412,46 +258,49 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
         using namespace Catch::literals;
         using Catch::Approx;
 
-        //CS adiag_ values correspond to H2 gs. Should give <mlwf center="    0.000000    0.000000    0.711503 " spread=" 1.578285 "/>
-	//pass two identical centers in test to verify distance fxns 
-
 	SECTION("Wannier Centers"){
 
-		auto cell = systems::cell::cubic(15.0_b).periodic(); //CS more conventional call to a cubic cell with pbc 
+		//CS testing a 2He atom test; 20x20x20 cell, 1He at <-7,-7,-7> and 1He at <8,8,8>
+		auto cell = systems::cell::cubic(20.0_b).periodic(); //CS more conventional call to a cubic cell with pbc 
 		int i = 0;
 		auto center = wannier::center(i, cell); 
 
-		CHECK(center[0] == 0.000000_a);
-		CHECK(center[1] == 0.000000_a);
-		CHECK(center[2] == 0.711503_a); 
-		
-		int j = 0;
+		CHECK(center[0] == -7.000012_a);
+		CHECK(center[1] == -7.000012_a);
+		CHECK(center[2] == -7.000012_a); 
+
+		int j = 1;
+                auto center1 = wannier::center(j, cell);
+		CHECK(center1[0] == 8.000012_a);
+                CHECK(center1[1] == 8.000012_a);
+                CHECK(center1[2] == 8.000012_a);
+	
 		auto dist = wannier::wannier_distance(i, j, cell);
-		CHECK(dist == 0.00_a);
+		CHECK(dist == 25.980803_a);
 		
-		double epsilon = 10.0;
+		double epsilon = 5.0;
 		auto overlap = wannier::overlap(epsilon, i, j, cell);
-		CHECK(overlap == true);
+		CHECK(overlap == false);
 		
 		auto ols = wannier::total_overlaps(epsilon, cell);
-		CHECK(ols == 1.00_a);
+		CHECK(ols == 0.5_a);
 		auto pair = wannier::pair_fraction(epsilon,cell);
-		CHECK(pair == 1.00_a);
+		CHECK(pair == 0.6666666_a);
 
 		double j_0 = wannier::spread2(i,j,cell);
-		CHECK(j_0 == 0.749738_a);
+		CHECK(j_0 == 0.450904_a);
 		double tot = wannier::spread2(i,cell);
-		CHECK(tot == 2.490984_a);
+		CHECK(tot == 1.352712_a);
 		double spread = wannier::spread(i,cell);
-		CHECK(spread == 1.578285_a);
+		CHECK(spread == 1.163062_a);
 		double sum = wannier::spread2(cell);
-		CHECK(sum == 4.981968_a);
+		CHECK(sum == 2.705424_a);
 		double val = wannier::spread(cell);
-		CHECK(val == 2.232032_a);
+		CHECK(val == 1.644817_a);
 		auto dp = wannier::dipole(cell);
-                CHECK(dp[0] == 0.000000_a);
-                CHECK(dp[1] == 0.000000_a);
-                CHECK(dp[2] == -2.846012_a);
+                CHECK(dp[0] == -2.000000_a);
+                CHECK(dp[1] == -2.000000_a);
+                CHECK(dp[2] == -2.000000_a);
   }	
   	
 }
