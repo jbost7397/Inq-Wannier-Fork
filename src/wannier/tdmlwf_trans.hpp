@@ -49,19 +49,19 @@ tdmlwf_trans(const basis::real_space & basis, states::ks_states const & states) 
       basis_(basis), states_(states) {
 
   const int n = states_.num_states();
-  int nprocs = basis_.comm().size();
-  std::array<int, 2> shape;
-  int dim_x = std::round(std::cbrt(nprocs)); 
-  shape[0] = dim_x;
-  shape[1] = nprocs / dim_x;
-  auto comm = parallel::cartesian_communicator<2>(basis_.comm(), shape);
+  int nx = basis_.local_sizes()[0];
+  int ny = basis_.local_sizes()[1];
+  int nz = basis_.local_sizes()[2];
   a_.resize(6);
   adiag_.resize(6);
   int k; 
   for (k = 0; k < 6; k++) {
     //gpu::array<complex,2> a_[k];
     a_[k].resize(n);
-    adiag_[k].resize(n);
+    for (int iwf = 0; iwf < n; iwf++) {
+	    a_[k][iwf].resize(n, 0);
+    }
+    adiag_[k].resize(n, 0);
   }
 
   //gpu::array<complex,2> u_({n,n});
@@ -71,8 +71,7 @@ tdmlwf_trans(const basis::real_space & basis, states::ks_states const & states) 
   
 }	  
 
-//JB: compute a matrices in real space. Should give exact result, but obviously inefficent (O(n^4)) for larger systems so still need to implement reciprocal space algorithm
-void update(void) {
+std::vector<std::vector<std::vector<complex>>> update(void) {
   int n_states = states_.num_states();
   int nprocs = basis_.comm().size();
   std::array<int, 2> shape;
@@ -92,7 +91,7 @@ void update(void) {
 
   const auto& wavefunctions = orbital_set.hypercubic();
 
-  for (int iwf = 0; iwf < n_states; ++iwf) {
+  /*for (int iwf = 0; iwf < n_states; ++iwf) {
     for (int ix = 0; ix < nx; ++ix) {
       for (int iy = 0; iy < ny; ++iy) {
         for (int iz = 0; iz < nz; ++iz) {
@@ -106,7 +105,6 @@ void update(void) {
           double sin_z = sin(2.0 * M_PI * coords[2] / lz);
 
 	  complex wf_coeff = wavefunctions[ix][iy][iz][iwf];
-
           a_[0][iwf][ix * ny * nz + iy * nz + iz] += wf_coeff * cos_x;
           a_[1][iwf][ix * ny * nz + iy * nz + iz] += wf_coeff * sin_x;
           a_[2][iwf][ix * ny * nz + iy * nz + iz] += wf_coeff * cos_y;
@@ -116,7 +114,46 @@ void update(void) {
         }
       }
     }
+  }*/
+
+  for (int k_wf = 0; k_wf < n_states; ++k_wf) {
+    for (int l_wf = 0; l_wf < n_states; ++l_wf) {
+      for (int ix = 0; ix < nx; ++ix) {
+        for (int iy = 0; iy < ny; ++iy) {
+          for (int iz = 0; iz < nz; ++iz) {
+            complex c_ik = wavefunctions[ix][iy][iz][k_wf];
+            auto conj_ik = conj(c_ik);
+
+ 	    for (int jx = 0; jx < nx; ++jx) {
+	      for (int jy = 0; jy < ny; ++jy) {
+	        for (int jz = 0; jz < nz; ++jz) {
+            	  auto coords = basis_.point_op().rvector_cartesian(jx, jy, jz);
+
+            	  double cos_x = cos(2.0 * M_PI * coords[0] / lx);
+            	  double sin_x = sin(2.0 * M_PI * coords[0] / lx);
+            	  double cos_y = cos(2.0 * M_PI * coords[1] / ly);
+            	  double sin_y = sin(2.0 * M_PI * coords[1] / ly);
+            	  double cos_z = cos(2.0 * M_PI * coords[2] / lz);
+            	  double sin_z = sin(2.0 * M_PI * coords[2] / lz);
+
+            	  complex c_jl = wavefunctions[jx][jy][jz][l_wf];
+
+            	  a_[0][k_wf][l_wf] += conj_ik * c_jl * cos_x;
+            	  a_[1][k_wf][l_wf] += conj_ik * c_jl * sin_x;
+            	  a_[2][k_wf][l_wf] += conj_ik * c_jl * cos_y;
+            	  a_[3][k_wf][l_wf] += conj_ik * c_jl * sin_y;
+            	  a_[4][k_wf][l_wf] += conj_ik * c_jl * cos_z;
+            	  a_[5][k_wf][l_wf] += conj_ik * c_jl * sin_z;
+		}
+	      }
+	    }
+	  }
+        }
+      }
+    }
   }
+  return a_;
+
 }
 
 
@@ -176,7 +213,7 @@ void update(void)
 }*/
 
 ////////////////////////////////////////////////////////////////////////////////
-template <typename T, class vector_type1, class vector_type2 > 
+/*template <typename T, class vector_type1, class vector_type2 > 
 void compute_sincos(T n, vector_type1* f, vector_type2* fc, vector_type2* fs) { 
 //void compute_sincos(const int n, const std::complex<double>* f, std::complex<double>* fc, std::complex<double>* fs) {
 
@@ -203,7 +240,7 @@ void compute_sincos(T n, vector_type1* f, vector_type2* fc, vector_type2* fs) {
   fc[n-1] = 0.5 * ( zp + zm );
   zdiff = zp - zm;
   fs[n-1] = 0.5 * std::complex<double>(imag(zdiff),-real(zdiff));
-}
+}*/
 
 void compute_transform(void)
 {
@@ -215,7 +252,7 @@ void compute_transform(void)
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 auto center(T i, const systems::cell & cell_) {
-  assert(i >= 0 && i < st.num_states());
+  assert(i >= 0 && i < states_.num_states());
   const double cx = real(adiag_[0][i]);
   const double sx = real(adiag_[1][i]);
   const double cy = real(adiag_[2][i]);
@@ -242,11 +279,20 @@ auto center(T i, const systems::cell & cell_) {
   return center_d3;
 }
 
+/*std::vector<inq::math::vector3<double>> get_centers(const systems::cell& cell_) const {
+	int num_states = states_.num_states();
+        std::vector<inq::math::vector3<double>> centers(num_states);
+        for (int i = 0; i < num_states; ++i) {
+            centers[i] = center(i, cell_);
+        }
+        return centers;
+}*/
+
 ////////////////////////////////////////////////////////////////////////////////
-template <typename T>
+/*template <typename T>
 double wannier_distance(T i, T j, const systems::cell & cell_) {
-  assert(i >=0 && i < st.num_states());
-  assert(j >=0 && j < st.num_states());
+  assert(i >=0 && i < states_.num_states());
+  assert(j >=0 && j < states_.num_states());
   vector3<double>ctr_i = center(i, cell_);
   vector3<double>ctr_j = center(j, cell_);
   double x_dist = ctr_i[0] - ctr_j[0];
@@ -255,7 +301,7 @@ double wannier_distance(T i, T j, const systems::cell & cell_) {
   double total_dist = x_dist*x_dist + y_dist*y_dist + z_dist*z_dist;
   double root = std::sqrt(total_dist);
   return std::abs(root);
-}
+}*/
 
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T1, typename T2>
@@ -276,29 +322,29 @@ bool overlap(T1 epsilon, T2 i, T2 j, const systems::cell & cell_) {
 /*template <typename T>
 double total_overlaps(T epsilon, const systems::cell & cell_) {
   int sum = 0;
-  for ( int i = 0; i < st.num_states(); i++ )
+  for ( int i = 0; i < states_.num_states(); i++ )
   {
     int count = 0;
-    for ( int j = 0; j < st.num_states(); j++ )
+    for ( int j = 0; j < states_.num_states(); j++ )
     {
       if ( overlap(epsilon,i,j,cell_) )
         count++;
     }
     sum += count;
   }
-    return ((double) sum)/(st.num_states()*st.num_states());
+    return ((double) sum)/(states_.num_states()*states_.num_states());
 }*/
 
 ////////////////////////////////////////////////////////////////////////////////
-/*template <typename T>
+template <typename T>
 double pair_fraction(T epsilon, const systems::cell & cell) {
   // pair_fraction: return fraction of pairs having non-zero overlap
   // count pairs (i,j) having non-zero overlap for i != j only
   int sum = 0;
-  for ( int i = 0; i < st.num_states(); i++ )
+  for ( int i = 0; i < states_.num_states(); i++ )
   {
     int count = 0;
-    for ( int j = i+1; j < st.num_states(); j++ )
+    for ( int j = i+1; j < states_.num_states(); j++ )
     {
       if ( overlap(epsilon,i,j,cell) )
         count++;
@@ -306,14 +352,14 @@ double pair_fraction(T epsilon, const systems::cell & cell) {
     sum += count;
   }
   // add overlap with self: (i,i)
-  sum += st.num_states();
-  return ((double) sum)/((st.num_states()*(st.num_states()+1))/2);
-}*/
+  sum += states_.num_states();
+  return ((double) sum)/((states_.num_states()*(states_.num_states()+1))/2);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
-/*template <typename T>
+template <typename T>
 double spread2(T i, T j, const systems::cell & cell) {
-  assert(i >= 0 && i < st.num_states());
+  assert(i >= 0 && i < states_.num_states());
   assert(j >= 0 && j < 3);
   const std::complex<double> c = adiag_[2*j][i]; //DCY
   const std::complex<double> s = adiag_[2*j+1][i]; //DCY
@@ -322,12 +368,12 @@ double spread2(T i, T j, const systems::cell & cell) {
   double length = sqrt(recip[0]*recip[0]+ recip[1]*recip[1] + recip[2]*recip[2]);
   const double fac = 1.0 / length;
   return fac*fac * ( 1.0 - std::norm(c) - std::norm(s) );
-}*/
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 double spread2(T i, const systems::cell & cell) {
-  assert(i >= 0 & i < st.num_states());
+  assert(i >= 0 & i < states_.num_states());
   return spread2(i,0,cell) + spread2(i,1,cell) + spread2(i,2,cell);
 }
 
@@ -338,26 +384,26 @@ double spread(T i, const systems::cell & cell) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-/*double spread2(const systems::cell & cell) {
+double spread2(const systems::cell & cell) {
   double sum = 0.0;
-  for ( int i = 0; i < st.num_states(); i++ )
+  for ( int i = 0; i < states_.num_states(); i++ )
     sum += spread2(i, cell);
   return sum;
-}*/
+}
 
 ////////////////////////////////////////////////////////////////////////////////
-/*double spread(const systems::cell & cell) {
+double spread(const systems::cell & cell) {
   return sqrt(spread2(cell));
-}*/
+}
 
 ////////////////////////////////////////////////////////////////////////////////
-/*auto dipole(const systems::cell & cell) {
+auto dipole(const systems::cell & cell) {
   // total electronic dipole
   vector3<double> sum{0.0,0.0,0.0};
-  for ( int i = 0; i < st.num_states(); i++ )
+  for ( int i = 0; i < states_.num_states(); i++ )
     sum -= 2.0 * center(i,cell);  //CS need to pass state occupations (assume fully occupied for now) How?
   return sum;
-}*/
+}
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -375,6 +421,48 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
         using namespace inq;
         using namespace Catch::literals;
         using Catch::Approx;
+
+        /*parallel::communicator comm{boost::mpi3::environment::get_world_instance()};
+	basis::real_space rs(systems::cell::cubic(20.0_b), 0.49672941, comm);
+	states::ks_states st(states::spin_config::UNPOLARIZED, 4.0);*/
+
+	auto local_he = inq::input::species("He");
+	inq::systems::ions sys(inq::systems::cell::cubic(20.0_b));
+	sys.insert(local_he, {-7.0_b, -7.0_b, -7.0_b});
+	sys.insert(local_he, {8.0_b, 8.0_b, 8.0_b});
+	inq::systems::electrons el(sys, options::electrons{}.cutoff(30.0_Ha));
+	inq::ground_state::initial_guess(sys, el);
+	
+	inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-8_Ha));
+
+	wannier::tdmlwf_trans mlwf_transformer(el.states_basis(), el.states());
+        auto a_ = mlwf_transformer.update();
+
+	CHECK(real(a_[0][0][0]) == Approx(-0.68433137));
+    	CHECK(real(a_[0][1][0]) == Approx(-0.00103429));
+    	CHECK(real(a_[0][0][1]) == Approx(-0.00103429));
+    	CHECK(real(a_[0][1][1]) == Approx(-0.68104163));
+    	CHECK(real(a_[1][0][0]) == Approx(-0.09765152));
+    	CHECK(real(a_[1][1][0]) == Approx(0.00727211));
+    	CHECK(real(a_[1][0][1]) == Approx(0.00727210));
+    	CHECK(real(a_[1][1][1]) == Approx(-0.11860232));
+    	CHECK(real(a_[2][0][0]) == Approx(-0.68433137));
+    	CHECK(real(a_[2][1][0]) == Approx(-0.00103429));
+    	CHECK(real(a_[2][0][1]) == Approx(-0.00103429));
+    	CHECK(real(a_[2][1][1]) == Approx(-0.68104162));
+    	CHECK(real(a_[3][0][0]) == Approx(-0.09765152));
+    	CHECK(real(a_[3][1][0]) == Approx(0.00727211));
+    	CHECK(real(a_[3][0][1]) == Approx(0.00727210));
+    	CHECK(real(a_[3][1][1]) == Approx(-0.11860232));
+    	CHECK(real(a_[4][0][0]) == Approx(-0.68433130));
+    	CHECK(real(a_[4][1][0]) == Approx(-0.00103425));
+    	CHECK(real(a_[4][0][1]) == Approx(-0.00103453));
+    	CHECK(real(a_[4][1][1]) == Approx(-0.68104179));
+    	CHECK(real(a_[5][0][0]) == Approx(-0.09765150));
+    	CHECK(real(a_[5][1][0]) == Approx(0.00727212));
+    	CHECK(real(a_[5][0][1]) == Approx(0.00727207));
+    	CHECK(real(a_[5][1][1]) == Approx(-0.11860233));
+
 
 	/*
 		//auto cell = systems::cell::cubic(15.0_b).periodicity(3); 
