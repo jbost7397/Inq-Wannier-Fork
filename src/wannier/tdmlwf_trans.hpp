@@ -122,31 +122,28 @@ std::vector<std::vector<std::vector<complex>>> update(void) {
         for (int iy = 0; iy < ny; ++iy) {
           for (int iz = 0; iz < nz; ++iz) {
             complex c_ik = wavefunctions[ix][iy][iz][k_wf];
-            auto conj_ik = conj(c_ik);
+            auto conj_ik = conj_cplx(c_ik);
 
- 	    for (int jx = 0; jx < nx; ++jx) {
-	      for (int jy = 0; jy < ny; ++jy) {
-	        for (int jz = 0; jz < nz; ++jz) {
-            	  auto coords = basis_.point_op().rvector_cartesian(jx, jy, jz);
+            auto coords = basis_.point_op().rvector_cartesian(ix, iy, iz);
 
-            	  double cos_x = cos(2.0 * M_PI * coords[0] / lx);
-            	  double sin_x = sin(2.0 * M_PI * coords[0] / lx);
-            	  double cos_y = cos(2.0 * M_PI * coords[1] / ly);
-            	  double sin_y = sin(2.0 * M_PI * coords[1] / ly);
-            	  double cos_z = cos(2.0 * M_PI * coords[2] / lz);
-            	  double sin_z = sin(2.0 * M_PI * coords[2] / lz);
+            double cos_x = cos(2.0 * M_PI * coords[0] / lx);
+            double sin_x = sin(2.0 * M_PI * coords[0] / lx);
+            double cos_y = cos(2.0 * M_PI * coords[1] / ly);
+            double sin_y = sin(2.0 * M_PI * coords[1] / ly);
+            double cos_z = cos(2.0 * M_PI * coords[2] / lz);
+            double sin_z = sin(2.0 * M_PI * coords[2] / lz);
 
-            	  complex c_jl = wavefunctions[jx][jy][jz][l_wf];
+            complex c_jl = wavefunctions[ix][iy][iz][l_wf];
 
-            	  a_[0][k_wf][l_wf] += conj_ik * c_jl * cos_x;
-            	  a_[1][k_wf][l_wf] += conj_ik * c_jl * sin_x;
-            	  a_[2][k_wf][l_wf] += conj_ik * c_jl * cos_y;
-            	  a_[3][k_wf][l_wf] += conj_ik * c_jl * sin_y;
-            	  a_[4][k_wf][l_wf] += conj_ik * c_jl * cos_z;
-            	  a_[5][k_wf][l_wf] += conj_ik * c_jl * sin_z;
-		}
-	      }
-	    }
+            a_[0][k_wf][l_wf] += conj_ik * c_jl * cos_x;
+            a_[1][k_wf][l_wf] += conj_ik * c_jl * sin_x;
+            a_[2][k_wf][l_wf] += conj_ik * c_jl * cos_y;
+            a_[3][k_wf][l_wf] += conj_ik * c_jl * sin_y;
+            a_[4][k_wf][l_wf] += conj_ik * c_jl * cos_z;
+            a_[5][k_wf][l_wf] += conj_ik * c_jl * sin_z;
+		
+	      
+	    
 	  }
         }
       }
@@ -426,14 +423,14 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 	basis::real_space rs(systems::cell::cubic(20.0_b), 0.49672941, comm);
 	states::ks_states st(states::spin_config::UNPOLARIZED, 4.0);*/
 
-	auto local_he = inq::input::species("He");
-	inq::systems::ions sys(inq::systems::cell::cubic(20.0_b));
+	auto local_he = inq::input::species("He").pseudo(inq::config::path::unit_tests_data() + "He.upf");
+	inq::systems::ions sys(inq::systems::cell::cubic(20.0_b).periodic());
 	sys.insert(local_he, {-7.0_b, -7.0_b, -7.0_b});
 	sys.insert(local_he, {8.0_b, 8.0_b, 8.0_b});
-	inq::systems::electrons el(sys, options::electrons{}.cutoff(30.0_Ha));
+	inq::systems::electrons el(sys, options::electrons{}.cutoff(30.0_Ry));
 	inq::ground_state::initial_guess(sys, el);
 	
-	inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-8_Ha));
+	inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha));
 
 	wannier::tdmlwf_trans mlwf_transformer(el.states_basis(), el.states());
         auto a_ = mlwf_transformer.update();
@@ -462,6 +459,44 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
     	CHECK(real(a_[5][1][0]) == Approx(0.00727212));
     	CHECK(real(a_[5][0][1]) == Approx(0.00727207));
     	CHECK(real(a_[5][1][1]) == Approx(-0.11860233));
+
+
+	inq::systems::ions sys2(inq::systems::cell::cubic(20.0_b).periodic());
+	sys2.insert(local_he, {3.0_b, 3.0_b, 3.0_b});
+	sys2.insert(local_he, {18.0_b, 18.0_b, 18.0_b});
+	inq::systems::electrons el2(sys2, options::electrons{}.cutoff(30.0_Ry));
+	inq::ground_state::initial_guess(sys2, el2);
+	
+	inq::ground_state::calculate(sys2, el2, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha));
+
+	wannier::tdmlwf_trans mlwf_transformer2(el2.states_basis(), el2.states());
+        auto a2_ = mlwf_transformer2.update();
+
+	CHECK(real(a2_[0][0][0]) == Approx(-0.68433137));
+    	CHECK(real(a2_[0][1][0]) == Approx(-0.00103429));
+    	CHECK(real(a2_[0][0][1]) == Approx(-0.00103429));
+    	CHECK(real(a2_[0][1][1]) == Approx(-0.68104163));
+    	CHECK(real(a2_[1][0][0]) == Approx(-0.09765152));
+    	CHECK(real(a2_[1][1][0]) == Approx(0.00727211));
+    	CHECK(real(a2_[1][0][1]) == Approx(0.00727210));
+    	CHECK(real(a2_[1][1][1]) == Approx(-0.11860232));
+    	CHECK(real(a2_[2][0][0]) == Approx(-0.68433137));
+    	CHECK(real(a2_[2][1][0]) == Approx(-0.00103429));
+    	CHECK(real(a2_[2][0][1]) == Approx(-0.00103429));
+    	CHECK(real(a2_[2][1][1]) == Approx(-0.68104162));
+    	CHECK(real(a2_[3][0][0]) == Approx(-0.09765152));
+    	CHECK(real(a2_[3][1][0]) == Approx(0.00727211));
+    	CHECK(real(a2_[3][0][1]) == Approx(0.00727210));
+    	CHECK(real(a2_[3][1][1]) == Approx(-0.11860232));
+    	CHECK(real(a2_[4][0][0]) == Approx(-0.68433130));
+    	CHECK(real(a2_[4][1][0]) == Approx(-0.00103425));
+    	CHECK(real(a2_[4][0][1]) == Approx(-0.00103453));
+    	CHECK(real(a2_[4][1][1]) == Approx(-0.68104179));
+    	CHECK(real(a2_[5][0][0]) == Approx(-0.09765150));
+    	CHECK(real(a2_[5][1][0]) == Approx(0.00727212));
+    	CHECK(real(a2_[5][0][1]) == Approx(0.00727207));
+    	CHECK(real(a2_[5][1][1]) == Approx(-0.11860233));
+
 
 
 	/*
