@@ -40,13 +40,14 @@ private:
 	std::vector<std::vector<inq::complex>> adiag_;
 	std::vector<std::vector<complex>> u_;
   	states::ks_states states_;
+	states::orbital_set<basis::real_space, complex> wavefunctions_;
   	basis::real_space basis_; 
 
 public:
 
 ////////////////////////////////////////////////////////////////////////////////
-tdmlwf_trans(const basis::real_space & basis, states::ks_states const & states) :
-      basis_(basis), states_(states) {
+tdmlwf_trans(const basis::real_space & basis, states::ks_states const & states, states::orbital_set<basis::real_space, complex> const & wavefunctions) :
+      basis_(basis), states_(states), wavefunctions_(wavefunctions) {
 
   const int n = states_.num_states();
   int nx = basis_.local_sizes()[0];
@@ -87,9 +88,9 @@ std::vector<std::vector<std::vector<complex>>> update(void) {
   double ly = basis_.cell()[1].norm();
   double lz = basis_.cell()[2].norm();
 
-  states::orbital_set<basis::real_space, complex> orbital_set(basis_, n_states, 1, {0.0, 0.0, 0.0}, 0, comm);
+  //states::orbital_set<basis::real_space, complex> orbital_set(basis_, n_states, 1, {0.0, 0.0, 0.0}, 0, comm);
 
-  const auto& wavefunctions = orbital_set.hypercubic();
+  //const auto& wavefunctions = orbital_set.hypercubic();
 
   /*for (int iwf = 0; iwf < n_states; ++iwf) {
     for (int ix = 0; ix < nx; ++ix) {
@@ -121,7 +122,7 @@ std::vector<std::vector<std::vector<complex>>> update(void) {
       for (int ix = 0; ix < nx; ++ix) {
         for (int iy = 0; iy < ny; ++iy) {
           for (int iz = 0; iz < nz; ++iz) {
-            complex c_ik = wavefunctions[ix][iy][iz][k_wf];
+            complex c_ik = wavefunctions_.hypercubic()[ix][iy][iz][k_wf];
             auto conj_ik = conj_cplx(c_ik);
 
             auto coords = basis_.point_op().rvector_cartesian(ix, iy, iz);
@@ -133,14 +134,20 @@ std::vector<std::vector<std::vector<complex>>> update(void) {
             double cos_z = cos(2.0 * M_PI * coords[2] / lz);
             double sin_z = sin(2.0 * M_PI * coords[2] / lz);
 
-            complex c_jl = wavefunctions[ix][iy][iz][l_wf];
+            complex c_jl = wavefunctions_.hypercubic()[ix][iy][iz][l_wf];
 
-            a_[0][k_wf][l_wf] += conj_ik * c_jl * cos_x;
+            /*a_[0][k_wf][l_wf] += conj_ik * c_jl * cos_x;
             a_[1][k_wf][l_wf] += conj_ik * c_jl * sin_x;
             a_[2][k_wf][l_wf] += conj_ik * c_jl * cos_y;
             a_[3][k_wf][l_wf] += conj_ik * c_jl * sin_y;
             a_[4][k_wf][l_wf] += conj_ik * c_jl * cos_z;
-            a_[5][k_wf][l_wf] += conj_ik * c_jl * sin_z;
+            a_[5][k_wf][l_wf] += conj_ik * c_jl * sin_z;*/
+            a_[0][k_wf][l_wf] += conj_ik * c_jl; 
+            a_[1][k_wf][l_wf] += conj_ik * c_jl;
+            a_[2][k_wf][l_wf] += conj_ik * c_jl;
+            a_[3][k_wf][l_wf] += conj_ik * c_jl;
+            a_[4][k_wf][l_wf] += conj_ik * c_jl;
+            a_[5][k_wf][l_wf] += conj_ik * c_jl;
 		
 	      
 	    
@@ -432,7 +439,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 	
 	inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha));
 
-	wannier::tdmlwf_trans mlwf_transformer(el.states_basis(), el.states());
+	wannier::tdmlwf_trans mlwf_transformer(el.states_basis(), el.states(), el.kpin()[0]);
         auto a_ = mlwf_transformer.update();
 
 	CHECK(real(a_[0][0][0]) == Approx(-0.68433137));
@@ -469,7 +476,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 	
 	inq::ground_state::calculate(sys2, el2, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha));
 
-	wannier::tdmlwf_trans mlwf_transformer2(el2.states_basis(), el2.states());
+	wannier::tdmlwf_trans mlwf_transformer2(el2.states_basis(), el2.states(), el2.kpin()[0]);
         auto a2_ = mlwf_transformer2.update();
 
 	CHECK(real(a2_[0][0][0]) == Approx(-0.68433137));
