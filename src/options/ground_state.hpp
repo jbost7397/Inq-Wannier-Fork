@@ -65,12 +65,36 @@ public:
 		return in;
 	}
 	
+	enum class wavefunction_diag { T, MLWF }; // JLB
+
+    	template <typename OStream>
+    	friend OStream& operator<<(OStream& out, wavefunction_diag const& self) {
+        	if (self == wavefunction_diag::T) out << "T";
+        	if (self == wavefunction_diag::MLWF) out << "TDMLWF";
+        	return out;
+    	}
+
+    	template <typename IStream>
+    	friend IStream& operator>>(IStream& in, wavefunction_diag& self) {
+        	std::string readval;
+        	in >> readval;
+        	if (readval == "T") {
+        	    self = wavefunction_diag::T;
+        	} else if (readval == "MLWF") {
+        	    self = wavefunction_diag::MLWF;
+        	} else {
+        	    throw std::runtime_error("INQ error: Invalid wavefunction diagonalization option");
+        	}
+        	return in;
+    	}
+
 private:
 		
 	std::optional<scf_eigensolver> eigensolver_;
 	std::optional<double> mixing_;
 	std::optional<double> energy_tol_;
 	std::optional<mixing_algo> mixing_algo_;
+	std::optional<wavefunction_diag> wf_diag_;
 	std::optional<bool> verbose_;
 	std::optional<bool> subspace_diag_;
 	std::optional<int> max_steps_;
@@ -123,6 +147,22 @@ public:
 	auto mixing_algorithm() const {
 		return mixing_algo_.value_or(mixing_algo::BROYDEN);
 	}
+
+	auto t_wavefunction_diag() {
+        	ground_state solver = *this;
+        	solver.wf_diag_ = wavefunction_diag::T;
+        	return solver;
+    	}
+
+    	auto mlwf() {
+        	ground_state solver = *this;
+        	solver.wf_diag_ = wavefunction_diag::MLWF;
+        	return solver;
+    	}
+
+   	 auto wf_diag_value() const {
+        	return wf_diag_.value_or(wavefunction_diag::T);
+    	}
 
 	auto silent(){
 		ground_state solver = *this;;

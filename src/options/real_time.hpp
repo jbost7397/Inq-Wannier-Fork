@@ -72,6 +72,29 @@ public:
 		return in;
 	}
 
+	enum class wavefunction_diag { T, TDMLWF }; // JLB
+
+    	template <typename OStream>
+    	friend OStream& operator<<(OStream& out, wavefunction_diag const& self) {
+        	if (self == wavefunction_diag::T) out << "T";
+        	if (self == wavefunction_diag::TDMLWF) out << "TDMLWF";
+        	return out;
+    	}
+
+    	template <typename IStream>
+    	friend IStream& operator>>(IStream& in, wavefunction_diag& self) {
+        	std::string readval;
+        	in >> readval;
+        	if (readval == "T") {
+        	    self = wavefunction_diag::T;
+        	} else if (readval == "TDMLWF") {
+        	    self = wavefunction_diag::TDMLWF;
+        	} else {
+        	    throw std::runtime_error("INQ error: Invalid wavefunction diagonalization option");
+        	}
+        	return in;
+    	}
+
 	enum class observables {
 		dipole = 0,
 		current = 1
@@ -121,6 +144,7 @@ private:
 	std::optional<int> num_steps_;
 	std::optional<electron_propagator> prop_;
 	std::optional<ion_dynamics> ion_dynamics_;
+	std::optional<wavefunction_diag> wf_diag_;
 	observables_type obs_;
 	
 public:
@@ -183,6 +207,23 @@ public:
 		return ion_dynamics_.value_or(ion_dynamics::STATIC);
 	}
 
+	auto t_wavefunction_diag() {
+        	real_time rt = *this;
+        	rt.wf_diag_ = wavefunction_diag::T;
+        	return rt;
+    	}
+
+    	auto tdmlwf() {
+        	real_time rt = *this;
+        	rt.wf_diag_ = wavefunction_diag::TDMLWF;
+        	return rt;
+    	}
+
+   	 auto wf_diag_value() const {
+        	return wf_diag_.value_or(wavefunction_diag::T);
+    	}
+
+
 	auto observables_dipole() {
 		real_time solver = *this;;
 		solver.obs_.insert(observables::dipole);
@@ -213,6 +254,7 @@ public:
 		utils::save_optional (comm, dirname + "/num_steps",      num_steps_,     error_message);
 		utils::save_optional (comm, dirname + "/propagator",     prop_,          error_message);
 		utils::save_optional (comm, dirname + "/ion_dynamics",   ion_dynamics_,  error_message);
+		utils::save_optional (comm, dirname + "/wf_diag",        wf_diag_,       error_message);
 		utils::save_container(comm, dirname + "/observables",    obs_,           error_message);
 		
 	}
@@ -224,6 +266,7 @@ public:
 		utils::load_optional(dirname + "/num_steps",      opts.num_steps_);
 		utils::load_optional(dirname + "/propagator",     opts.prop_);
 		utils::load_optional(dirname + "/ion_dynamics",   opts.ion_dynamics_);
+		utils::load_optional(dirname + "/wf_diag",   	  opts.wf_diag_);
 		utils::load_container(dirname + "/observables",   opts.obs_);
 		
 		return opts;
@@ -286,6 +329,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
     CHECK(rt.num_steps() == 100);
     CHECK(rt.propagator() == options::real_time::electron_propagator::ETRS);		
 		CHECK(rt.ion_dynamics_value() == options::real_time::ion_dynamics::STATIC);
+		CHECK(rt.wf_diag_value() == options::real_time::wavefunction_diag::T);
 		
 		rt.save(comm, "save_real_time");
 		auto read_rt = options::real_time::load("save_real_time");
@@ -294,17 +338,19 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
     CHECK(read_rt.num_steps() == 100);
     CHECK(read_rt.propagator() == options::real_time::electron_propagator::ETRS);		
 		CHECK(read_rt.ion_dynamics_value() == options::real_time::ion_dynamics::STATIC);		
+		CHECK(rt.wf_diag_value() == options::real_time::wavefunction_diag::T);
 	
   }
 
   SECTION("Composition"){
 
-    auto rt = options::real_time{}.num_steps(1000).dt(0.05_atomictime).crank_nicolson().impulsive().observables_dipole().observables_current();
+    auto rt = options::real_time{}.num_steps(1000).dt(0.05_atomictime).crank_nicolson().impulsive().tdmlwf().observables_dipole().observables_current();
     
     CHECK(rt.num_steps() == 1000);
     CHECK(rt.dt() == 0.05_a);
 		CHECK(rt.propagator() == options::real_time::electron_propagator::CRANK_NICOLSON);
 		CHECK(rt.ion_dynamics_value() == options::real_time::ion_dynamics::IMPULSIVE);
+		CHECK(rt.wf_diag_value() == options::real_time::wavefunction_diag::TDMLWF);
 
 		std::cout << rt;
 		
@@ -315,6 +361,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
     CHECK(read_rt.dt() == 0.05_a);
 		CHECK(read_rt.propagator() == options::real_time::electron_propagator::CRANK_NICOLSON);
 		CHECK(read_rt.ion_dynamics_value() == options::real_time::ion_dynamics::IMPULSIVE);
+		CHECK(rt.wf_diag_value() == options::real_time::wavefunction_diag::TDMLWF);
 		CHECK(read_rt.observables_container() == rt.observables_container());
 		
 		std::cout << read_rt;

@@ -10,12 +10,13 @@
 
 #include <systems/ions.hpp>
 #include <hamiltonian/self_consistency.hpp>
+#include <hamiltonian/forces.hpp>
 #include <operations/overlap_diagonal.hpp>
 #include <observables/dipole.hpp>
-#include <observables/forces_stress.hpp>
+#include <observables/mlwf_properties.hpp>
 #include <options/real_time.hpp>
 #include <perturbations/none.hpp>
-#include <ionic/propagator.hpp>
+#include <ions/propagator.hpp>
 #include <systems/electrons.hpp>
 #include <real_time/crank_nicolson.hpp>
 #include <real_time/etrs.hpp>
@@ -28,20 +29,14 @@
 namespace inq {
 namespace real_time {
 
-template <typename ProcessFunction, typename IonSubPropagator = ionic::propagator::fixed, typename Perturbation = perturbations::none>
-void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunction func, const options::theory & inter,
-							 const options::real_time & opts, Perturbation const & pert = {}, int const start_step = 0){
-
-	assert(start_step >= 0);
-
+template <typename ProcessFunction, typename IonSubPropagator = ions::propagator::fixed, typename Perturbation = perturbations::none>
+void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunction func, const options::theory & inter, const options::real_time & opts, Perturbation const & pert = {}){
 		CALI_CXX_MARK_FUNCTION;
 		
 		auto console = electrons.logger();
 
-		ionic::propagator::runtime ion_propagator{opts.ion_dynamics_value()};
-
-		if(start_step > 0) assert(ion_propagator.static_ions()); //restart doesn't work with moving ions for now
-		
+		ions::propagator::runtime ion_propagator{opts.ion_dynamics_value()};
+	
 		const double dt = opts.dt();
 		const int numsteps = opts.num_steps();
 
@@ -50,13 +45,10 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 										 std::string("  time step        = {} atomictime ({:.2f} as)\n") +
 										 std::string("  number of steps  = {}\n") +
 										 std::string("  propagation time = {} atomictime ({:.2f} fs)"), dt, dt/0.041341373, numsteps, numsteps*dt, numsteps*dt/41.341373);
-		if(start_step > 0) console->trace("restarting propagation from step {}", start_step);
 			console->trace("\n{}", pert);
 		}
-
-	if(start_step == 0) {
+		
 		for(auto & phi : electrons.kpin()) pert.zero_step(phi);
-	}
 		
 		electrons.spin_density() = observables::density::calculate(electrons);
 
@@ -66,26 +58,26 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 		hamiltonian::energy energy;
 
 		sc.update_ionic_fields(electrons.states_comm(), ions, electrons.atomic_pot());
-	sc.update_hamiltonian(ham, energy, electrons.spin_density(), /* time = */ start_step*dt);
-		
+		sc.update_hamiltonian(ham, energy, electrons.spin_density(), /* time = */ 0.0);
+
 		ham.exchange().update(electrons);
 
 		energy.calculate(ham, electrons);
-		energy.ion(ionic::interaction_energy(ions.cell(), ions, electrons.atomic_pot()));
+		energy.ion(inq::ions::interaction_energy(ions.cell(), ions, electrons.atomic_pot()));
 
-	auto forces = decltype(observables::forces_stress{ions, electrons, ham}.forces){};
-	if(ion_propagator.needs_force()) forces = observables::forces_stress{ions, electrons, ham}.forces;
+		auto forces = decltype(hamiltonian::calculate_forces(ions, electrons, ham)){};
+		if(ion_propagator.needs_force()) forces = hamiltonian::calculate_forces(ions, electrons, ham);
 
 		auto current = vector3<double, covariant>{0.0, 0.0, 0.0};
 		if(sc.has_induced_vector_potential()) current = observables::current(ions, electrons, ham);
 		
-	if(start_step == 0) func(real_time::viewables{false, start_step, start_step*dt, ions, electrons, energy, forces, ham, pert});
+		func(real_time::viewables{false, 0, 0.0, ions, electrons, energy, forces, ham, pert});
 
 		if(console) console->trace("starting real-time propagation");
-	if(console) console->info("step {:9d} :  t =  {:9.3f}  e = {:.12f}", start_step, start_step*dt, energy.total());
+		if(console) console->info("step {:9d} :  t =  {:9.3f}  e = {:.12f}", 0, 0.0, energy.total());
 
 		auto iter_start_time = std::chrono::high_resolution_clock::now();
-	for(int istep = start_step; istep < numsteps; istep++){
+		for(int istep = 0; istep < numsteps; istep++){
 			CALI_CXX_MARK_SCOPE("time_step");
 
 			switch(opts.propagator()){
@@ -97,14 +89,23 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 				break;
 			}
 
-                        wannier::tdmlwf_trans mlwf_transformer(electrons.states_basis(), electrons.states());
-                        mlwf_transformer.update();
-                        mlwf_transformer.compute_transform();
+			/*wannier::tdmlwf_trans mlwf_transformer(electrons.states_basis(), electrons.states());
+			mlwf_transformer.update();
+			mlwf_transformer.compute_transform();*/
 
-			energy.calculate(ham, electrons);
+			if (opts.wf_diag_value() == options::real_time::wavefunction_diag::TDMLWF) { //JLB
+				{
+			        	observables::mlwf_properties mlwf_props(electrons.kpin()[0]); 
+    					std::ofstream output_file("mlwf_results.dat", std::ios_base::app);
+			        	mlwf_props.calculate(output_file, istep);
+       					output_file.close();
+				}
+			}
 			
-	if(ion_propagator.needs_force()) forces = observables::forces_stress{ions, electrons, ham}.forces;
-	
+			energy.calculate(ham, electrons);
+
+			if(ion_propagator.needs_force()) forces = hamiltonian::calculate_forces(ions, electrons, ham);
+
 			//propagate ionic velocities to t + dt
 			ion_propagator.propagate_velocities(dt, ions, forces);
 
@@ -113,7 +114,7 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 				sc.propagate_induced_vector_potential_derivative(dt, current);
 			}
 			
-		func(real_time::viewables{istep == numsteps - 1, istep + 1, (istep + 1.0)*dt, ions, electrons, energy, forces, ham, pert});
+			func(real_time::viewables{istep == numsteps - 1, istep, (istep + 1.0)*dt, ions, electrons, energy, forces, ham, pert});			
 			
 			auto new_time = std::chrono::high_resolution_clock::now();
 			std::chrono::duration<double> elapsed_seconds = new_time - iter_start_time;
