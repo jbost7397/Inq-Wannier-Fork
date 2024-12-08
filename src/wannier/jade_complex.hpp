@@ -18,6 +18,7 @@
 #include <wannier/jacobi_eigenvalue.hpp>
 #include <wannier/plane_rot.hpp>
 #include <utils/raw_pointer_cast.hpp>
+#include <utils/profiling.hpp>
 
 #include <vector>
 #include <deque>
@@ -32,6 +33,7 @@ template <typename T, typename T1, class MatrixType1, class MatrixType2, class M
 auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType3& adiag) {
 
     //const double eps = std::numeric_limits<double>::epsilon();
+    CALI_CXX_MARK_SCOPE("wannier_jade");
     assert(tol > std::numeric_limits<double>::epsilon());
 
     int nloc = a[0].size();  //cols

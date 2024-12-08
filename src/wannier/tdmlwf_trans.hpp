@@ -70,6 +70,7 @@ tdmlwf_trans(states::orbital_set<basis::real_space, complex> const & wavefunctio
 }
 
 void normalize(void) {
+    CALI_CXX_MARK_SCOPE("wannier_normalize");
     int n_states = wavefunctions_.set_size();
     int nx = wavefunctions_.basis().local_sizes()[0];
     int ny = wavefunctions_.basis().local_sizes()[1];
@@ -98,6 +99,7 @@ void normalize(void) {
 }
 
 void update(void) {
+  CALI_CXX_MARK_SCOPE("wannier_update");
   int n_states = wavefunctions_.set_size();
   int nprocs = wavefunctions_.basis().comm().size();
   std::array<int, 2> shape;
@@ -149,10 +151,14 @@ void update(void) {
 }
 
 void compute_transform(void)
-{
+{ 
   const int maxsweep = 100;
   const double tol = 1.e-8;
   auto sweep = jade_complex(maxsweep,tol,a_,u_,adiag_);
+}
+
+const states::orbital_set<basis::real_space, complex>& get_wavefunctions() const {
+  return wavefunctions_;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -271,12 +277,8 @@ double spread2(T i, T j, const systems::cell & cell) {
   const std::complex<double> s = adiag_[2*j+1][i]; //DCY
   // Next line: M_1_PI = 1.0/pi
   auto recip = cell.reciprocal(j);
-  //std::cout << "Reciprocal lattice vector: " << recip[0] << " " << recip[1] << " " << recip[2] << std::endl;
   double length = sqrt(recip[0]*recip[0]+ recip[1]*recip[1] + recip[2]*recip[2]);
-  //std::cout << "Length: " << length << std::endl;
   const double fac = 1.0 / length;
-  auto tst = 1.0 - std::norm(c) - std::norm(s);
-  //std::cout << "1 - norm(c) - norm(s): " << tst << std::endl;
   return fac*fac * ( 1.0 - std::norm(c) - std::norm(s) );
 }
 
