@@ -13,10 +13,9 @@ int main(int argc, char ** argv){
 	using namespace inq;
 	using namespace inq::magnitude;
 
-	auto local_he = inq::input::species("He").pseudo(inq::config::path::unit_tests_data() + "He.upf");
 	inq::systems::ions sys(inq::systems::cell::cubic(20.0_b).periodic());
-	sys.insert(local_he, {3.0_b, 3.0_b, 3.0_b});
-	sys.insert(local_he, {18.0_b, 18.0_b, 18.0_b});
+        sys.insert(ionic::species("He").pseudo_file(inq::config::path::unit_tests_data() + "He_ONCV_PBE-1.2.upf.gz"), {3.0_b, 3.0_b, 3.0_b});
+        sys.insert(ionic::species("He").pseudo_file(inq::config::path::unit_tests_data() + "He_ONCV_PBE-1.2.upf.gz"), {18.0_b, 18.0_b, 18.0_b});
 	inq::systems::electrons el(sys, options::electrons{}.cutoff(30.0_Ry));
 	inq::ground_state::initial_guess(sys, el);
 	

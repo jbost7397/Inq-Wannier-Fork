@@ -76,7 +76,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     // the pair i is (top[i],bot[i])
     // top[i] is the local index of the top column of pair i
     // bot[i] is the local index of the bottom column of pair i
-    gpu::run(nploc, [&] (auto i) {
+    gpu::run(nploc, [&] GPU_LAMBDA (auto i) {
       top[i] = i;
       bot[nploc - i - 1] = nploc + i;
     });
@@ -250,7 +250,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
             // Rotate top and bot arrays
             if (nploc > 0) {
-		    gpu::run(1, [&] (auto i) {
+		    gpu::run(1, [&] GPU_LAMBDA (auto i) {
 		      int top_back = top[nploc - 1];
 		      int bot_front = bot[0];
 		      bot[nploc] = top_back;
