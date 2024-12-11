@@ -50,6 +50,9 @@ tdmlwf_trans(states::orbital_set<basis::real_space, complex> const & wavefunctio
   int nx = wavefunctions_.basis().local_sizes()[0];
   int ny = wavefunctions_.basis().local_sizes()[1];
   int nz = wavefunctions_.basis().local_sizes()[2];
+  int six = 6;
+  //gpu::array<complex,3> a_ ({6,n,n});
+  //gpu::array<complex,2> adiag_ ({6,n});
   a_.resize(6);
   adiag_.resize(6);
   int k; 
@@ -64,11 +67,8 @@ tdmlwf_trans(states::orbital_set<basis::real_space, complex> const & wavefunctio
 
   //gpu::array<complex,2> u_({n,n});
   std::vector<std::vector<complex>> u_(n, std::vector<complex>(n));
-
-
-  
 }
-
+////////////////////////////////////////////////////////////////////////////////
 void normalize(void) {
     int n_states = wavefunctions_.set_size();
     int nx = wavefunctions_.basis().local_sizes()[0];
@@ -86,7 +86,7 @@ void normalize(void) {
         }
 
 
-        double norm_factor = 1.0 / std::sqrt(norm_squared);
+        double norm_factor = 1.0 / sqroot(norm_squared);
         for (int ix = 0; ix < nx; ++ix) {
             for (int iy = 0; iy < ny; ++iy) {
                 for (int iz = 0; iz < nz; ++iz) {
@@ -96,7 +96,7 @@ void normalize(void) {
         }
     }
 }
-
+////////////////////////////////////////////////////////////////////////////////
 void update(void) {
   int n_states = wavefunctions_.set_size();
   int nprocs = wavefunctions_.basis().comm().size();
@@ -109,9 +109,9 @@ void update(void) {
   int ny = wavefunctions_.basis().local_sizes()[1];
   int nz = wavefunctions_.basis().local_sizes()[2];
 
-  double lx = wavefunctions_.basis().cell().lattice(0)[0];
-  double ly = wavefunctions_.basis().cell().lattice(1)[1];
-  double lz = wavefunctions_.basis().cell().lattice(2)[2];
+  double lx = sqroot(wavefunctions_.basis().cell()[0].norm());
+  double ly = sqroot(wavefunctions_.basis().cell()[1].norm());
+  double lz = sqroot(wavefunctions_.basis().cell()[2].norm());
 
   normalize();
 
@@ -147,14 +147,17 @@ void update(void) {
     }
   }
 }
-
+////////////////////////////////////////////////////////////////////////////////
 void compute_transform(void)
 {
   const int maxsweep = 100;
   const double tol = 1.e-8;
   auto sweep = jade_complex(maxsweep,tol,a_,u_,adiag_);
 }
-
+////////////////////////////////////////////////////////////////////////////////
+const states::orbital_set<basis::real_space, complex>& get_wavefunctions() const {
+  return wavefunctions_;
+}
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 auto center(T i, const systems::cell & cell_) {
@@ -184,16 +187,6 @@ auto center(T i, const systems::cell & cell_) {
 
   return center_d3;
 }
-
-/*std::vector<inq::math::vector3<double>> get_centers(const systems::cell& cell_) const {
-	int num_states = wavefunctions_.set_size();
-        std::vector<inq::math::vector3<double>> centers(num_states);
-        for (int i = 0; i < num_states; ++i) {
-            centers[i] = center(i, cell_);
-        }
-        return centers;
-}*/
-
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 double wannier_distance(T i, T j, const systems::cell & cell_) {
@@ -205,8 +198,8 @@ double wannier_distance(T i, T j, const systems::cell & cell_) {
   double y_dist = ctr_i[1] - ctr_j[1];
   double z_dist = ctr_i[2] - ctr_j[2];
   double total_dist = x_dist*x_dist + y_dist*y_dist + z_dist*z_dist;
-  double root = std::sqrt(total_dist);
-  return std::abs(root);
+  double root = sqroot(total_dist);
+  return abs(root);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -271,12 +264,9 @@ double spread2(T i, T j, const systems::cell & cell) {
   const std::complex<double> s = adiag_[2*j+1][i]; //DCY
   // Next line: M_1_PI = 1.0/pi
   auto recip = cell.reciprocal(j);
-  //std::cout << "Reciprocal lattice vector: " << recip[0] << " " << recip[1] << " " << recip[2] << std::endl;
   double length = sqrt(recip[0]*recip[0]+ recip[1]*recip[1] + recip[2]*recip[2]);
-  //std::cout << "Length: " << length << std::endl;
   const double fac = 1.0 / length;
   auto tst = 1.0 - std::norm(c) - std::norm(s);
-  //std::cout << "1 - norm(c) - norm(s): " << tst << std::endl;
   return fac*fac * ( 1.0 - std::norm(c) - std::norm(s) );
 }
 
@@ -290,7 +280,7 @@ double spread2(T i, const systems::cell & cell) {
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 double spread(T i, const systems::cell & cell) {
-  return std::sqrt(spread2(i,cell));
+  return sqroot(spread2(i,cell));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -314,12 +304,14 @@ auto dipole(const systems::cell & cell) {
     sum -= 2.0 * center(i,cell);  //CS need to pass state occupations (assume fully occupied for now) How?
   return sum;
 }
-
-
 ////////////////////////////////////////////////////////////////////////////////
-};
-}
-}
+void apply_transform(void) {
+
+} 
+////////////////////////////////////////////////////////////////////////////////
+}; //tdmlwf
+} //wannier
+} //inq
 #endif 
 
 ///////////////////////////////////////////////////////////////////
@@ -332,10 +324,10 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
         using namespace Catch::literals;
         using Catch::Approx;
 
-	auto local_he = inq::input::species("He").pseudo(inq::config::path::unit_tests_data() + "He.upf");
 	inq::systems::ions sys(inq::systems::cell::cubic(20.0_b).periodic());
-	sys.insert(local_he, {-7.0_b, -7.0_b, -7.0_b});
-	sys.insert(local_he, {8.0_b, 8.0_b, 8.0_b});
+        sys.insert(ionic::species("O").pseudo_file(inq::config::path::unit_tests_data() + "O_ONCV_PBE-1.2.upf.gz"), {2.19744213_b, 3.16473822_b, -6.15854709_b});
+        sys.insert(ionic::species("H").pseudo_file(inq::config::path::unit_tests_data() + "H_ONCV_PBE-1.2.upf.gz"), {3.65385704_b, 4.22625626_b, -5.59004071_b});
+        sys.insert(ionic::species("H").pseudo_file(inq::config::path::unit_tests_data() + "H_ONCV_PBE-1.2.upf.gz"), {0.89470006_b, 4.26612956_b, -6.97158452_b});
 	inq::systems::electrons el(sys, options::electrons{}.cutoff(30.0_Ry));
 	inq::ground_state::initial_guess(sys, el);
 	
@@ -365,51 +357,16 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 	double spread2 = mlwf_transformer.spread(i, el.states_basis().cell());
         CHECK(spread2 == Approx(1.16_a));
 
-	/*
-		//auto cell = systems::cell::cubic(15.0_b).periodicity(3); 
-	
-        //CS adiag_ values correspond to H2 gs. Should give <mlwf center="    0.000000    0.000000    0.711503 " spread=" 1.578285 "/>
+        i = 2;
+        auto center3 = mlwf_transformer.center(i, el.states_basis().cell());
 
-	SECTION("Wannier Centers"){
+        CHECK(center3[0] == Approx(0.0_a));
+        CHECK(center3[1] == Approx(0.0_a));
+        CHECK(center3[2] == Approx(0.0_a));
 
-		//systems::cell cell(vector3<double>(15.0, 0.0, 0.0), vector3<double>(0.0, 15.0, 0.0), vector3<double>(0.0, 0.0, 15.0)); 
-		auto cell = systems::cell::cubic(15.0_b).periodicity(3); //CS more conventional call to a cubic cell with pbc
-		int i = 0;
-		auto center = wannier::center(i, cell); 
+        double spread3 = mlwf_transformer.spread(i, el.states_basis().cell());
+        CHECK(spread3 == Approx(1.16_a));
 
-		CHECK(center[0] == 0.000000_a);
-		CHECK(center[1] == 0.000000_a);
-		CHECK(center[2] == 0.711503_a); 
-		
-		int j = 0;
-		auto dist = wannier::wannier_distance(i, j, cell);
-		CHECK(dist == 0.00_a);
-		
-		double epsilon = 10.0;
-		auto overlap = wannier::overlap(epsilon, i, j, cell);
-		CHECK(overlap == true);
-		
-		auto ols = wannier::total_overlaps(epsilon, cell);
-		CHECK(ols == 1.00_a);
-		auto pair = wannier::pair_fraction(epsilon,cell);
-		CHECK(pair == 1.00_a);
-
-		double j_0 = wannier::spread2(i,j,cell);
-		CHECK(j_0 == 0.749738_a);
-		double tot = wannier::spread2(i,cell);
-		CHECK(tot == 2.490984_a);
-		double spread = wannier::spread(i,cell);
-		CHECK(spread == 1.578285_a);
-		double sum = wannier::spread2(cell);
-		CHECK(sum == 4.981968_a);
-		double val = wannier::spread(cell);
-		CHECK(val == 2.232032_a);
-		auto dp = wannier::dipole(cell);
-                CHECK(dp[0] == 0.000000_a);
-                CHECK(dp[1] == 0.000000_a);
-                CHECK(dp[2] == -2.846012_a);
-  }*/	
-  	
 }
 #endif  
 

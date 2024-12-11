@@ -169,6 +169,7 @@ void jacobi_eigenvalue(T n, VectorType& a, VectorType& v, VectorType& d) {
 
 }
 }
+#endif 
 
 #ifdef INQ_WANNIER_JACOBI_EIGENVALUE_UNIT_TEST
 #undef INQ_WANNIER_JACOBI_EIGENVALUE_UNIT_TEST
@@ -215,6 +216,3 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
     CHECK(d[2] == 2.7426069258_a);
 }
 #endif
-
-#endif
-
