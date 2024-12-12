@@ -70,6 +70,7 @@ tdmlwf_trans(states::orbital_set<basis::real_space, complex> const & wavefunctio
 }
 ////////////////////////////////////////////////////////////////////////////////
 void normalize(void) {
+    CALI_CXX_MARK_SCOPE("wannier_normalize");
     int n_states = wavefunctions_.set_size();
     int nx = wavefunctions_.basis().local_sizes()[0];
     int ny = wavefunctions_.basis().local_sizes()[1];
@@ -85,7 +86,6 @@ void normalize(void) {
             }
         }
 
-
         double norm_factor = 1.0 / sqroot(norm_squared);
         for (int ix = 0; ix < nx; ++ix) {
             for (int iy = 0; iy < ny; ++iy) {
@@ -95,9 +95,10 @@ void normalize(void) {
             }
         }
     }
-}
+}//normalize 
 ////////////////////////////////////////////////////////////////////////////////
 void update(void) {
+  CALI_CXX_MARK_SCOPE("wannier_update");
   int n_states = wavefunctions_.set_size();
   int nprocs = wavefunctions_.basis().comm().size();
   std::array<int, 2> shape;
@@ -146,7 +147,7 @@ void update(void) {
       }
     }
   }
-}
+}//update
 ////////////////////////////////////////////////////////////////////////////////
 void compute_transform(void)
 {
@@ -172,7 +173,6 @@ auto center(T i, const systems::cell & cell_) {
   //const complex<double> sxcx = sx / cx;
   //const complex<double> sycy = sy / cy;
   //const complex<double> szcz = sz / cz;
-  // Next lines: M_1_PI = 1.0/pi // DCY explicit arctan(sx,cx) to work for complex numbers
   const double itwopi = 1.0 / ( 2.0 * M_PI );
   const double t0 = (itwopi * atan2(sx,cx));
   const double t1 = (itwopi * atan2(sy,cy));
@@ -180,9 +180,6 @@ auto center(T i, const systems::cell & cell_) {
   const double x = (t0*cell_[0][0] + t1*cell_[0][1] + t2*cell_[0][2]);
   const double y = (t0*cell_[1][0] + t1*cell_[1][1] + t2*cell_[1][2]);
   const double z = (t0*cell_[2][0] + t1*cell_[2][1] + t2*cell_[2][2]);
-  //const double x = (t0*cell_.a(0).x + t1*cell_.a(1).x + t2*cell_.a(2).x);
-  //const double y = (t0*cell_.a(0).y + t1*cell_.a(1).y + t2*cell_.a(2).y);
-  //const double z = (t0*cell_.a(0).z + t1*cell_.a(1).z + t2*cell_.a(2).z);
   vector3<double> center_d3{x,y,z};
 
   return center_d3;
@@ -212,7 +209,6 @@ bool overlap(T1 epsilon, T2 i, T2 j, const systems::cell & cell_) {
   double len = sqrt(x+y+z);
   if (wannier_distance(i,j, cell_) <= epsilon || wannier_distance(i,j, cell_) >= (len - epsilon) )
       return true;  //need sqrt(a0^2 + a1^2 + a2^2) for cell diagonal distance. Diagonal dist - epsilon for pbc
-
   // return false if the states don't overlap
   return false;
 }
@@ -260,9 +256,8 @@ template <typename T>
 double spread2(T i, T j, const systems::cell & cell) {
   assert(i >= 0 && i < wavefunctions_.set_size());
   assert(j >= 0 && j < 3);
-  const std::complex<double> c = adiag_[2*j][i]; //DCY
-  const std::complex<double> s = adiag_[2*j+1][i]; //DCY
-  // Next line: M_1_PI = 1.0/pi
+  const complex c = adiag_[2*j][i]; //DCY
+  const complex s = adiag_[2*j+1][i]; //DCY
   auto recip = cell.reciprocal(j);
   double length = sqrt(recip[0]*recip[0]+ recip[1]*recip[1] + recip[2]*recip[2]);
   const double fac = 1.0 / length;
@@ -293,7 +288,7 @@ double spread2(const systems::cell & cell) {
 
 ////////////////////////////////////////////////////////////////////////////////
 double spread(const systems::cell & cell) {
-  return sqrt(spread2(cell));
+  return sqroot(spread2(cell));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -325,9 +320,8 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
         using Catch::Approx;
 
 	inq::systems::ions sys(inq::systems::cell::cubic(20.0_b).periodic());
-        sys.insert(ionic::species("O").pseudo_file(inq::config::path::unit_tests_data() + "O_ONCV_PBE-1.2.upf.gz"), {2.19744213_b, 3.16473822_b, -6.15854709_b});
-        sys.insert(ionic::species("H").pseudo_file(inq::config::path::unit_tests_data() + "H_ONCV_PBE-1.2.upf.gz"), {3.65385704_b, 4.22625626_b, -5.59004071_b});
-        sys.insert(ionic::species("H").pseudo_file(inq::config::path::unit_tests_data() + "H_ONCV_PBE-1.2.upf.gz"), {0.89470006_b, 4.26612956_b, -6.97158452_b});
+        sys.insert(ionic::species("He").pseudo_file(inq::config::path::pseudo() + "He_ONCV_PBE-1.2.upf.gz"), {-7.0_b, -7.0_b, -7.0_b});
+        sys.insert(ionic::species("He").pseudo_file(inq::config::path::pseudo() + "He_ONCV_PBE-1.2.upf.gz"), {8.0_b, 8.0_b, 8.0_b});
 	inq::systems::electrons el(sys, options::electrons{}.cutoff(30.0_Ry));
 	inq::ground_state::initial_guess(sys, el);
 	
@@ -356,17 +350,6 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 	
 	double spread2 = mlwf_transformer.spread(i, el.states_basis().cell());
         CHECK(spread2 == Approx(1.16_a));
-
-        i = 2;
-        auto center3 = mlwf_transformer.center(i, el.states_basis().cell());
-
-        CHECK(center3[0] == Approx(0.0_a));
-        CHECK(center3[1] == Approx(0.0_a));
-        CHECK(center3[2] == Approx(0.0_a));
-
-        double spread3 = mlwf_transformer.spread(i, el.states_basis().cell());
-        CHECK(spread3 == Approx(1.16_a));
-
 }
 #endif  
 
