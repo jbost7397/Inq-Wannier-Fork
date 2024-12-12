@@ -116,22 +116,24 @@ void update(void) {
 
   normalize();
 
-  for (int k_wf = 0; k_wf < n_states; ++k_wf) {
-    for (int l_wf = 0; l_wf < n_states; ++l_wf) {
-      for (int ix = 0; ix < nx; ++ix) {
-        for (int iy = 0; iy < ny; ++iy) {
-          for (int iz = 0; iz < nz; ++iz) {
-            complex c_ik = wavefunctions_.hypercubic()[ix][iy][iz][k_wf];
-            auto conj_ik = conj_cplx(c_ik);
+  for (int ix = 0; ix < nx; ++ix) {
+    for (int iy = 0; iy < ny; ++iy) {
+      for (int iz = 0; iz < nz; ++iz) {
 
-            auto coords = wavefunctions_.basis().point_op().rvector_cartesian(ix, iy, iz);
+        auto coords = wavefunctions_.basis().point_op().rvector_cartesian(ix, iy, iz);
+        double cos_x = cos(2.0 * M_PI * coords[0] / lx);
+        double sin_x = sin(2.0 * M_PI * coords[0] / lx);
+        double cos_y = cos(2.0 * M_PI * coords[1] / ly);
+        double sin_y = sin(2.0 * M_PI * coords[1] / ly);
+        double cos_z = cos(2.0 * M_PI * coords[2] / lz);
+        double sin_z = sin(2.0 * M_PI * coords[2] / lz);
 
-            double cos_x = cos(2.0 * M_PI * coords[0] / lx);
-            double sin_x = sin(2.0 * M_PI * coords[0] / lx);
-            double cos_y = cos(2.0 * M_PI * coords[1] / ly);
-            double sin_y = sin(2.0 * M_PI * coords[1] / ly);
-            double cos_z = cos(2.0 * M_PI * coords[2] / lz);
-            double sin_z = sin(2.0 * M_PI * coords[2] / lz);
+        for (int k_wf = 0; k_wf < n_states; ++k_wf) {
+
+          complex c_ik = wavefunctions_.hypercubic()[ix][iy][iz][k_wf];
+          auto conj_ik = conj_cplx(c_ik);
+
+          for (int l_wf = 0; l_wf < n_states; ++l_wf) {
 
             complex c_jl = wavefunctions_.hypercubic()[ix][iy][iz][l_wf];
 

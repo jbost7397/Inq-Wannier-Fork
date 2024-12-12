@@ -19,7 +19,6 @@
 #include <wannier/plane_rot.hpp>
 #include <utils/raw_pointer_cast.hpp>
 #include <utils/profiling.hpp>
-
 #include <vector>
 #include <deque>
 #include <limits>
@@ -44,13 +43,6 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     if(i==j) u[i][j] = complex(1.0, 0.0);
     });
 
-    // eigenvalue array
-    //CS just need to distribute here when parallel
-    /*adiag.resize(a.size());
-    for ( int k = 0; k < a.size(); k++ ){
-      adiag[k].resize(mloc);
-    }*/
-
     //check if number of rows is odd
     const bool nloc_odd = (mloc % 2 != 0);
 
@@ -58,16 +50,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     gpu::array<complex,2> a_aux({6, mloc});
     gpu::array<complex,1> u_aux(mloc);
 
-    /*std::vector<std::vector<complex>> a_aux(a.size());
-    std::vector<complex> u_aux;
-    if (nloc_odd) {
-      for (int k=0; k < a.size(); ++k)
-	a_aux[k].resize(mloc);
-      u_aux.resize(mloc);
-     }*/
-
     const int nploc = (nloc + 1) / 2; //when parallel replace nloc with column distributor
-    //std::deque<int> top(nploc), bot(nploc);
     gpu::array<int,1> top(nploc+1); 
     gpu::array<int,1> bot(nploc+1);
     int np = nploc; //CS this will always be true when non-parallel
@@ -80,10 +63,6 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
       top[i] = i;
       bot[nploc - i - 1] = nploc + i;
     });
-    /*for (int i = 0; i < nploc; ++i) {
-        top[i] = i;
-        bot[nploc - i - 1] = nploc + i;
-    }*/
 
     //when parallel need routine to store global column address for reordering
 
@@ -262,15 +241,14 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 		      }
 		      top[0] = bot_front;
 		    });
-                    //bot.push_back(top.back());
-                    //top.pop_back();
-                    //top.push_front(bot.front());
-                    //bot.pop_front();
-            	    if (nploc > 1) {
-	              std::swap(top[0], top[1]);
-	            } else {
-	              std::swap(top[0], bot[0]);
-	            } 
+
+		    gpu::run(1, [&] GPU_LAMBDA (auto i) {
+            	      if (nploc > 1) {
+	                std::swap(top[0], top[1]);
+	              } else {
+	                std::swap(top[0], bot[0]);
+	              }
+		    }); 
 	      } //if nploc >0 
 	} //irot
        done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
