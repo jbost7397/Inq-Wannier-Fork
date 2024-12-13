@@ -47,7 +47,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     const bool nloc_odd = (mloc % 2 != 0);
 
     //if nloc is odd need auxiliary arrays for an extra column
-    gpu::array<complex,2> a_aux({6, mloc});
+    gpu::array<complex,2> a_aux({a.size(), mloc});
     gpu::array<complex,1> u_aux(mloc);
 
     const int nploc = (nloc + 1) / 2; //when parallel replace nloc with column distributor
@@ -67,10 +67,10 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     //when parallel need routine to store global column address for reordering
 
     //std::vec here since this will depend on parralelization
-    //gpu::array<complex,2> acol({n, 2 * nploc});
-    //gpu::array<complex,1> ucol(2 * nploc);
-    std::vector<std::vector<complex*>> acol(a.size());
-    std::vector<complex*> ucol(2*nploc);
+    gpu::array<complex*,2> acol({a.size(), 2 * nploc});
+    gpu::array<complex*,1> ucol(2 * nploc);
+    //std::vector<std::vector<complex*>> acol(a.size());
+    //std::vector<complex*> ucol(2*nploc);
 
     //CS work in progress
     //gpu::run(n, a[0].size(), a[0].size(), [&] GPU_LAMBDA (auto k, auto i, auto j) {
@@ -79,19 +79,19 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     //});
 
     for (int k = 0; k < a.size(); ++k) {
-      acol[k].resize(2*nploc);
+      //acol[k].resize(2*nploc);
       for (int i = 0; i < a[k].size(); ++i ){
-        acol[k][i] = &a[k][i][0]; //a[k] will always be square 
+        acol[k][i] = a[k][i].origin(); //a[k] will always be square 
       }
       if (nloc_odd)
-       acol[k][2*nploc-1] = &a_aux[k][0];
+       acol[k][2*nploc-1] = a_aux[k].origin();
     } // for k
 
     for ( int i = 0; i < u.size(); ++i ) {
-      ucol[i] = &u[i][0];
+      ucol[i] = u[i].origin();
     }
     if (nloc_odd)
-      ucol[2*nploc-1] = &u_aux[0];
+      ucol[2*nploc-1] = u_aux.origin();
 
     int nsweep = 0;
     bool done = false;
@@ -99,9 +99,11 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     // apq[3*ipair   + k*3*nploc] = apq[k][ipair]
     // apq[3*ipair+1 + k*3*nploc] = app[k][ipair]
     // apq[3*ipair+2 + k*3*nploc] = aqq[k][ipair]
-    std::vector<complex> apq(a.size()*3*nploc);
-    std::vector<double> tapq(a.size()*3*2*nploc); //CS need for summation over all
-
+    //std::vector<complex> apq(a.size()*3*nploc);
+    //std::vector<double> tapq(a.size()*3*2*nploc); //CS need for summation over all
+    gpu::array<complex,1> apq(a.size() * 3 * nploc);
+    gpu::array<double,1> tapq(a.size() * 3 * 2 * nploc);
+/*
     while (!done) {
         ++nsweep;
         double diag_change = 0.0;
@@ -117,10 +119,10 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                     apq[iapq + 2] = complex(0.0, 0.0);
 
 		    if (top[ipair] >= 0 && bot[ipair] < mloc ){
-                      const complex *ap = acol[k][top[ipair]];
-                      const complex *aq = acol[k][bot[ipair]];
-                      const complex *up = ucol[top[ipair]];
-                      const complex *uq = ucol[bot[ipair]];
+                      const auto *ap = acol[k][top[ipair]];
+                      const auto *aq = acol[k][bot[ipair]];
+                      const auto *up = ucol[top[ipair]];
+                      const auto *uq = ucol[bot[ipair]];
                       for (int ii = 0; ii < mloc; ++ii) {
                         apq[iapq] += conj_cplx(ap[ii]) * uq[ii];
                         apq[iapq + 1] += conj_cplx(ap[ii]) * up[ii];
@@ -142,9 +144,9 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
                     for (int k = 0; k < a.size(); ++k) {
                         const int iapq = 3 * ipair + k * 3 * nploc;
-                        const complex aij = apq[iapq];
-                        const complex aii = apq[iapq + 1];
-                        const complex ajj = apq[iapq + 2];
+                        const complex aij = *apq[iapq];
+                        const complex aii = *apq[iapq + 1];
+                        const complex ajj = *apq[iapq + 2];
 
                         const complex h1 = aii - ajj;
                         const complex h2 = aij + conj_cplx(aij);
@@ -180,13 +182,13 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                     complex sconj = conj_cplx(s);
 
                     for (int k = 0; k < a.size(); ++k) {
-                      complex *ap = acol[k][top[ipair]];
-                      complex *aq = acol[k][bot[ipair]];
+                      gpu::array<complex,1> ap(mloc) = acol[k][top[ipair]];
+                      gpu::array<complex,1> aq(mloc) = acol[k][bot[ipair]];
                       //Apply plane rotation
                       //plane_rot(ap, aq, c, sconj); //CS skip using plane_rot, probably until clarity on cublas zrot functionality 
 		      //routine now internal
-		      std::vector<complex> ap_tmp(mloc);
-                      std::vector<complex> aq_tmp(mloc);
+		      gpu::array<complex,1> ap_tmp(mloc);
+                      gpu::array<complex,1> aq_tmp(mloc);
             		for (int ii = 0; ii < mloc; ++ii) {
               		  ap_tmp[ii] = c * ap[ii] + sconj * aq[ii];
           		  aq_tmp[ii] = -s*ap[ii] + c * aq[ii];
@@ -199,10 +201,10 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
 		    //rotate u 
                     //plane_rot(up, uq, c, sconj);
-          	    complex *up = ucol[top[ipair]];
-         	    complex *uq = ucol[bot[ipair]];
-          	    std::vector<complex> up_tmp(mloc);
-          	    std::vector<complex> uq_tmp(mloc);
+          	    gpu::array<complex,1> up(mloc) = ucol[top[ipair]];
+         	    gpu::array<complex,1> uq(mloc) = ucol[bot[ipair]];
+          	    gpu::array<complex,1> up_tmp(mloc);
+          	    gpu::array<complex,1> uq_tmp(mloc);
           	    for (int ii = 0; ii < mloc; ++ii) {
             	      up_tmp[ii] = c * up[ii] + sconj * uq[ii];
             	      uq_tmp[ii] = -s*up[ii] + c * uq[ii];
@@ -216,8 +218,8 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                     double diag_change_ipair = 0.0;
                     for (int k = 0; k < a.size(); ++k) {
                         const int iapq = 3 * ipair + k * 3 * nploc;
-                        const complex aii = apq[iapq + 1];
-                        const complex ajj = apq[iapq + 2];
+                        const complex aii = *apq[iapq + 1];
+                        const complex ajj = *apq[iapq + 2];
                         const complex v1 = conj_cplx(c) * c - sconj * s;
 
                         double apq_new = real(v1 * (aii - ajj) + 2.0 * c * s * apq[iapq] + 2.0 * sconj * c * apq[iapq]);
@@ -249,26 +251,26 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 	                std::swap(top[0], bot[0]);
 	              }
 		    }); 
-	      } //if nploc >0 
-	} //irot
-       done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
-    } //while 
+	      } //if nploc >0 */
+	//} //irot
+      // done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
+   // } //while 
 
     // Compute diagonal elements
-  for (int k = 0; k < a.size(); ++k) {
+ /* for (int k = 0; k < a.size(); ++k) {
     for (int i = 0; i < a[k].size(); ++i) {
       adiag[k][i] = complex(0.0, 0.0);    
     }
     for (int i = 0; i < a[k].size(); ++i) {
-      const complex *ap = acol[k][i];
-      const complex *up = ucol[i];
+      gpu::array<complex,1> ap(mloc) = acol[k][i];
+      gpu::array<complex,1> up(mloc) = ucol[i];
       for (int ii = 0; ii < mloc; ii++)
       {
         adiag[k][i] += conj(ap[ii])*up[ii];
       }
    }
- }
-    return adiag;
+ }*/
+  return a[0];
     //return nsweep 
 
 } //jade_complex
@@ -337,6 +339,25 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
     	  CHECK(adiag.size() == 6);
     	  CHECK(adiag[0].size() == 2);
 
+	  /*CHECK(real(sweep[0]) == -0.00103429_a);
+	  CHECK(imag(sweep[0]) == 0.10810876_a);
+          CHECK(real(sweep[1]) == -0.68433137_a);
+          CHECK(imag(sweep[1]) == 0.00000000_a);
+          CHECK(real(sweep[2]) == -0.68104163_a);
+          CHECK(imag(sweep[2]) == 0.00000000_a);
+          CHECK(real(sweep[3]) == 0.00727210_a);
+          CHECK(imag(sweep[3]) ==-0.68256259_a);
+          CHECK(real(sweep[4]) == -0.09765152_a);
+          CHECK(imag(sweep[4]) == -0.00000003_a);
+          CHECK(real(sweep[5]) == -0.11860232_a);
+          CHECK(imag(sweep[5]) == 0.00000003_a);
+          CHECK(real(sweep[6]) == -0.00103429_a);
+          CHECK(imag(sweep[6]) == 0.10810877_a);
+          CHECK(real(sweep[7]) == -0.68433137_a);
+          CHECK(imag(sweep[7]) == 0.0000000_a);
+          CHECK(real(sweep[8]) == -0.68104162_a);
+          CHECK(imag(sweep[8]) == 0.0000000_a);
+*/
 	  //Check nsweeps 
 	  //CHECK(sweep == 2);
 
@@ -352,18 +373,18 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
           CHECK(real(sweep[4][0]) == -0.79081266_a);
           CHECK(real(sweep[4][1]) == -0.57456043_a);
           CHECK(real(sweep[5][0]) == 0.57455453_a);
-          CHECK(real(sweep[5][1]) == -0.79080836_a); 
+          CHECK(real(sweep[5][1]) == -0.79080836_a);  
           //imag values are correct, but so close to zero they fail in make check 
 	  //also only real values needed for wannier
 
           //Check the transform matrix u that is returned
           //only values that are greater than 1e-7
-          //CHECK(real(sweep[0][0]) == 0.71250999_a);
-          //CHECK(real(sweep[0][1]) == 0.00745655_a);
-          //CHECK(imag(sweep[0][1]) == 0.70162234_a);
-          //CHECK(real(sweep[1][0]) == -0.00745655_a);
-          //CHECK(imag(sweep[1][0]) == 0.70162234_a);
-          //CHECK(real(sweep[1][1]) == 0.71250999_a); 
+/*          CHECK(real(sweep[0][0]) == 0.71250999_a);
+          CHECK(real(sweep[0][1]) == 0.00745655_a);
+          CHECK(imag(sweep[0][1]) == 0.70162234_a);
+          CHECK(real(sweep[1][0]) == -0.00745655_a);
+          CHECK(imag(sweep[1][0]) == 0.70162234_a);
+          CHECK(real(sweep[1][1]) == 0.71250999_a); */ 
         }//even 
 
     SECTION("Odd number of Centers"){
