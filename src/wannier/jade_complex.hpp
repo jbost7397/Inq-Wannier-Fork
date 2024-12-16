@@ -103,7 +103,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     //std::vector<double> tapq(a.size()*3*2*nploc); //CS need for summation over all
     gpu::array<complex,1> apq(a.size() * 3 * nploc);
     gpu::array<double,1> tapq(a.size() * 3 * 2 * nploc);
-/*
+
     while (!done) {
         ++nsweep;
         double diag_change = 0.0;
@@ -131,7 +131,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 		    } //top bot
                 } //for ipair
             } //for k
-
+/*
 	   //now need summation routine for parallel, probably from sum.hpp
 	   //sum into tapq and pass back (dsum w/qbach)
 	   //or a gather, sum, scatter routine or comm_allreduce
@@ -252,9 +252,9 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 	              }
 		    }); 
 	      } //if nploc >0 */
-	//} //irot
-      // done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
-   // } //while 
+	} //irot
+       done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
+    } //while 
 
     // Compute diagonal elements
  /* for (int k = 0; k < a.size(); ++k) {
@@ -270,7 +270,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
       }
    }
  }*/
-  return a[0];
+  return apq;
     //return nsweep 
 
 } //jade_complex
@@ -339,7 +339,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
     	  CHECK(adiag.size() == 6);
     	  CHECK(adiag[0].size() == 2);
 
-	  /*CHECK(real(sweep[0]) == -0.00103429_a);
+	  CHECK(real(sweep[0]) == -0.00103429_a);
 	  CHECK(imag(sweep[0]) == 0.10810876_a);
           CHECK(real(sweep[1]) == -0.68433137_a);
           CHECK(imag(sweep[1]) == 0.00000000_a);
@@ -356,13 +356,13 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
           CHECK(real(sweep[7]) == -0.68433137_a);
           CHECK(imag(sweep[7]) == 0.0000000_a);
           CHECK(real(sweep[8]) == -0.68104162_a);
-          CHECK(imag(sweep[8]) == 0.0000000_a);
-*/
+          CHECK(imag(sweep[8]) == 0.0000000_a);  //apq
+
 	  //Check nsweeps 
-	  //CHECK(sweep == 2);
+	  //CHECK(sweep == 2.0);
 
           //Check the diagonal elements of the amats upon return
-          CHECK(real(sweep[0][0]) == -0.79081263_a);
+          /*CHECK(real(sweep[0][0]) == -0.79081263_a);
           CHECK(real(sweep[0][1]) == -0.57456037_a);
           CHECK(real(sweep[1][0]) == 0.57455456_a);
           CHECK(real(sweep[1][1]) == -0.79080839_a);
@@ -373,7 +373,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
           CHECK(real(sweep[4][0]) == -0.79081266_a);
           CHECK(real(sweep[4][1]) == -0.57456043_a);
           CHECK(real(sweep[5][0]) == 0.57455453_a);
-          CHECK(real(sweep[5][1]) == -0.79080836_a);  
+          CHECK(real(sweep[5][1]) == -0.79080836_a);*/ 
           //imag values are correct, but so close to zero they fail in make check 
 	  //also only real values needed for wannier
 
@@ -470,6 +470,21 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 	  //Check nsweeps
 	  //CHECK(sweep == 4);
 
+          CHECK(real(sweep[0]) == 0.00_a);
+          CHECK(imag(sweep[0]) == 0.00_a);
+          CHECK(real(sweep[3]) == 0.1887958_a);
+          CHECK(imag(sweep[3]) == -0.11069471_a);
+          CHECK(real(sweep[4]) == -0.39874645_a);
+          CHECK(imag(sweep[4]) == 0.00000004_a);
+          CHECK(real(sweep[5]) == -0.51669249_a);
+          CHECK(imag(sweep[5]) == 0.00000021_a);
+          CHECK(real(sweep[9]) == 0.12669977_a);
+          CHECK(imag(sweep[9]) == 0.55715202_a);
+          CHECK(real(sweep[10]) == 0.02496930_a);
+          CHECK(imag(sweep[10]) == -0.00000002_a);
+          CHECK(real(sweep[11]) == -0.24165857_a);
+          CHECK(imag(sweep[11]) == -0.00000006_a); //apq
+
 	  //Check the transform matrix u that is returned 
           /*CHECK(real(sweep[0][0]) == 0.85542060_a);
           CHECK(real(sweep[0][1]) == 0.42645081_a);
@@ -491,7 +506,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
           CHECK(imag(sweep[2][2]) == 0.06100488_a);*/
 
           //Check the diagonal elements of the amats upon return 
-          CHECK(real(sweep[0][0]) == 0.97749613_a);
+          /*CHECK(real(sweep[0][0]) == 0.97749613_a);
           CHECK(real(sweep[0][1]) == -0.57455995_a);
           CHECK(real(sweep[0][2]) == -0.79081233_a);
           CHECK(real(sweep[1][1]) == -0.79080838_a);
@@ -505,7 +520,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
           CHECK(real(sweep[4][1]) == -0.57456014_a);
           CHECK(real(sweep[4][2]) == -0.79081232_a);
           CHECK(real(sweep[5][1]) == -0.79080831_a); 
-	  CHECK(real(sweep[5][2]) == 0.57455443_a); 
+	  CHECK(real(sweep[5][2]) == 0.57455443_a);*/ 
   }//odd 
 }
 #endif
