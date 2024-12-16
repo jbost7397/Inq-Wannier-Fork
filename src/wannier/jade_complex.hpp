@@ -50,14 +50,6 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     gpu::array<complex,2> a_aux({a.size(), mloc});
     gpu::array<complex,1> u_aux(mloc);
 
-    //std::vector<std::vector<complex>> a_aux(a.size());
-    //std::vector<complex> u_aux;
-    /*if (nloc_odd) {
-      for (int k=0; k < a.size(); ++k)
-        a_aux[k].resize(mloc);
-      //u_aux.resize(mloc);
-     }*/
-
     const int nploc = (nloc + 1) / 2; //when parallel replace nloc with column distributor
     gpu::array<int,1> top(nploc+1); 
     gpu::array<int,1> bot(nploc+1);
@@ -77,8 +69,6 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     //std::vec here since this will depend on parralelization
     gpu::array<complex*,2> acol({a.size(), 2 * nploc});
     gpu::array<complex*,1> ucol(2 * nploc);
-    //std::vector<std::vector<complex*>> acol(a.size());
-    //std::vector<complex*> ucol(2*nploc);
 
     //CS work in progress
     //gpu::run(n, a[0].size(), a[0].size(), [&] GPU_LAMBDA (auto k, auto i, auto j) {
@@ -87,7 +77,6 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     //});
 
     for (int k = 0; k < a.size(); ++k) {
-      //acol[k].resize(2*nploc);
       for (int i = 0; i < a[k].size(); ++i ){
         acol[k][i] = a[k][i].origin(); //a[k] will always be square 
       }
@@ -107,8 +96,7 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     // apq[3*ipair   + k*3*nploc] = apq[k][ipair]
     // apq[3*ipair+1 + k*3*nploc] = app[k][ipair]
     // apq[3*ipair+2 + k*3*nploc] = aqq[k][ipair]
-    //std::vector<complex> apq(a.size()*3*nploc);
-    //std::vector<double> tapq(a.size()*3*2*nploc); //CS need for summation over all
+
     gpu::array<complex,1> apq(a.size() * 3 * nploc);
     gpu::array<double,1> tapq(a.size() * 3 * 2 * nploc);
 
