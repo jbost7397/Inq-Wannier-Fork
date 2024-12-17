@@ -227,25 +227,29 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
             // Rotate top and bot arrays
             if (nploc > 0) {
-		    gpu::run(1, [&] GPU_LAMBDA (auto i) {
-		      int top_back = top[nploc - 1];
-		      int bot_front = bot[0];
-		      bot[nploc] = top_back;
-		      for (int i = 0; i < nploc; ++i) {
-			bot[i] = bot[i+1];
-		      }
-		      for (int i = nploc - 1; i >= 0; --i) {
-			top[i+1] = top[i];
-		      }
+		    //gpu::run(1, [&] GPU_LAMBDA (auto i) {
+		    int top_back = top[nploc - 1];
+		    int bot_front = bot[0];
+		    bot[nploc] = top_back;
+		    gpu::run(nploc, [&] GPU_LAMBDA (auto i) {
+		      bot[i] = bot[i+1];
+		      if (i > 0) {
+                        top[i] = top[i - 1];
+                      }
+                    });
 		      top[0] = bot_front;
-		    });
+		    //});
 	            
 		    gpu::run(1, [&] GPU_LAMBDA (auto i) {
             	      if (nploc > 1) {
-	                std::swap(top[0], top[1]);
-	              } else {
-	                std::swap(top[0], bot[0]);
-	              }
+                        int tmp = top[0];
+                        top[0] = top[1];
+                        top[1] = tmp;
+                      } else {
+                        int tmp = top[0];
+                        top[0] = bot[0];
+                        bot[0] = tmp;
+                      }
 		    }); 
 	      } //if nploc >0 
 	} //irot
