@@ -29,42 +29,54 @@ namespace wannier {
 // Function to get the diagonal of a matrix
 template <typename T, typename VectorType>
 void r8mat_diag_get_vector(T nn, const VectorType& a, VectorType& v) {
-    for (int i = 0; i < nn; ++i) {
-        v[i] = a[i + i * nn];
-    }
+    gpu::run(nn, [nn, mat=begin(a), diag=begin(v)] GPU_LAMBDA (auto i) {
+    diag[i] = mat[i+i*nn];
+    });
 }
 
 // Function to set a matrix to the identity matrix
 template <typename T, typename VectorType>
 void r8mat_identity(T nn, VectorType& a) {
-    std::fill(a.begin(), a.end(), 0.0);
-    for (int i = 0; i < nn; ++i) {
-        a[i + i * nn] = 1.0;
-    }
+    gpu::run(nn, nn, [nn, mat=begin(a)] GPU_LAMBDA (auto i, auto j) {
+    mat[i + j *nn] = (i == j) ? 1.0 : 0.0;
+    });
 }
 
 // Jacobi eigenvalue iteration
 template <typename T, typename VectorType>
 void jacobi_eigenvalue(T n, VectorType& a, VectorType& v, VectorType& d) {
-    std::vector<double> bw(n, 0.0), zw(n, 0.0);
+    gpu::array<double,1> bw(n);
+    gpu::array<double,1> zw(n);
+    bw.fill(0.0);
+    zw.fill(0.0);
 
     r8mat_identity(n, v);
     r8mat_diag_get_vector(n, a, d);
 
-    std::copy(d.begin(), d.end(), bw.begin());
+    gpu::run(n, [n, diag=begin(d), b=begin(bw)] GPU_LAMBDA (auto i) {
+    b[i] = diag[i];
+    });
+
     int it_num = 0;
     const int it_max = 10000;
     int rot_num = 0;
 
     while (it_num < it_max) {
         it_num++;
-        double thresh = 0.0;
 
+	gpu::array<double,1> all(1);
+
+        gpu::run(1, [n, mat=begin(a), val=begin(all)] GPU_LAMBDA (auto i) {
+	double sum = 0.0; 
         for (int j = 0; j < n; ++j) {
-            for (int i = 0; i < j; ++i) {
-                thresh += a[i + j * n] * a[i + j * n];
-            }
+          for (int i = 0; i < j; ++i) {
+            sum += mat[i + j * n] * mat[i + j * n];
+          }
         }
+	val[0] = sum;
+	});
+
+	double thresh = all[0];
 
         thresh = sqroot(thresh) / (4 * n);
         if (thresh == 0.0) {
