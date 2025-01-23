@@ -29,8 +29,40 @@ extern "C" void dsyev(const char * jobz, const char * uplo, const int & n, doubl
 #define zheev FC_GLOBAL(zheev, ZHEEV) 
 extern "C" void zheev(const char * jobz, const char * uplo, const int & n, inq::complex * a, const int & lda, double * w, inq::complex * work, const int & lwork, double * rwork, int & info);
 
+#define dgeev FC_GLOBAL(dgeev, DGEEV)
+extern "C" void dgeev(const char * jobvl, const char * jobvr, const int & n, double * a, const int & lda, double * wr, double * wi, double * vl, const int & ldvl, double * vr, const int & ldvr, double * work, const int & lwork, int & info);
+
 namespace inq {
 namespace matrix {
+
+//CS needs to be added to Cu solver to call w/cuda. for now no cuda call
+/*template<class Alloc>
+auto diagonalize_cs(gpu::array<double, 2, Alloc>& matrix){
+        CALI_CXX_MARK_FUNCTION;
+
+        // the matrix must be square
+        assert(std::get<0>(sizes(matrix)) == std::get<1>(sizes(matrix)));
+
+        int nn = std::get<0>(sizes(matrix));
+
+        gpu::array<double, 1> eigenvalues(nn);
+        gpu::array<double, 1> eigenvalues_imag(nn); // To store imaginary parts of eigenvalues
+    
+        double lwork_query;
+
+        int info;
+        dgeev("N", "V", nn, raw_pointer_cast(matrix.data_elements()), nn, raw_pointer_cast(eigenvalues.data_elements()), raw_pointer_cast(eigenvalues_imag.data_elements()), nullptr, nn, raw_pointer_cast(matrix.data_elements()), nn, &lwork_query, -1, info);
+
+        int lwork = int(lwork_query);
+        auto work = (double *) malloc(lwork*sizeof(complex));
+
+        dgeev("N", "V", nn, raw_pointer_cast(matrix.data_elements()), nn, raw_pointer_cast(eigenvalues.data_elements()), raw_pointer_cast(eigenvalues_imag.data_elements()), nullptr, nn, raw_pointer_cast(matrix.data_elements()), nn, work, lwork, info);
+        assert(info == 0);
+
+        free(work);
+
+        return matrix;
+}*/
 
 template<class Alloc>
 auto diagonalize_raw(gpu::array<double, 2, Alloc>& matrix){
@@ -188,6 +220,18 @@ auto diagonalize(DistributedMatrix & matrix) {
   return eigenvalues;
 }
 
+template <typename Matrix>
+auto diagonalize_wann(Matrix & matrix) {
+
+  assert(matrix.sizex() == matrix.sizey());
+  gpu::array<double, 1> eigenvalues;
+
+  eigenvalues = diagonalize_raw(matrix);
+
+  assert(eigenvalues.size() == matrix.sizex());
+  return eigenvalues;
+}
+
 }
 }
 #endif
@@ -281,9 +325,9 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		array[2][1] = 0.705297;
 		array[2][2] = 0.392459;
 
-		matrix::distributed matrix = matrix::scatter(cart_comm, array, /* root = */ 0);
+		//matrix::distributed matrix = matrix::scatter(cart_comm, array, /* root = */ 0);
 		
-		auto evalues = matrix::diagonalize(matrix);
+		auto evalues = matrix::diagonalize_wann(array);
 		
 		CHECK(evalues[0] == -1.0626903983_a);
 		CHECK(evalues[1] == 0.1733844724_a);

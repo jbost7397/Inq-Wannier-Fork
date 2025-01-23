@@ -19,6 +19,8 @@
 #include <vector>
 #include <algorithm>
 #include <math/complex.hpp>
+#include <utils/profiling.hpp>
+#include <utils/profiling.hpp>
 
 //CS updated by chatgpt, compiles and passes tests
 //can determine later if performance is better w/ c++ version of matrix::diagonalize routine
@@ -29,6 +31,7 @@ namespace wannier {
 // Function to get the diagonal of a matrix
 template <typename T, typename VectorType>
 void r8mat_diag_get_vector(T nn, const VectorType& a, VectorType& v) {
+    CALI_CXX_MARK_SCOPE("wannier_jacob1");
     gpu::run(nn, [nn, mat=begin(a), diag=begin(v)] GPU_LAMBDA (auto i) {
     diag[i] = mat[i+i*nn];
     });
@@ -37,6 +40,7 @@ void r8mat_diag_get_vector(T nn, const VectorType& a, VectorType& v) {
 // Function to set a matrix to the identity matrix
 template <typename T, typename VectorType>
 void r8mat_identity(T nn, VectorType& a) {
+    CALI_CXX_MARK_SCOPE("wannier_jacob2");
     gpu::run(nn, nn, [nn, mat=begin(a)] GPU_LAMBDA (auto i, auto j) {
     mat[i + j *nn] = (i == j) ? 1.0 : 0.0;
     });
@@ -45,10 +49,9 @@ void r8mat_identity(T nn, VectorType& a) {
 // Jacobi eigenvalue iteration
 template <typename T, typename VectorType>
 void jacobi_eigenvalue(T n, VectorType& a, VectorType& v, VectorType& d) {
-    gpu::array<double,1> bw(n);
-    gpu::array<double,1> zw(n);
-    bw.fill(0.0);
-    zw.fill(0.0);
+    CALI_CXX_MARK_SCOPE("wannier_jacob3");
+    gpu::array<double,1> bw({n}, 0.0);
+    gpu::array<double,1> zw({n}, 0.0);
 
     r8mat_identity(n, v);
     r8mat_diag_get_vector(n, a, d);
@@ -62,26 +65,91 @@ void jacobi_eigenvalue(T n, VectorType& a, VectorType& v, VectorType& d) {
     int rot_num = 0;
 
     while (it_num < it_max) {
-        it_num++;
+        it_num = it_num + 1;
 
-	gpu::array<double,1> all(1);
+	gpu::array<double, 1> thresh({1}, 0.0); 
 
-        gpu::run(1, [n, mat=begin(a), val=begin(all)] GPU_LAMBDA (auto i) {
-	double sum = 0.0; 
-        for (int j = 0; j < n; ++j) {
-          for (int i = 0; i < j; ++i) {
-            sum += mat[i + j * n] * mat[i + j * n];
-          }
-        }
-	val[0] = sum;
-	});
+	gpu::run(n, [n, mat=begin(a), tot=begin(thresh)] GPU_LAMBDA (auto idx) {
+          int element_idx = (idx == 0) ? 3 : (idx == 1) ? 6 : 7;
+          double sum = mat[element_idx] * mat[element_idx];
+	  tot[0] = sqroot(sum) / (4 * n);
+        });
 
-	double thresh = all[0];
-
-        thresh = sqroot(thresh) / (4 * n);
-        if (thresh == 0.0) {
+        if (thresh[0] == 0.0) {
             break;
         }
+
+	/*gpu::run(n, [n, a_int=begin(a), d_int=begin(d), zw_int=begin(zw), v_int=begin(v), thresh_int=begin(thresh), it_num] GPU_LAMBDA (auto i) {
+	  int p, q;
+	  if (i == 0) {p = 0; q = 1;}
+          else if (i == 1) { p = 0; q = 2; }
+          else if (i == 2) { p = 1; q = 2; }
+
+        for (int p = 0; p < n; ++p) {
+            for (int q = p + 1; q < n; ++q) {
+                double gapq = 10.0 * fabs(a_int[p + q * n]);
+                double termp = gapq + fabs(d_int[p]);
+                double termq = gapq + fabs(d_int[q]);
+
+                if (4 < it_num && termp == fabs(d_int[p]) && termq == fabs(d_int[q])) {
+                    a_int[p + q * n] = 0.0;
+                } else if (thresh_int[0] <= fabs(a_int[p + q * n])) {
+                    double h = d_int[q] - d_int[p];
+                    double term = fabs(h) + gapq;
+
+                    double t;
+                    if (term == fabs(h)) {
+                        t = a_int[p + q * n] / h;
+                    } else {
+                        double theta = 0.5 * h / a_int[p + q * n];
+                        t = 1.0 / (fabs(theta) + sqroot(1.0 + theta * theta));
+                        if (theta < 0.0) {
+                            t = -t;
+                        }
+                    }
+
+                    double c = 1.0 / sqroot(1.0 + t * t);
+                    double s = t * c;
+                    double tau = s / (1.0 + c);
+                    h = t * a_int[p + q * n];
+                    zw_int[p] -= h;
+                    zw_int[q] += h;
+                    d_int[p] -= h;
+                    d_int[q] += h;
+                    a_int[p + q * n] = 0.0;
+
+                    for (int j = 0; j < p; ++j) {
+                        double g = a_int[j + p * n];
+                        double h = a_int[j + q * n];
+                        a_int[j + p * n] = g - s * (h + g * tau);
+                        a_int[j + q * n] = h + s * (g - h * tau);
+                    }
+
+                    for (int j = p + 1; j < q; ++j) {
+                        double g = a_int[p + j * n];
+                        double h = a_int[j + q * n];
+                        a_int[p + j * n] = g - s * (h + g * tau);
+                        a_int[j + q * n] = h + s * (g - h * tau);
+                    }
+
+                    for (int j = q + 1; j < n; ++j) {
+                        double g = a_int[p + j * n];
+                        double h = a_int[q + j * n];
+                        a_int[p + j * n] = g - s * (h + g * tau);
+                        a_int[q + j * n] = h + s * (g - h * tau);
+                    }
+
+                    for (int j = 0; j < n; ++j) {
+                        double g = v_int[j + p * n];
+                        double h = v_int[j + q * n];
+                        v_int[j + p * n] = g - s * (h + g * tau);
+                        v_int[j + q * n] = h + s * (g - h * tau);
+                    }
+
+                }
+            }
+        }
+*/
 
         for (int p = 0; p < n; ++p) {
             for (int q = p + 1; q < n; ++q) {
@@ -91,7 +159,7 @@ void jacobi_eigenvalue(T n, VectorType& a, VectorType& v, VectorType& d) {
 
                 if (4 < it_num && termp == fabs(d[p]) && termq == fabs(d[q])) {
                     a[p + q * n] = 0.0;
-                } else if (thresh <= fabs(a[p + q * n])) {
+                } else if (thresh[0] <= fabs(a[p + q * n])) {
                     double h = d[q] - d[p];
                     double term = fabs(h) + gapq;
 
@@ -148,7 +216,6 @@ void jacobi_eigenvalue(T n, VectorType& a, VectorType& v, VectorType& d) {
                 }
             }
         }
-
         for (int i = 0; i < n; ++i) {
             bw[i] += zw[i];
             d[i] = bw[i];

@@ -29,41 +29,25 @@ namespace inq {
 namespace wannier {
 
 template <typename T, typename T1, class MatrixType1, class MatrixType2, class MatrixType3>
-auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType3& adiag) {
+void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType3& adiag) {
 
     CALI_CXX_MARK_SCOPE("wannier_jade");
     assert(tol > std::numeric_limits<double>::epsilon());
 
-    int nloc = a[0].size();  //cols
-    int mloc = a[0][0].size();  //rows //CS nloc = mloc (NxN) for all wannier routines
-    int n = a.size(); // 6 for all wannier
+    int n = std::get<0>(sizes(a)); // 6 for all wannier
+    assert(n == 6);
+    int nloc = std::get<1>(sizes(a)); 
+    int mloc = std::get<2>(sizes(a)); //always equals nloc  
+    assert(nloc == mloc); 
 
     // Initialize u as identity
-    u = std::vector<std::vector<complex>> (mloc, std::vector<complex>(nloc)); //CS same size as a[k]
-    for(int m = 0; m < mloc; ++m){
-      for(int n = 0; n < nloc; ++n){
-        u[m][n] = complex{0.0, 0.0};
-          if(m == n) u[m][n] = complex{1.0,0.0};
-      } //n
-    } //m
+    u.reextent({mloc, mloc});
+    gpu::run(mloc, mloc, [mloc, u_int=begin(u)] GPU_LAMBDA (auto ii, auto jj) {
+      u_int[ii][jj] = (ii == jj) ? complex(1.0,0.0) : complex(0.0,0.0);
+    });
 
-    // eigenvalue array
-    adiag.resize(a.size());
-    for ( int k = 0; k < a.size(); k++ ){
-      adiag[k].resize(mloc);
-    }
-
-    //check if number of rows is odd
+    //check if number of rows is odd //CS likely not needed anymore
     const bool nloc_odd = (mloc % 2 != 0);
-
-    //if nloc is odd need auxiliary arrays for an extra column
-    std::vector<std::vector<complex>> a_aux(a.size());
-    std::vector<complex> u_aux;
-    if (nloc_odd) {
-      for (int k=0; k < a.size(); ++k)
-	a_aux[k].resize(mloc);
-      u_aux.resize(mloc);
-     }
 
     const int nploc = (nloc + 1) / 2; //when parallel replace nloc with column distributor
     std::deque<int> top(nploc), bot(nploc);
@@ -78,34 +62,14 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
         bot[nploc - i - 1] = nploc + i;
     }
 
-    //when parallel need routine to store global column address for reordering
-
-    //std::vec here since this will depend on parralelization
-    std::vector<std::vector<complex*>> acol(a.size());
-    std::vector<complex*> ucol(2*nploc);
-
-    for (int k = 0; k < a.size(); ++k) {
-      acol[k].resize(2*nploc);
-      for (int i = 0; i < a[k].size(); ++i ){
-        acol[k][i] = a[k][i].data(); //a[k] will always be square 
-      }
-      if (nloc_odd)
-       acol[k][2*nploc-1] = a_aux[k].data();
-    } // for k
-    for ( int i = 0; i < u.size(); ++i ) {
-      ucol[i] = u[i].data();
-    }
-    if (nloc_odd)
-      ucol[2*nploc-1] = u_aux.data();
-
     int nsweep = 0;
     bool done = false;
     // allocate matrix element packed array apq
     // apq[3*ipair   + k*3*nploc] = apq[k][ipair]
     // apq[3*ipair+1 + k*3*nploc] = app[k][ipair]
     // apq[3*ipair+2 + k*3*nploc] = aqq[k][ipair]
-    std::vector<complex> apq(a.size()*3*nploc);
-    std::vector<double> tapq(a.size()*3*2*nploc); //CS need for summation over all
+    //std::vector<complex> apq(a.size()*3*nploc);
+    gpu::array<complex,1> apq(n * 3 * nploc);
     //fix dummy vector passing for nploc_odd case CS
  
     while (!done) {
@@ -122,26 +86,18 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                     apq[iapq + 1] = complex(0.0, 0.0);
                     apq[iapq + 2] = complex(0.0, 0.0);
 
-		    if (top[ipair] >= 0 && bot[ipair] < mloc ){ //mloc only when not parallel   
-                      const complex *ap = acol[k][top[ipair]];
-                      const complex *aq = acol[k][bot[ipair]];
-                      const complex *up = ucol[top[ipair]];
-                      const complex *uq = ucol[bot[ipair]];
+		    if (top[ipair] < mloc && bot[ipair] < mloc ){ 
                       for (int ii = 0; ii < mloc; ++ii) {
-                        apq[iapq]     += conj_cplx(ap[ii]) * uq[ii];
-                        apq[iapq + 1] += conj_cplx(ap[ii]) * up[ii];
-                        apq[iapq + 2] += conj_cplx(aq[ii]) * uq[ii];
+                        apq[iapq] += conj_cplx(a[k][top[ipair]][ii]) * u[bot[ipair]][ii];
+                        apq[iapq + 1] += conj_cplx(a[k][top[ipair]][ii]) * u[top[ipair]][ii];
+                        apq[iapq + 2] += conj_cplx(a[k][bot[ipair]][ii]) * u[bot[ipair]][ii];
                         } //for ii
 		    } //top bot
                 } //for ipair
             } //for k
 
-	   //now need summation routine for parallel, probably from sum.hpp
-	   //sum into tapq and pass back (dsum w/qbach)
-	   //or a gather, sum, scatter routine or comm_allreduce
-
             for (int ipair = 0; ipair < nploc; ++ipair) {
-                if (top[ipair] >= 0 && bot[ipair] < mloc) {
+                if (top[ipair] < mloc && bot[ipair] < mloc) {
                     double g11 = 0.0, g12 = 0.0, g13 = 0.0;
                     double g21 = 0.0, g22 = 0.0, g23 = 0.0;
                     double g31 = 0.0, g32 = 0.0, g33 = 0.0;
@@ -186,36 +142,32 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                     complex sconj = conj_cplx(s);
 
                     for (int k = 0; k < a.size(); ++k) {
-                      complex *ap = acol[k][top[ipair]];
-                      complex *aq = acol[k][bot[ipair]];
                       //Apply plane rotation
                       //plane_rot(ap, aq, c, sconj); //CS skip using plane_rot, probably until clarity on cublas zrot functionality or use operations::rotate  
 		      //routine now internal
-		      std::vector<complex> ap_tmp(mloc);
-                      std::vector<complex> aq_tmp(mloc);
+		      gpu::array<complex,1> ap_tmp(mloc);
+                      gpu::array<complex,1> aq_tmp(mloc);
             		for (int ii = 0; ii < mloc; ++ii) {
-              		  ap_tmp[ii] = c * ap[ii] + sconj * aq[ii];
-          		  aq_tmp[ii] = -s*ap[ii] + c * aq[ii];
+                          ap_tmp[ii] = c * a[k][top[ipair]][ii] + sconj * a[k][bot[ipair]][ii];
+                          aq_tmp[ii] = -s*a[k][top[ipair]][ii] + c * a[k][bot[ipair]][ii];
             		}
             		for (int ii = 0; ii < mloc; ++ii) {
-              		ap[ii] = ap_tmp[ii];
-              		aq[ii] = aq_tmp[ii];
+                        a[k][top[ipair]][ii] = ap_tmp[ii];
+                        a[k][bot[ipair]][ii] = aq_tmp[ii];
               		}
 		    }
 
 		    //rotate u 
                     //plane_rot(up, uq, c, sconj);
-          	    complex *up = ucol[top[ipair]];
-         	    complex *uq = ucol[bot[ipair]];
-          	    std::vector<complex> up_tmp(mloc);
-          	    std::vector<complex> uq_tmp(mloc);
+          	    gpu::array<complex,1> up_tmp(mloc);
+          	    gpu::array<complex,1> uq_tmp(mloc);
           	    for (int ii = 0; ii < mloc; ++ii) {
-            	      up_tmp[ii] = c * up[ii] + sconj * uq[ii];
-            	      uq_tmp[ii] = -s*up[ii] + c * uq[ii];
+                      up_tmp[ii] = c * u[top[ipair]][ii] + sconj * u[bot[ipair]][ii];
+                      uq_tmp[ii] = -s*u[top[ipair]][ii] + c * u[bot[ipair]][ii];
           	     }
           	     for (int ii = 0; ii < mloc; ++ii) {
-            	       up[ii] = up_tmp[ii];
-            	       uq[ii] = uq_tmp[ii];
+                       u[top[ipair]][ii] = up_tmp[ii];
+                       u[bot[ipair]][ii] = uq_tmp[ii];
                      }
 
                     // new value of off-diag element apq
@@ -250,22 +202,24 @@ auto jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
        //done = (nsweep >= maxsweep);
     } //while 
 
-    // Compute diagonal elements
+    //eigenvalue array
+    adiag.reextent({n, mloc}); 
+    gpu::run(n, mloc, [adiag_int=begin(adiag)] GPU_LAMBDA (auto i, auto k) {
+      adiag_int[i][k] = complex(0.0, 0.0);
+    });
+    //Compute diagonal elements
   for (int k = 0; k < a.size(); ++k) {
     for (int i = 0; i < a[k].size(); ++i) {
-      adiag[k][i] = complex(0.0, 0.0);    
-    }
-    for (int i = 0; i < a[k].size(); ++i) {
-      const complex *ap = acol[k][i];
-      const complex *up = ucol[i];
       for (int ii = 0; ii < mloc; ii++)
       {
-        adiag[k][i] += conj(ap[ii])*up[ii];
+        adiag[k][i] += conj_cplx(a[k][i][ii])*u[i][ii];
       }
    }
  }
-    return adiag;
-    //return nsweep;
+    //gpu::run(n, mloc, nloc, [n, mloc, nloc, a_int=begin(a), u_int=begin(u), adiag_int=begin(adiag)] GPU_LAMBDA (auto kk, auto ii, auto jj) {
+      //adiag_int[kk][ii] += conj_cplx(a_int[kk][ii][jj]) * u_int[ii][jj];
+    //});
+    //return adiag;
 
 } //jade_complex
 } // namespace wannier
@@ -286,9 +240,11 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 
       int maxsweep = 100;
       double tol = 1e-6;
+      int six = 6;
 
       // Create a vector of 6 2x2 matrices (2He, 2 center test case) //coressponds to gs in a 20x20x20 cell
-      std::vector<std::vector<std::vector<complex>>> a(6, std::vector<std::vector<complex>>(2, std::vector<complex>(2)));
+      //std::vector<std::vector<std::vector<complex>>> a(6, std::vector<std::vector<complex>>(2, std::vector<complex>(2)));
+      gpu::array<complex,3> a({six,2,2});
 
       // Fill a matricies 
       a[0][0][0] = complex(-0.68433137,-0.00000000);
@@ -317,17 +273,14 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
       a[5][1][1] = complex(-0.11860233,-0.00000030);
 
       // Create matrix u (initially identity)
-      std::vector<std::vector<complex>> u(2, std::vector<complex>(2));
-      u[0][0] = complex(1.0, 0.0);  // Identity element
-      u[0][1] = complex(0.0, 0.0);
-      u[1][0] = complex(0.0, 0.0);
-      u[1][1] = complex(1.0, 0.0);  // Identity element
+      gpu::array<complex,2> u({2,2});
 
       // Prepare adiag to hold diagonal elements (size should match number of a matrices and their dimensions)
-      std::vector<std::vector<complex>> adiag(a.size(), std::vector<complex>(2)); // Assuming single diagonal element per input matrix
+      //std::vector<std::vector<complex>> adiag(a.size(), std::vector<complex>(2)); // Assuming single diagonal element per input matrix
+      gpu::array<complex,2> adiag({six,2});
 
       // Call the jade_complex function
-      auto sweep = wannier::jade_complex(maxsweep, tol, a, u, adiag);
+      wannier::jade_complex(maxsweep, tol, a, u, adiag);
 
 
 	  //Inital checks of matrices 
@@ -335,42 +288,41 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
     	  CHECK(adiag.size() == 6);
     	  CHECK(adiag[0].size() == 2);
 
-	  //Check nsweeps 
-	  //CHECK(sweep == 2);
-
           //Check the diagonal elements of the amats upon return
-          CHECK(real(sweep[0][0]) == -0.79081263_a);
-          CHECK(real(sweep[0][1]) == -0.57456037_a);
-          CHECK(real(sweep[1][0]) == 0.57455456_a);
-          CHECK(real(sweep[1][1]) == -0.79080839_a);
-          CHECK(real(sweep[2][0]) == -0.79081263_a);
-          CHECK(real(sweep[2][1]) == -0.57456037_a);
-          CHECK(real(sweep[3][0]) == 0.57455456_a);
-          CHECK(real(sweep[3][1]) == -0.79080840_a);
-          CHECK(real(sweep[4][0]) == -0.79081266_a);
-          CHECK(real(sweep[4][1]) == -0.57456043_a);
-          CHECK(real(sweep[5][0]) == 0.57455453_a);
-          CHECK(real(sweep[5][1]) == -0.79080836_a); 
+          CHECK(real(adiag[0][0]) == -0.79081263_a);
+          CHECK(real(adiag[0][1]) == -0.57456037_a);
+          CHECK(real(adiag[1][0]) == 0.57455456_a);
+          CHECK(real(adiag[1][1]) == -0.79080839_a);
+          CHECK(real(adiag[2][0]) == -0.79081263_a);
+          CHECK(real(adiag[2][1]) == -0.57456037_a);
+          CHECK(real(adiag[3][0]) == 0.57455456_a);
+          CHECK(real(adiag[3][1]) == -0.79080840_a);
+          CHECK(real(adiag[4][0]) == -0.79081266_a);
+          CHECK(real(adiag[4][1]) == -0.57456043_a);
+          CHECK(real(adiag[5][0]) == 0.57455453_a);
+          CHECK(real(adiag[5][1]) == -0.79080836_a); 
           //imag values are correct, but so close to zero they fail in make check 
 	  //also only real values needed for wannier
 
           //Check the transform matrix u that is returned
           //only values that are greater than 1e-7
-          //CHECK(real(sweep[0][0]) == 0.71250999_a);
-          //CHECK(real(sweep[0][1]) == 0.00745655_a);
-          //CHECK(imag(sweep[0][1]) == 0.70162234_a);
-          //CHECK(real(sweep[1][0]) == -0.00745655_a);
-          //CHECK(imag(sweep[1][0]) == 0.70162234_a);
-          //CHECK(real(sweep[1][1]) == 0.71250999_a); 
+          CHECK(real(u[0][0]) == 0.71250999_a);
+          CHECK(real(u[0][1]) == 0.00745655_a);
+          CHECK(imag(u[0][1]) == 0.70162234_a);
+          CHECK(real(u[1][0]) == -0.00745655_a);
+          CHECK(imag(u[1][0]) == 0.70162234_a);
+          CHECK(real(u[1][1]) == 0.71250999_a); 
         }//even 
 
     SECTION("Odd number of Centers"){
 
       int maxsweep = 100;
       double tol = 1e-8;
+      int six = 6;
 
       // Create a vector of 6 3x3 matrices (3He, 3 centers test case) coresponds to gs in a 20x20x20 cell
-      std::vector<std::vector<std::vector<complex>>> a(6, std::vector<std::vector<complex>>(3, std::vector<complex>(3)));
+      //std::vector<std::vector<std::vector<complex>>> a(6, std::vector<std::vector<complex>>(3, std::vector<complex>(3)));
+      gpu::array<complex,3> a({six,3,3});
 
       // Fill the 6 a matrices 
       a[0][0][0] = complex(0.52756279,0.00000025);
@@ -429,67 +381,56 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
       a[5][2][2] = complex(-0.24165874,-0.00000019);
 
       // Create matrix u (initially identity)
-      std::vector<std::vector<complex>> u(3, std::vector<complex>(3));
-      u[0][0] = complex(1.0, 0.0);  // Identity element
-      u[0][1] = complex(0.0, 0.0);
-      u[0][2] = complex(0.0, 0.0);
-      u[1][0] = complex(0.0, 0.0);
-      u[1][1] = complex(1.0, 0.0);  // Identity element
-      u[1][2] = complex(0.0, 0.0);  
-      u[2][0] = complex(0.0, 0.0);
-      u[2][1] = complex(0.0, 0.0);
-      u[2][2] = complex(1.0, 0.0);  // Identity element
+      gpu::array<complex,2> u({3,3});
 
       // Prepare adiag to hold diagonal elements (size should match number of a matrices and their dimensions)
-      std::vector<std::vector<complex>> adiag(a.size(), std::vector<complex>(3)); // Assuming single diagonal element per input matrix
+      //std::vector<std::vector<complex>> adiag(a.size(), std::vector<complex>(3)); // Assuming single diagonal element per input matrix
+      gpu::array<complex,2> adiag({six,3});
 
       // Call the jade_complex function
-      auto sweep = wannier::jade_complex(maxsweep, tol, a, u, adiag);
+      wannier::jade_complex(maxsweep, tol, a, u, adiag);
 
 	  //Check that data is initalized correctly 
           CHECK(u.size() == 3);
           CHECK(adiag.size() == 6);
           CHECK(adiag[0].size() == 3);
 
-	  //Check nsweeps
-	  //CHECK(sweep == 4);
-
 	  //Check the transform matrix u that is returned 
-          /*CHECK(real(sweep[0][0]) == 0.85542060_a);
-          CHECK(real(sweep[0][1]) == 0.42645081_a);
-          CHECK(real(sweep[0][2]) == 0.29206758_a);
-          CHECK(real(sweep[1][0]) == -0.28503313_a);
-          CHECK(real(sweep[1][1]) == 0.54964807_a);
-          CHECK(real(sweep[1][2]) == -0.05412787_a);
-          CHECK(real(sweep[2][0]) == -0.18919209_a);
-          CHECK(real(sweep[2][1]) == -0.03741007_a);
-          CHECK(real(sweep[2][2]) == 0.59031761_a);
-	  CHECK(imag(sweep[0][0]) == -0.00819384_a);
-          CHECK(imag(sweep[0][1]) == 0.00084339_a);
-          CHECK(imag(sweep[0][2]) == 0.03199962_a);
-          CHECK(imag(sweep[1][0]) == -0.17689330_a);
-          CHECK(imag(sweep[1][1]) == -0.15451794_a);
-          CHECK(imag(sweep[1][2]) == 0.74735952_a);
-          CHECK(imag(sweep[2][0]) == -0.34620758_a);
-          CHECK(imag(sweep[2][1]) == 0.70053600_a);
-          CHECK(imag(sweep[2][2]) == 0.06100488_a);*/
+          CHECK(real(u[0][0]) == 0.85542060_a);
+          CHECK(real(u[0][1]) == 0.42645081_a);
+          CHECK(real(u[0][2]) == 0.29206758_a);
+          CHECK(real(u[1][0]) == -0.28503313_a);
+          CHECK(real(u[1][1]) == 0.54964807_a);
+          CHECK(real(u[1][2]) == -0.05412787_a);
+          CHECK(real(u[2][0]) == -0.18919209_a);
+          CHECK(real(u[2][1]) == -0.03741007_a);
+          CHECK(real(u[2][2]) == 0.59031761_a);
+	  CHECK(imag(u[0][0]) == -0.00819384_a);
+          CHECK(imag(u[0][1]) == 0.00084339_a);
+          CHECK(imag(u[0][2]) == 0.03199962_a);
+          CHECK(imag(u[1][0]) == -0.17689330_a);
+          CHECK(imag(u[1][1]) == -0.15451794_a);
+          CHECK(imag(u[1][2]) == 0.74735952_a);
+          CHECK(imag(u[2][0]) == -0.34620758_a);
+          CHECK(imag(u[2][1]) == 0.70053600_a);
+          CHECK(imag(u[2][2]) == 0.06100488_a);
 
           //Check the diagonal elements of the amats upon return 
-          CHECK(real(sweep[0][0]) == 0.97749613_a);
-          CHECK(real(sweep[0][1]) == -0.57455995_a);
-          CHECK(real(sweep[0][2]) == -0.79081233_a);
-          CHECK(real(sweep[1][1]) == -0.79080838_a);
-          CHECK(real(sweep[1][2]) == 0.57455451_a);
-          CHECK(real(sweep[2][0]) == 0.97749613_a);
-          CHECK(real(sweep[2][1]) == -0.57455995_a);
-          CHECK(real(sweep[2][2]) == -0.79081233_a);
-          CHECK(real(sweep[3][1]) == -0.79080838_a);
-          CHECK(real(sweep[3][2]) == 0.57455451_a);
-          CHECK(real(sweep[4][0]) == 0.97749625_a);
-          CHECK(real(sweep[4][1]) == -0.57456014_a);
-          CHECK(real(sweep[4][2]) == -0.79081232_a);
-          CHECK(real(sweep[5][1]) == -0.79080831_a); 
-	  CHECK(real(sweep[5][2]) == 0.57455443_a); 
+          CHECK(real(adiag[0][0]) == 0.97749613_a);
+          CHECK(real(adiag[0][1]) == -0.57455995_a);
+          CHECK(real(adiag[0][2]) == -0.79081233_a);
+          CHECK(real(adiag[1][1]) == -0.79080838_a);
+          CHECK(real(adiag[1][2]) == 0.57455451_a);
+          CHECK(real(adiag[2][0]) == 0.97749613_a);
+          CHECK(real(adiag[2][1]) == -0.57455995_a);
+          CHECK(real(adiag[2][2]) == -0.79081233_a);
+          CHECK(real(adiag[3][1]) == -0.79080838_a);
+          CHECK(real(adiag[3][2]) == 0.57455451_a);
+          CHECK(real(adiag[4][0]) == 0.97749625_a);
+          CHECK(real(adiag[4][1]) == -0.57456014_a);
+          CHECK(real(adiag[4][2]) == -0.79081232_a);
+          CHECK(real(adiag[5][1]) == -0.79080831_a); 
+	  CHECK(real(adiag[5][2]) == 0.57455443_a); 
   }//odd 
 }
 #endif

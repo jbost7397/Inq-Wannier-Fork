@@ -27,10 +27,19 @@ int main(int argc, char ** argv){
         sys.insert(ionic::species("H").pseudo_file(inq::config::path::pseudo() + "H_ONCV_PBE-1.2.upf.gz"), {1.2641_A, 0.0628_A, -2.1395_A});
         sys.insert(ionic::species("H").pseudo_file(inq::config::path::pseudo() + "H_ONCV_PBE-1.2.upf.gz"), {2.4836_A, -0.1022_A, 0.0205_A});
 	inq::systems::electrons el(sys, options::electrons{}.cutoff(30.0_Ry));
-	inq::ground_state::initial_guess(sys, el);
-	
-	inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-8_Ha));
-	real_time::propagate(sys, el, [](auto){}, options::theory{}.pbe(), options::real_time{}.num_steps(100).dt(0.0565_atomictime).tdmlwf());
-	
-	return 1;
+
+        std::string restart_dir = "benzene_restart";
+        auto not_found_gs = groundstate_only or not el.try_load(restart_dir);
+        if(not_found_gs){
+                inq::ground_state::initial_guess(sys, el);
+                try { inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-8_Ha)); }
+                catch(...){ }
+                el.save(restart_dir);
+        }
+
+        if(not groundstate_only){
+                        real_time::propagate(sys, el, [](auto){}, options::theory{}.pbe(), options::real_time{}.num_steps(10).dt(0.0565_atomictime).tdmlwf());
+        }
+
+        return 1;
 }

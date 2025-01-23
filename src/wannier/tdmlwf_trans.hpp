@@ -33,12 +33,9 @@ namespace wannier {
 class tdmlwf_trans {
 
 private:
-	//gpu::array<complex,2> u_; //JB: have to consider between gpu::array, std::vector of std::vectors, or perhaps matrix::distributed for parallelism?
-	//gpu::array<complex,3> a_;
-	//gpu::array<complex,2> adiag_;
-	std::vector<std::vector<std::vector<complex>>> a_; 
-	std::vector<std::vector<inq::complex>> adiag_;
-	std::vector<std::vector<complex>> u_;
+	gpu::array<complex,2> u_; //JB: have to consider between gpu::array, std::vector of std::vectors, or perhaps matrix::distributed for parallelism?
+	gpu::array<complex,3> a_;
+	gpu::array<complex,2> adiag_;
 	states::orbital_set<basis::real_space, complex> wavefunctions_;
 
 public:
@@ -47,26 +44,13 @@ public:
 tdmlwf_trans(states::orbital_set<basis::real_space, complex> const & wavefunctions) : wavefunctions_(wavefunctions) {
 
   const int n = wavefunctions_.set_size();
-  int nx = wavefunctions_.basis().local_sizes()[0];
-  int ny = wavefunctions_.basis().local_sizes()[1];
-  int nz = wavefunctions_.basis().local_sizes()[2];
   int six = 6;
-  //gpu::array<complex,3> a_ ({6,n,n});
-  //gpu::array<complex,2> adiag_ ({6,n});
-  a_.resize(6);
-  adiag_.resize(6);
-  int k; 
-  for (k = 0; k < 6; k++) {
-    //gpu::array<complex,2> a_[k];
-    a_[k].resize(n);
-    for (int iwf = 0; iwf < n; iwf++) {
-	    a_[k][iwf].resize(n, 0);
-    }
-    adiag_[k].resize(n, 0);
-  }
+  adiag_.reextent({six,n});
+    
+  a_.reextent({six,n,n});
 
-  //gpu::array<complex,2> u_({n,n});
-  std::vector<std::vector<complex>> u_(n, std::vector<complex>(n));
+  u_.reextent({n,n});
+
 }
 ////////////////////////////////////////////////////////////////////////////////
 void normalize(void) {
@@ -116,6 +100,18 @@ void update(void) {
 
   normalize();
 
+  gpu::run(6, n_states, n_states, [n_states, a_int=begin(a_)] GPU_LAMBDA (auto i, auto j, auto k) {
+    a_int[i][j][k] = complex(0.0);
+  });
+
+  gpu::run(n_states, n_states, [u_int=begin(u_)] GPU_LAMBDA (auto i, auto j) {
+      u_int[i][j] = (i == j) ? complex(1.0,0.0) : complex(0.0,0.0);
+  });
+
+  gpu::run(6, n_states, [adiag_int=begin(adiag_)] GPU_LAMBDA (auto i, auto j) {
+    adiag_int[i][j] = complex(0.0);
+  });
+
   for (int ix = 0; ix < nx; ++ix) {
     for (int iy = 0; iy < ny; ++iy) {
       for (int iz = 0; iz < nz; ++iz) {
@@ -155,7 +151,7 @@ void compute_transform(void)
 {
   const int maxsweep = 100;
   const double tol = 1.e-8;
-  auto sweep = jade_complex(maxsweep,tol,a_,u_,adiag_);
+  wannier::jade_complex(maxsweep,tol,a_,u_,adiag_);
 }
 ////////////////////////////////////////////////////////////////////////////////
 const states::orbital_set<basis::real_space, complex>& get_wavefunctions() const {
@@ -263,8 +259,8 @@ double spread2(T i, T j, const systems::cell & cell) {
   auto recip = cell.reciprocal(j);
   double length = sqrt(recip[0]*recip[0]+ recip[1]*recip[1] + recip[2]*recip[2]);
   const double fac = 1.0 / length;
-  auto tst = 1.0 - std::norm(c) - std::norm(s);
-  return fac*fac * ( 1.0 - std::norm(c) - std::norm(s) );
+  auto tst = 1.0 - norm(c) - norm(s);
+  return fac*fac * ( 1.0 - norm(c) - norm(s) );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
