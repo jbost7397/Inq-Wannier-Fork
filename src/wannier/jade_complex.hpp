@@ -47,10 +47,12 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     });
 
     //check if number of rows is odd //CS likely not needed anymore
-    const bool nloc_odd = (mloc % 2 != 0);
+    //const bool nloc_odd = (mloc % 2 != 0);
 
     const int nploc = (nloc + 1) / 2;
-    std::deque<int> top(nploc), bot(nploc);
+    //std::deque<int> top(nploc), bot(nploc);
+    gpu::array<int,1> top(nploc);
+    gpu::array<int,1> bot(nploc);
     int np = nploc; 
 
     // initialize top and bot arrays
@@ -79,22 +81,19 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
         for (int irot = 0; irot < 2*np-1; ++irot) {
             //jacobi rotations for local pairs
             //of diagonal elements for all pairs (apq)
-            for (int k = 0; k < a.size(); ++k) {
-                for (int ipair = 0; ipair < nploc; ++ipair) {
-                    const int iapq = 3 * ipair + k * 3 * nploc;
-                    apq[iapq] = complex(0.0, 0.0);
-                    apq[iapq + 1] = complex(0.0, 0.0);
-                    apq[iapq + 2] = complex(0.0, 0.0);
-
-		    if (top[ipair] < mloc && bot[ipair] < mloc ){ 
-                      for (int ii = 0; ii < mloc; ++ii) {
-                        apq[iapq] += conj_cplx(a[k][top[ipair]][ii]) * u[bot[ipair]][ii];
-                        apq[iapq + 1] += conj_cplx(a[k][top[ipair]][ii]) * u[top[ipair]][ii];
-                        apq[iapq + 2] += conj_cplx(a[k][bot[ipair]][ii]) * u[bot[ipair]][ii];
-                        } //for ii
-		    } //top bot
-                } //for ipair
-            } //for k
+	    gpu::run(n, nploc, mloc, [n, nploc, mloc, a_int=begin(a), u_int=begin(u), apq_int=begin(apq), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA(auto k, auto ipair, auto ii) { 
+	      const int iapq = 3 * ipair + k * 3 * nploc;
+              if (ii == 0) {
+                apq_int[iapq] = complex(0.0, 0.0);
+                apq_int[iapq + 1] = complex(0.0, 0.0);
+                apq_int[iapq + 2] = complex(0.0, 0.0);
+	      }
+	      if (top_int[ipair] < mloc && bot_int[ipair] < mloc ){
+                gpu::atomic::add(&apq_int[iapq], conj_cplx(a_int[k][top_int[ipair]][ii]) * u_int[bot_int[ipair]][ii]);
+                gpu::atomic::add(&apq_int[iapq + 1], conj_cplx(a_int[k][top_int[ipair]][ii]) * u_int[top_int[ipair]][ii]);
+                gpu::atomic::add(&apq_int[iapq + 2], conj_cplx(a_int[k][bot_int[ipair]][ii]) * u_int[bot_int[ipair]][ii]);
+	      }
+              });
 
             for (int ipair = 0; ipair < nploc; ++ipair) {
                 if (top[ipair] < mloc && bot[ipair] < mloc) {
@@ -186,7 +185,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
             }//for ipair
 
             // Rotate top and bot arrays
-            if (nploc > 0) {
+/*            if (nploc > 0) {
                     bot.push_back(top.back());
                     top.pop_back();
                     top.push_front(bot.front());
@@ -196,7 +195,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 	            } else {
 	              std::swap(top[0], bot[0]);
 	            } 
-	      } //if nploc >0 
+	      } *///if nploc >0 
 	} //irot
        done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
        //done = (nsweep >= maxsweep);
@@ -207,6 +206,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     gpu::run(n, mloc, [adiag_int=begin(adiag)] GPU_LAMBDA (auto i, auto k) {
       adiag_int[i][k] = complex(0.0, 0.0);
     });
+
     //Compute diagonal elements
     gpu::run(n, mloc, nloc, [n, mloc, nloc, a_int=begin(a), u_int=begin(u), adiag_int=begin(adiag)] GPU_LAMBDA (auto kk, auto ii, auto jj) {
       gpu::atomic::add(&adiag_int[kk][ii], conj_cplx(a_int[kk][ii][jj]) * u_int[ii][jj]);
