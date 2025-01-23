@@ -12,6 +12,7 @@ int main(int argc, char ** argv){
 
 	using namespace inq;
 	using namespace inq::magnitude;
+        bool groundstate_only = false;
 
 	inq::systems::ions sys(inq::systems::cell::cubic(25.0_b).periodic());
 	sys.insert(ionic::species("C").pseudo_file(inq::config::path::pseudo() + "C_ONCV_PBE-1.2.upf.gz"), {0.6825_A, -0.0924_A, 1.2087_A});

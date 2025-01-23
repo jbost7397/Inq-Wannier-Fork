@@ -20,7 +20,6 @@
 #include <algorithm>
 #include <math/complex.hpp>
 #include <utils/profiling.hpp>
-#include <utils/profiling.hpp>
 
 //CS updated by chatgpt, compiles and passes tests
 //can determine later if performance is better w/ c++ version of matrix::diagonalize routine

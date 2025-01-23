@@ -49,9 +49,9 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     //check if number of rows is odd //CS likely not needed anymore
     const bool nloc_odd = (mloc % 2 != 0);
 
-    const int nploc = (nloc + 1) / 2; //when parallel replace nloc with column distributor
+    const int nploc = (nloc + 1) / 2;
     std::deque<int> top(nploc), bot(nploc);
-    int np = nploc; //CS this will always be true when non-parallel
+    int np = nploc; 
 
     // initialize top and bot arrays
     // the pair i is (top[i],bot[i])
@@ -208,18 +208,9 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
       adiag_int[i][k] = complex(0.0, 0.0);
     });
     //Compute diagonal elements
-  for (int k = 0; k < a.size(); ++k) {
-    for (int i = 0; i < a[k].size(); ++i) {
-      for (int ii = 0; ii < mloc; ii++)
-      {
-        adiag[k][i] += conj_cplx(a[k][i][ii])*u[i][ii];
-      }
-   }
- }
-    //gpu::run(n, mloc, nloc, [n, mloc, nloc, a_int=begin(a), u_int=begin(u), adiag_int=begin(adiag)] GPU_LAMBDA (auto kk, auto ii, auto jj) {
-      //adiag_int[kk][ii] += conj_cplx(a_int[kk][ii][jj]) * u_int[ii][jj];
-    //});
-    //return adiag;
+    gpu::run(n, mloc, nloc, [n, mloc, nloc, a_int=begin(a), u_int=begin(u), adiag_int=begin(adiag)] GPU_LAMBDA (auto kk, auto ii, auto jj) {
+      gpu::atomic::add(&adiag_int[kk][ii], conj_cplx(a_int[kk][ii][jj]) * u_int[ii][jj]);
+    });
 
 } //jade_complex
 } // namespace wannier
@@ -243,7 +234,6 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
       int six = 6;
 
       // Create a vector of 6 2x2 matrices (2He, 2 center test case) //coressponds to gs in a 20x20x20 cell
-      //std::vector<std::vector<std::vector<complex>>> a(6, std::vector<std::vector<complex>>(2, std::vector<complex>(2)));
       gpu::array<complex,3> a({six,2,2});
 
       // Fill a matricies 
@@ -276,7 +266,6 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
       gpu::array<complex,2> u({2,2});
 
       // Prepare adiag to hold diagonal elements (size should match number of a matrices and their dimensions)
-      //std::vector<std::vector<complex>> adiag(a.size(), std::vector<complex>(2)); // Assuming single diagonal element per input matrix
       gpu::array<complex,2> adiag({six,2});
 
       // Call the jade_complex function
@@ -321,7 +310,6 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
       int six = 6;
 
       // Create a vector of 6 3x3 matrices (3He, 3 centers test case) coresponds to gs in a 20x20x20 cell
-      //std::vector<std::vector<std::vector<complex>>> a(6, std::vector<std::vector<complex>>(3, std::vector<complex>(3)));
       gpu::array<complex,3> a({six,3,3});
 
       // Fill the 6 a matrices 
@@ -384,7 +372,6 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
       gpu::array<complex,2> u({3,3});
 
       // Prepare adiag to hold diagonal elements (size should match number of a matrices and their dimensions)
-      //std::vector<std::vector<complex>> adiag(a.size(), std::vector<complex>(3)); // Assuming single diagonal element per input matrix
       gpu::array<complex,2> adiag({six,3});
 
       // Call the jade_complex function
