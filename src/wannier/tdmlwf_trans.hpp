@@ -150,7 +150,7 @@ void update(void) {
 void compute_transform(void)
 {
   const int maxsweep = 100;
-  const double tol = 1.e-8;
+  const double tol = 1.e-6;
   wannier::jade_complex(maxsweep,tol,a_,u_,adiag_);
 }
 ////////////////////////////////////////////////////////////////////////////////

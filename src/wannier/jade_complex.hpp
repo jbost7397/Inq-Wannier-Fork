@@ -59,10 +59,10 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     // the pair i is (top[i],bot[i])
     // top[i] is the local index of the top column of pair i
     // bot[i] is the local index of the bottom column of pair i
-    for (int i = 0; i < nploc; ++i) {
-        top[i] = i;
-        bot[nploc - i - 1] = nploc + i;
-    }
+    gpu::run(nploc, [nploc, bot_int=begin(bot), top_int=begin(top)] GPU_LAMBDA (auto i) {
+      top_int[i] = i; 
+      bot_int[nploc - i - 1] = nploc + i;
+    });
 
     int nsweep = 0;
     bool done = false;
@@ -184,18 +184,32 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                 }
             }//for ipair
 
-            // Rotate top and bot arrays
-/*            if (nploc > 0) {
-                    bot.push_back(top.back());
-                    top.pop_back();
-                    top.push_front(bot.front());
-                    bot.pop_front();
+            // Rotate top and bot arrays //CS is there a faster way to rotate??
+            if (nploc > 0) {
+		int top_back = top[nploc - 1];
+		int bot_front = bot[0];
+		gpu::run(nploc-1, [bot_int=begin(bot)] GPU_LAMBDA (auto j) { 
+	          bot_int[j] = bot_int[j+1];
+		});
+		bot[nploc - 1] = top_back;
+                gpu::run(nploc-1, [top_int=begin(top)] GPU_LAMBDA (auto j) {
+		  top_int[j + 1] = top_int[j];
+                });
+		top[0] = bot_front;
             	    if (nploc > 1) {
-	              std::swap(top[0], top[1]);
+		      gpu::run(1, [top_int=begin(top)] GPU_LAMBDA (auto i) {
+		        int tmp = top_int[0];
+			top_int[0] = top_int[1];
+			top_int[1] = tmp;
+		      });
 	            } else {
-	              std::swap(top[0], bot[0]);
+			gpu::run(1, [bot_int=begin(bot), top_int=begin(top)] GPU_LAMBDA (auto i) {
+			  int tmp = top_int[0];
+			  top_int[0] = bot_int[0];
+			  bot_int[0] = tmp;
+		        });
 	            } 
-	      } *///if nploc >0 
+	      } //if nploc >0 
 	} //irot
        done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
        //done = (nsweep >= maxsweep);
