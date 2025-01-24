@@ -96,41 +96,37 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
               });
 
             for (int ipair = 0; ipair < nploc; ++ipair) {
-                if (top[ipair] < mloc && bot[ipair] < mloc) {
-                    double g11 = 0.0, g12 = 0.0, g13 = 0.0;
-                    double g21 = 0.0, g22 = 0.0, g23 = 0.0;
-                    double g31 = 0.0, g32 = 0.0, g33 = 0.0;
+	      gpu::array<double,1> G({9},0.0);
+              if (top[ipair] < mloc && bot[ipair] < mloc) {
+                gpu::run(n, [n, nploc, mloc, ipair, apq_int=begin(apq), g_int=begin(G)] GPU_LAMBDA (auto k) {
+		  const int iapq = 3 * ipair + k * 3 * nploc;
+                  const complex aij = apq_int[iapq];
+                  const complex aii = apq_int[iapq + 1];
+                  const complex ajj = apq_int[iapq + 2];
 
-                    for (int k = 0; k < a.size(); ++k) {
-                        const int iapq = 3 * ipair + k * 3 * nploc;
-                        const complex aij = apq[iapq];
-                        const complex aii = apq[iapq + 1];
-                        const complex ajj = apq[iapq + 2];
-
-                        const complex h1 = aii - ajj;
-                        const complex h2 = aij + conj_cplx(aij);
-                        const complex h3 = complex(0.0, 1.0) * (aij - conj_cplx(aij));
-
-                        g11 += real(conj_cplx(h1) * h1);
-                        g12 += real(conj_cplx(h1) * h2);
-                        g13 += real(conj_cplx(h1) * h3);
-                        g21 += real(conj_cplx(h2) * h1);
-                        g22 += real(conj_cplx(h2) * h2);
-                        g23 += real(conj_cplx(h2) * h3);
-                        g31 += real(conj_cplx(h3) * h1);
-                        g32 += real(conj_cplx(h3) * h2);
-                        g33 += real(conj_cplx(h3) * h3);
-                    } //for k
+                  const complex h1 = aii - ajj;
+                  const complex h2 = aij + conj_cplx(aij);
+                  const complex h3 = complex(0.0, 1.0) * (aij - conj_cplx(aij));		  
+		  gpu::atomic::add(&g_int[0], real(conj_cplx(h1) * h1));
+                  gpu::atomic::add(&g_int[1], real(conj_cplx(h1) * h2));
+                  gpu::atomic::add(&g_int[2], real(conj_cplx(h1) * h3));
+                  gpu::atomic::add(&g_int[3], real(conj_cplx(h2) * h1));
+                  gpu::atomic::add(&g_int[4], real(conj_cplx(h2) * h2));
+                  gpu::atomic::add(&g_int[5], real(conj_cplx(h2) * h3));
+                  gpu::atomic::add(&g_int[6], real(conj_cplx(h3) * h1));
+                  gpu::atomic::add(&g_int[7], real(conj_cplx(h3) * h2));
+                  gpu::atomic::add(&g_int[8], real(conj_cplx(h3) * h3));
+	        });
 
                     int N = 3; // For Wannier 3x3 matrix size
-                    gpu::array<double,1> G = {g11, g12, g13, g21, g22, g23, g31, g32, g33};  // Matrix to be diagonalized
+                    //gpu::array<double,1> G = {g11, g12, g13, g21, g22, g23, g31, g32, g33};  // Matrix to be diagonalized
                     gpu::array<double,1> Q(9); // Eigenvectors
                     gpu::array<double,1> D(3); // Eigenvalues
                     jacobi_eigenvalue(N, G, Q, D);
 
                     // Extract the largest eigenvalue's vector
                     double x = Q[6], y = Q[7], z = Q[8];
-                    if (x < 0.0) {
+                    if (Q[6] < 0.0) {
                         x = -x; y = -y; z = z;
                     }
 
