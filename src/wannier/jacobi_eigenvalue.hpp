@@ -78,7 +78,7 @@ void jacobi_eigenvalue(T n, VectorType& a, VectorType& v, VectorType& d) {
             break;
         }
 
-	/*gpu::run(n, [n, a_int=begin(a), d_int=begin(d), zw_int=begin(zw), v_int=begin(v), thresh_int=begin(thresh), it_num] GPU_LAMBDA (auto i) {
+/*	gpu::run(n, [n, a_int=begin(a), d_int=begin(d), zw_int=begin(zw), v_int=begin(v), thresh_int=begin(thresh), it_num] GPU_LAMBDA (auto i) {
 	  int p, q;
 	  if (i == 0) {p = 0; q = 1;}
           else if (i == 1) { p = 0; q = 2; }

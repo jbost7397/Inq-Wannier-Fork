@@ -138,45 +138,49 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
                     for (int k = 0; k < a.size(); ++k) {
                       //Apply plane rotation
-                      //plane_rot(ap, aq, c, sconj); //CS skip using plane_rot, probably until clarity on cublas zrot functionality or use operations::rotate  
 		      //routine now internal
-		      gpu::array<complex,1> ap_tmp(mloc);
-                      gpu::array<complex,1> aq_tmp(mloc);
-            		for (int ii = 0; ii < mloc; ++ii) {
-                          ap_tmp[ii] = c * a[k][top[ipair]][ii] + sconj * a[k][bot[ipair]][ii];
-                          aq_tmp[ii] = -s*a[k][top[ipair]][ii] + c * a[k][bot[ipair]][ii];
-            		}
-            		for (int ii = 0; ii < mloc; ++ii) {
-                        a[k][top[ipair]][ii] = ap_tmp[ii];
-                        a[k][bot[ipair]][ii] = aq_tmp[ii];
+		      gpu::array<complex,1> ap(mloc);
+                      gpu::array<complex,1> aq(mloc);
+		      //gpu::run(mloc, [mloc, ipair, k, ap_int=begin(ap), aq_int=begin(aq), a_int=begin(a), bot_int=begin(bot), top_int=begin(top)] GPU_LAMBDA (auto ii) {
+                      for (int ii = 0; ii < mloc; ++ii) {
+                        ap[ii] = c * a[k][top[ipair]][ii] + sconj * a[k][bot[ipair]][ii];
+                        aq[ii] = -s*a[k][top[ipair]][ii] + c * a[k][bot[ipair]][ii];
+		        //ap[ii]=a[k][top[ipair]][ii];
+	                //aq[ii]=a[k][bot[ipair]][ii];
+                      }
+	              //plane_rot(ap,aq,c,sconj); //CS slow but good for debug, need cuda solver wrapper
+                      for (int ii = 0; ii < mloc; ++ii) {
+                        a[k][top[ipair]][ii] = ap[ii];
+                        a[k][bot[ipair]][ii] = aq[ii];
               		}
 		    }
 
 		    //rotate u 
                     //plane_rot(up, uq, c, sconj);
-          	    gpu::array<complex,1> up_tmp(mloc);
-          	    gpu::array<complex,1> uq_tmp(mloc);
+          	    gpu::array<complex,1> up(mloc);
+          	    gpu::array<complex,1> uq(mloc);
           	    for (int ii = 0; ii < mloc; ++ii) {
-                      up_tmp[ii] = c * u[top[ipair]][ii] + sconj * u[bot[ipair]][ii];
-                      uq_tmp[ii] = -s*u[top[ipair]][ii] + c * u[bot[ipair]][ii];
+                      up[ii] = c * u[top[ipair]][ii] + sconj * u[bot[ipair]][ii];
+                      uq[ii] = -s*u[top[ipair]][ii] + c * u[bot[ipair]][ii];
           	     }
           	     for (int ii = 0; ii < mloc; ++ii) {
-                       u[top[ipair]][ii] = up_tmp[ii];
-                       u[bot[ipair]][ii] = uq_tmp[ii];
+                       u[top[ipair]][ii] = up[ii];
+                       u[bot[ipair]][ii] = uq[ii];
                      }
 
                     // new value of off-diag element apq
-                    double diag_change_ipair = 0.0;
-                    for (int k = 0; k < a.size(); ++k) {
-                        const int iapq = 3 * ipair + k * 3 * nploc;
-                        const complex aii = apq[iapq + 1];
-                        const complex ajj = apq[iapq + 2];
+		    gpu::array<double,1> diag_change_ipair({1},0.0);
+		    gpu::run(n, [diag_change_ipair_int=begin(diag_change_ipair), ipair, n, nploc, apq_int=begin(apq), c, s, sconj] GPU_LAMBDA (auto k) {
+			const int iapq = 3 * ipair + k * 3 * nploc;
+                        const complex aii = apq_int[iapq + 1];
+                        const complex ajj = apq_int[iapq + 2];
                         const complex v1 = conj_cplx(c) * c - sconj * s;
 
-                        double apq_new = real(v1 * (aii - ajj) + 2.0 * c * s * apq[iapq] + 2.0 * sconj * c * apq[iapq]);
-                        diag_change_ipair += 2.0 * fabs(apq_new - real(aii - ajj));
-			}
-                    diag_change += diag_change_ipair;
+                        double apq_new = real(v1 * (aii - ajj) + 2.0 * c * s * apq_int[iapq] + 2.0 * sconj * c * apq_int[iapq]);
+                        //diag_change_ipair += 2.0 * fabs(apq_new - real(aii - ajj));
+                        gpu::atomic::add(&diag_change_ipair_int[0], 2.0 * fabs(apq_new - real(aii - ajj)));
+			});
+                    diag_change += diag_change_ipair[0];
                 }
             }//for ipair
 
@@ -206,7 +210,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 		        });
 	            } 
 	      } //if nploc >0 
-	} //irot
+	} //irot*/
        done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
        //done = (nsweep >= maxsweep);
     } //while 
