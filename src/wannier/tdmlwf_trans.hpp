@@ -25,7 +25,7 @@
 #include <wannier/jade_complex.hpp>
 #include <gpu/array.hpp>
 #include <iostream>
-#include <vector> 
+#include <vector>
 
 namespace inq {
 namespace wannier {
@@ -33,134 +33,136 @@ namespace wannier {
 class tdmlwf_trans {
 
 private:
-	//gpu::array<complex,2> u_; //JB: have to consider between gpu::array, std::vector of std::vectors, or perhaps matrix::distributed for parallelism?
-	//gpu::array<complex,3> a_;
-	//gpu::array<complex,2> adiag_;
-	std::vector<std::vector<std::vector<complex>>> a_; 
-	std::vector<std::vector<inq::complex>> adiag_;
-	std::vector<std::vector<complex>> u_;
+	gpu::array<complex,2> u_; //JB: have to consider between gpu::array, std::vector of std::vectors, or perhaps matrix::distributed for parallelism?
+	gpu::array<complex,3> a_;
+	gpu::array<complex,2> adiag_;
+	//std::vector<std::vector<std::vector<complex>>> a_;
+	//std::vector<std::vector<inq::complex>> adiag_;
+	//std::vector<std::vector<complex>> u_;
 	states::orbital_set<basis::real_space, complex> wavefunctions_;
 
 public:
 
 ////////////////////////////////////////////////////////////////////////////////
 tdmlwf_trans(states::orbital_set<basis::real_space, complex> const & wavefunctions) : wavefunctions_(wavefunctions) {
-
-  const int n = wavefunctions_.set_size();
+  const int n_states = wavefunctions_.set_size();
   int nx = wavefunctions_.basis().local_sizes()[0];
   int ny = wavefunctions_.basis().local_sizes()[1];
   int nz = wavefunctions_.basis().local_sizes()[2];
-  a_.resize(6);
-  adiag_.resize(6);
-  int k; 
-  for (k = 0; k < 6; k++) {
-    //gpu::array<complex,2> a_[k];
-    a_[k].resize(n);
-    for (int iwf = 0; iwf < n; iwf++) {
-	    a_[k][iwf].resize(n, 0);
-    }
-    adiag_[k].resize(n, 0);
-  }
+  a_.reextent({6, n_states, n_states});
+  adiag_.reextent({6, n_states});
+  u_.reextent({n_states, n_states});
 
-  //gpu::array<complex,2> u_({n,n});
-  std::vector<std::vector<complex>> u_(n, std::vector<complex>(n));
-
-
-  
-}
+}//constructor
 
 void normalize(void) {
-    CALI_CXX_MARK_SCOPE("wannier_normalize");
-    int n_states = wavefunctions_.set_size();
-    int nx = wavefunctions_.basis().local_sizes()[0];
-    int ny = wavefunctions_.basis().local_sizes()[1];
-    int nz = wavefunctions_.basis().local_sizes()[2];
-    for (int k_wf = 0; k_wf < n_states; ++k_wf) {
-        double norm_squared = 0.0;
-        for (int ix = 0; ix < nx; ++ix) {
-            for (int iy = 0; iy < ny; ++iy) {
-                for (int iz = 0; iz < nz; ++iz) {
-                    complex wf_component = wavefunctions_.hypercubic()[ix][iy][iz][k_wf];
-                    norm_squared += norm(wf_component); 
-                }
-            }
-        }
-
-
-        double norm_factor = 1.0 / std::sqrt(norm_squared);
-        for (int ix = 0; ix < nx; ++ix) {
-            for (int iy = 0; iy < ny; ++iy) {
-                for (int iz = 0; iz < nz; ++iz) {
-                    wavefunctions_.hypercubic()[ix][iy][iz][k_wf] *= norm_factor;
-                }
-            }
-        }
-    }
-}
-
-void update(void) {
-  CALI_CXX_MARK_SCOPE("wannier_update");
+  CALI_CXX_MARK_SCOPE("wannier_normalize");
   int n_states = wavefunctions_.set_size();
-  int nprocs = wavefunctions_.basis().comm().size();
-  std::array<int, 2> shape;
-  int dim_x = std::round(std::cbrt(nprocs)); 
-  shape[0] = dim_x;
-  shape[1] = nprocs / dim_x;
-  auto comm = parallel::cartesian_communicator<2>(wavefunctions_.basis().comm(), shape);
   int nx = wavefunctions_.basis().local_sizes()[0];
   int ny = wavefunctions_.basis().local_sizes()[1];
   int nz = wavefunctions_.basis().local_sizes()[2];
 
-  double lx = wavefunctions_.basis().cell().lattice(0)[0];
-  double ly = wavefunctions_.basis().cell().lattice(1)[1];
-  double lz = wavefunctions_.basis().cell().lattice(2)[2];
-
-  normalize();
-
-  for (int k_wf = 0; k_wf < n_states; ++k_wf) {
-    for (int l_wf = 0; l_wf < n_states; ++l_wf) {
-      for (int ix = 0; ix < nx; ++ix) {
-        for (int iy = 0; iy < ny; ++iy) {
-          for (int iz = 0; iz < nz; ++iz) {
-            complex c_ik = wavefunctions_.hypercubic()[ix][iy][iz][k_wf];
-            auto conj_ik = conj_cplx(c_ik);
-
-            auto coords = wavefunctions_.basis().point_op().rvector_cartesian(ix, iy, iz);
-
-            double cos_x = cos(2.0 * M_PI * coords[0] / lx);
-            double sin_x = sin(2.0 * M_PI * coords[0] / lx);
-            double cos_y = cos(2.0 * M_PI * coords[1] / ly);
-            double sin_y = sin(2.0 * M_PI * coords[1] / ly);
-            double cos_z = cos(2.0 * M_PI * coords[2] / lz);
-            double sin_z = sin(2.0 * M_PI * coords[2] / lz);
-
-            complex c_jl = wavefunctions_.hypercubic()[ix][iy][iz][l_wf];
-
-            a_[0][k_wf][l_wf] += conj_ik * c_jl * cos_x;
-            a_[1][k_wf][l_wf] += conj_ik * c_jl * sin_x;
-            a_[2][k_wf][l_wf] += conj_ik * c_jl * cos_y;
-            a_[3][k_wf][l_wf] += conj_ik * c_jl * sin_y;
-            a_[4][k_wf][l_wf] += conj_ik * c_jl * cos_z;
-            a_[5][k_wf][l_wf] += conj_ik * c_jl * sin_z;
-	    
-	  }
+  gpu::run(n_states, [hypercubic = begin(wavefunctions_.hypercubic()), nx, ny, nz] GPU_LAMBDA (auto k_wf) {
+    double norm_squared = 0.0;
+    for (int ix = 0; ix < nx; ++ix){
+      for (int iy = 0; iy < ny; ++iy){
+        for (int iz = 0; iz < nz; ++iz){
+          complex wf_component = hypercubic[ix][iy][iz][k_wf];
+          norm_squared += norm(wf_component);
         }
       }
     }
-  }
+
+    double norm_factor = 1.0 / sqroot(norm_squared);
+    for (int ix = 0; ix < nx; ++ix){
+      for (int iy = 0; iy < ny; ++iy){
+        for (int iz = 0; iz < nz; ++iz){
+	  hypercubic[ix][iy][iz][k_wf] *= norm_factor;
+	}
+      }
+    }
+  });
 }
 
+////////////////////////////////////////////////////////////////////////////////
+void update(const states::orbital_set<basis::real_space, complex>& wavefunctions) {
+  CALI_CXX_MARK_SCOPE("wannier_update");
+  wavefunctions_ = wavefunctions;
+  int n_states = wavefunctions_.set_size();
+  int nx = wavefunctions_.basis().local_sizes()[0];
+  int ny = wavefunctions_.basis().local_sizes()[1];
+  int nz = wavefunctions_.basis().local_sizes()[2];
+
+  double lx = sqroot(wavefunctions_.basis().cell()[0].norm());
+  double ly = sqroot(wavefunctions_.basis().cell()[1].norm());
+  double lz = sqroot(wavefunctions_.basis().cell()[2].norm());
+
+  auto point_op = wavefunctions_.basis().point_op();
+
+  normalize();
+
+  gpu::run(6, n_states, n_states, [n_states, a_int=begin(a_)] GPU_LAMBDA (auto i, auto j, auto k) {
+    a_int[i][j][k] = complex(0.0);
+  });
+
+  gpu::run(n_states, n_states, [u_int=begin(u_)] GPU_LAMBDA (auto i, auto j) {
+      u_int[i][j] = (i == j) ? complex(1.0,0.0) : complex(0.0,0.0);
+  });
+
+  gpu::run(6, n_states, [adiag_int=begin(adiag_)] GPU_LAMBDA (auto i, auto j) {
+    adiag_int[i][j] = complex(0.0);
+  });
+
+  gpu::array<double, 4> trig_array;
+  trig_array.reextent({6, nx, ny, nz});
+
+  gpu::run(nz, ny, nx, [point_op, ta = begin(trig_array), lx, ly, lz] GPU_LAMBDA (auto iz, auto iy, auto ix) {
+    auto coords = point_op.rvector_cartesian(ix, iy, iz);
+    ta[0][ix][iy][iz] = cos(2.0 * M_PI * coords[0] / lx);
+    ta[1][ix][iy][iz] = sin(2.0 * M_PI * coords[0] / lx);
+    ta[2][ix][iy][iz] = cos(2.0 * M_PI * coords[1] / ly);
+    ta[3][ix][iy][iz] = sin(2.0 * M_PI * coords[1] / ly);
+    ta[4][ix][iy][iz] = cos(2.0 * M_PI * coords[2] / lz);
+    ta[5][ix][iy][iz] = sin(2.0 * M_PI * coords[2] / lz);
+  });
+
+  gpu::run(n_states, n_states, [hypercubic = begin(wavefunctions_.hypercubic()), ta = begin(trig_array), lx, ly, lz, nx, ny, nz, a = begin(a_)] GPU_LAMBDA (auto l_wf, auto k_wf) {
+    for (int ix = 0; ix < nx; ix++){
+      for (int iy = 0; iy < ny; iy++){
+        for (int iz = 0; iz < nz; iz++){
+
+            complex c_ik = hypercubic[ix][iy][iz][k_wf];
+            auto conj_ik = conj_cplx(c_ik);
+
+            complex c_jl = hypercubic[ix][iy][iz][l_wf];
+
+            a[0][k_wf][l_wf] += conj_ik * c_jl * ta[0][ix][iy][iz];
+            a[1][k_wf][l_wf] += conj_ik * c_jl * ta[1][ix][iy][iz];
+            a[2][k_wf][l_wf] += conj_ik * c_jl * ta[2][ix][iy][iz];
+            a[3][k_wf][l_wf] += conj_ik * c_jl * ta[3][ix][iy][iz];
+            a[4][k_wf][l_wf] += conj_ik * c_jl * ta[4][ix][iy][iz];
+            a[5][k_wf][l_wf] += conj_ik * c_jl * ta[5][ix][iy][iz];
+	}
+      }
+    }
+  });
+
+}//update
+////////////////////////////////////////////////////////////////////////////////
 void compute_transform(void)
-{ 
+{
   const int maxsweep = 100;
   const double tol = 1.e-8;
-  auto sweep = jade_complex(maxsweep,tol,a_,u_,adiag_);
+  jade_complex(maxsweep,tol,a_,u_,adiag_);
 }
-
+////////////////////////////////////////////////////////////////////////////////
+auto get_a(void){
+  return a_;
+}
+///
 const states::orbital_set<basis::real_space, complex>& get_wavefunctions() const {
   return wavefunctions_;
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 auto center(T i, const systems::cell & cell_) {
@@ -175,7 +177,6 @@ auto center(T i, const systems::cell & cell_) {
   //const complex<double> sxcx = sx / cx;
   //const complex<double> sycy = sy / cy;
   //const complex<double> szcz = sz / cz;
-  // Next lines: M_1_PI = 1.0/pi // DCY explicit arctan(sx,cx) to work for complex numbers
   const double itwopi = 1.0 / ( 2.0 * M_PI );
   const double t0 = (itwopi * atan2(sx,cx));
   const double t1 = (itwopi * atan2(sy,cy));
@@ -183,23 +184,10 @@ auto center(T i, const systems::cell & cell_) {
   const double x = (t0*cell_[0][0] + t1*cell_[0][1] + t2*cell_[0][2]);
   const double y = (t0*cell_[1][0] + t1*cell_[1][1] + t2*cell_[1][2]);
   const double z = (t0*cell_[2][0] + t1*cell_[2][1] + t2*cell_[2][2]);
-  //const double x = (t0*cell_.a(0).x + t1*cell_.a(1).x + t2*cell_.a(2).x);
-  //const double y = (t0*cell_.a(0).y + t1*cell_.a(1).y + t2*cell_.a(2).y);
-  //const double z = (t0*cell_.a(0).z + t1*cell_.a(1).z + t2*cell_.a(2).z);
   vector3<double> center_d3{x,y,z};
 
   return center_d3;
 }
-
-/*std::vector<inq::math::vector3<double>> get_centers(const systems::cell& cell_) const {
-	int num_states = wavefunctions_.set_size();
-        std::vector<inq::math::vector3<double>> centers(num_states);
-        for (int i = 0; i < num_states; ++i) {
-            centers[i] = center(i, cell_);
-        }
-        return centers;
-}*/
-
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 double wannier_distance(T i, T j, const systems::cell & cell_) {
@@ -211,8 +199,8 @@ double wannier_distance(T i, T j, const systems::cell & cell_) {
   double y_dist = ctr_i[1] - ctr_j[1];
   double z_dist = ctr_i[2] - ctr_j[2];
   double total_dist = x_dist*x_dist + y_dist*y_dist + z_dist*z_dist;
-  double root = std::sqrt(total_dist);
-  return std::abs(root);
+  double root = sqroot(total_dist);
+  return abs(root);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -225,7 +213,6 @@ bool overlap(T1 epsilon, T2 i, T2 j, const systems::cell & cell_) {
   double len = sqrt(x+y+z);
   if (wannier_distance(i,j, cell_) <= epsilon || wannier_distance(i,j, cell_) >= (len - epsilon) )
       return true;  //need sqrt(a0^2 + a1^2 + a2^2) for cell diagonal distance. Diagonal dist - epsilon for pbc
-
   // return false if the states don't overlap
   return false;
 }
@@ -273,13 +260,13 @@ template <typename T>
 double spread2(T i, T j, const systems::cell & cell) {
   assert(i >= 0 && i < wavefunctions_.set_size());
   assert(j >= 0 && j < 3);
-  const std::complex<double> c = adiag_[2*j][i]; //DCY
-  const std::complex<double> s = adiag_[2*j+1][i]; //DCY
-  // Next line: M_1_PI = 1.0/pi
+  const complex c = adiag_[2*j][i]; //DCY
+  const complex s = adiag_[2*j+1][i]; //DCY
   auto recip = cell.reciprocal(j);
   double length = sqrt(recip[0]*recip[0]+ recip[1]*recip[1] + recip[2]*recip[2]);
   const double fac = 1.0 / length;
-  return fac*fac * ( 1.0 - std::norm(c) - std::norm(s) );
+  auto tst = 1.0 - norm(c) - norm(s);
+  return fac*fac * ( 1.0 - norm(c) - norm(s) );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -292,7 +279,7 @@ double spread2(T i, const systems::cell & cell) {
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 double spread(T i, const systems::cell & cell) {
-  return std::sqrt(spread2(i,cell));
+  return sqroot(spread2(i,cell));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -305,7 +292,7 @@ double spread2(const systems::cell & cell) {
 
 ////////////////////////////////////////////////////////////////////////////////
 double spread(const systems::cell & cell) {
-  return sqrt(spread2(cell));
+  return sqroot(spread2(cell));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -316,13 +303,15 @@ auto dipole(const systems::cell & cell) {
     sum -= 2.0 * center(i,cell);  //CS need to pass state occupations (assume fully occupied for now) How?
   return sum;
 }
-
-
 ////////////////////////////////////////////////////////////////////////////////
-};
+void apply_transform(void) {
+
 }
-}
-#endif 
+////////////////////////////////////////////////////////////////////////////////
+}; //tdmlwf
+} //wannier
+} //inq
+#endif
 
 ///////////////////////////////////////////////////////////////////
 #ifdef INQ_WANNIER_TDMLWF_TRANS_UNIT_TEST
@@ -334,84 +323,41 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
         using namespace Catch::literals;
         using Catch::Approx;
 
-	auto local_he = inq::input::species("He").pseudo(inq::config::path::unit_tests_data() + "He.upf");
 	inq::systems::ions sys(inq::systems::cell::cubic(20.0_b).periodic());
-	sys.insert(local_he, {-7.0_b, -7.0_b, -7.0_b});
-	sys.insert(local_he, {8.0_b, 8.0_b, 8.0_b});
+        sys.insert(ionic::species("He").pseudo_file(inq::config::path::pseudo() + "He_ONCV_PBE-1.2.upf.gz"), {-7.0_b, -7.0_b, -7.0_b});
+        sys.insert(ionic::species("He").pseudo_file(inq::config::path::pseudo() + "He_ONCV_PBE-1.2.upf.gz"), {8.0_b, 8.0_b, 8.0_b});
 	inq::systems::electrons el(sys, options::electrons{}.cutoff(30.0_Ry));
 	inq::ground_state::initial_guess(sys, el);
-	
+
 	inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha));
 
 	wannier::tdmlwf_trans mlwf_transformer(el.kpin()[0]);
-        mlwf_transformer.update();
-	mlwf_transformer.compute_transform();
-
-	int i = 0;
-        auto center = mlwf_transformer.center(i, el.states_basis().cell());
-
-        CHECK(center[0] == Approx(8.0_a));
-        CHECK(center[1] == Approx(8.0_a));
-        CHECK(center[2] == Approx(8.0_a));
-
-	double spread = mlwf_transformer.spread(i, el.states_basis().cell());
-        CHECK(spread == Approx(1.16_a));
-	
-	i = 1;
-        auto center2 = mlwf_transformer.center(i, el.states_basis().cell());
-
-        CHECK(center2[0] == Approx(-7.0_a));
-        CHECK(center2[1] == Approx(-7.0_a));
-        CHECK(center2[2] == Approx(-7.0_a));
-	
-	double spread2 = mlwf_transformer.spread(i, el.states_basis().cell());
-        CHECK(spread2 == Approx(1.16_a));
-
-	/*
-		//auto cell = systems::cell::cubic(15.0_b).periodicity(3); 
-	
-        //CS adiag_ values correspond to H2 gs. Should give <mlwf center="    0.000000    0.000000    0.711503 " spread=" 1.578285 "/>
-
-	SECTION("Wannier Centers"){
-
-		//systems::cell cell(vector3<double>(15.0, 0.0, 0.0), vector3<double>(0.0, 15.0, 0.0), vector3<double>(0.0, 0.0, 15.0)); 
-		auto cell = systems::cell::cubic(15.0_b).periodicity(3); //CS more conventional call to a cubic cell with pbc
-		int i = 0;
-		auto center = wannier::center(i, cell); 
-
-		CHECK(center[0] == 0.000000_a);
-		CHECK(center[1] == 0.000000_a);
-		CHECK(center[2] == 0.711503_a); 
-		
-		int j = 0;
-		auto dist = wannier::wannier_distance(i, j, cell);
-		CHECK(dist == 0.00_a);
-		
-		double epsilon = 10.0;
-		auto overlap = wannier::overlap(epsilon, i, j, cell);
-		CHECK(overlap == true);
-		
-		auto ols = wannier::total_overlaps(epsilon, cell);
-		CHECK(ols == 1.00_a);
-		auto pair = wannier::pair_fraction(epsilon,cell);
-		CHECK(pair == 1.00_a);
-
-		double j_0 = wannier::spread2(i,j,cell);
-		CHECK(j_0 == 0.749738_a);
-		double tot = wannier::spread2(i,cell);
-		CHECK(tot == 2.490984_a);
-		double spread = wannier::spread(i,cell);
-		CHECK(spread == 1.578285_a);
-		double sum = wannier::spread2(cell);
-		CHECK(sum == 4.981968_a);
-		double val = wannier::spread(cell);
-		CHECK(val == 2.232032_a);
-		auto dp = wannier::dipole(cell);
-                CHECK(dp[0] == 0.000000_a);
-                CHECK(dp[1] == 0.000000_a);
-                CHECK(dp[2] == -2.846012_a);
-  }*/	
-  	
+	mlwf_transformer.update(el.kpin()[0]);
+        auto a_ = mlwf_transformer.get_a();
+	CHECK(real(a_[0][0][0]) == Approx(-0.68433137));
+    	CHECK(real(a_[0][1][0]) == Approx(-0.00103429));
+    	CHECK(real(a_[0][0][1]) == Approx(-0.00103429));
+    	CHECK(real(a_[0][1][1]) == Approx(-0.68104163));
+    	CHECK(real(a_[1][0][0]) == Approx(-0.09765152));
+    	CHECK(real(a_[1][1][0]) == Approx(0.00727211));
+    	CHECK(real(a_[1][0][1]) == Approx(0.00727210));
+    	CHECK(real(a_[1][1][1]) == Approx(-0.11860232));
+    	CHECK(real(a_[2][0][0]) == Approx(-0.68433137));
+    	CHECK(real(a_[2][1][0]) == Approx(-0.00103429));
+    	CHECK(real(a_[2][0][1]) == Approx(-0.00103429));
+    	CHECK(real(a_[2][1][1]) == Approx(-0.68104162));
+    	CHECK(real(a_[3][0][0]) == Approx(-0.09765152));
+    	CHECK(real(a_[3][1][0]) == Approx(0.00727211));
+    	CHECK(real(a_[3][0][1]) == Approx(0.00727210));
+    	CHECK(real(a_[3][1][1]) == Approx(-0.11860232));
+    	CHECK(real(a_[4][0][0]) == Approx(-0.68433130));
+    	CHECK(real(a_[4][1][0]) == Approx(-0.00103425));
+    	CHECK(real(a_[4][0][1]) == Approx(-0.00103453));
+    	CHECK(real(a_[4][1][1]) == Approx(-0.68104179));
+    	CHECK(real(a_[5][0][0]) == Approx(-0.09765150));
+    	CHECK(real(a_[5][1][0]) == Approx(0.00727212));
+    	CHECK(real(a_[5][0][1]) == Approx(0.00727207));
+    	CHECK(real(a_[5][1][1]) == Approx(-0.11860233));
 }
-#endif  
+#endif
 
