@@ -81,11 +81,6 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 		if(sc.has_induced_vector_potential()) current = observables::current(ions, electrons, ham);
 		
 	if(start_step == 0) func(real_time::viewables{false, start_step, start_step*dt, ions, electrons, energy, forces, ham, pert});
-	observables::mlwf_properties mlwf_props;
-	if (opts.wf_diag_value() == options::real_time::wavefunction_diag::TDMLWF) { //JLB
-		//wannier::tdmlwf_trans mlwf_transformer(electrons.kpin()[0]);
-		mlwf_props.set_mlwf_transformer(wannier::tdmlwf_trans(electrons.kpin()[0]));
-	}
 
 		if(console) console->trace("starting real-time propagation");
 	if(console) console->info("step {:9d} :  t =  {:9.3f}  e = {:.12f}", start_step, start_step*dt, energy.total());
@@ -105,8 +100,9 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 
 			if (opts.wf_diag_value() == options::real_time::wavefunction_diag::TDMLWF) { //JLB
 				{
+			        	observables::mlwf_properties mlwf_props(electrons.kpin()[0]); 
     					std::ofstream output_file("mlwf_results.dat", std::ios_base::app);
-			        	mlwf_props.calculate(output_file, istep, electrons.kpin()[0]);
+			        	mlwf_props.calculate(output_file, istep);
        					output_file.close();
 				}
 			}
