@@ -25,7 +25,7 @@
 #include <wannier/jade_complex.hpp>
 #include <gpu/array.hpp>
 #include <iostream>
-#include <vector> 
+#include <vector>
 
 namespace inq {
 namespace wannier {
@@ -36,60 +36,59 @@ private:
 	gpu::array<complex,2> u_; //JB: have to consider between gpu::array, std::vector of std::vectors, or perhaps matrix::distributed for parallelism?
 	gpu::array<complex,3> a_;
 	gpu::array<complex,2> adiag_;
+	//std::vector<std::vector<std::vector<complex>>> a_;
+	//std::vector<std::vector<inq::complex>> adiag_;
+	//std::vector<std::vector<complex>> u_;
 	states::orbital_set<basis::real_space, complex> wavefunctions_;
 
 public:
 
 ////////////////////////////////////////////////////////////////////////////////
 tdmlwf_trans(states::orbital_set<basis::real_space, complex> const & wavefunctions) : wavefunctions_(wavefunctions) {
+  const int n_states = wavefunctions_.set_size();
+  int nx = wavefunctions_.basis().local_sizes()[0];
+  int ny = wavefunctions_.basis().local_sizes()[1];
+  int nz = wavefunctions_.basis().local_sizes()[2];
+  a_.reextent({6, n_states, n_states});
+  adiag_.reextent({6, n_states});
+  u_.reextent({n_states, n_states});
 
-  const int n = wavefunctions_.set_size();
-  int six = 6;
-  adiag_.reextent({six,n});
-    
-  a_.reextent({six,n,n});
+}//constructor
 
-  u_.reextent({n,n});
-
-}
-////////////////////////////////////////////////////////////////////////////////
 void normalize(void) {
-    CALI_CXX_MARK_SCOPE("wannier_normalize");
-    int n_states = wavefunctions_.set_size();
-    int nx = wavefunctions_.basis().local_sizes()[0];
-    int ny = wavefunctions_.basis().local_sizes()[1];
-    int nz = wavefunctions_.basis().local_sizes()[2];
-    for (int k_wf = 0; k_wf < n_states; ++k_wf) {
-        double norm_squared = 0.0;
-        for (int ix = 0; ix < nx; ++ix) {
-            for (int iy = 0; iy < ny; ++iy) {
-                for (int iz = 0; iz < nz; ++iz) {
-                    complex wf_component = wavefunctions_.hypercubic()[ix][iy][iz][k_wf];
-                    norm_squared += norm(wf_component); 
-                }
-            }
-        }
+  CALI_CXX_MARK_SCOPE("wannier_normalize");
+  int n_states = wavefunctions_.set_size();
+  int nx = wavefunctions_.basis().local_sizes()[0];
+  int ny = wavefunctions_.basis().local_sizes()[1];
+  int nz = wavefunctions_.basis().local_sizes()[2];
 
-        double norm_factor = 1.0 / sqroot(norm_squared);
-        for (int ix = 0; ix < nx; ++ix) {
-            for (int iy = 0; iy < ny; ++iy) {
-                for (int iz = 0; iz < nz; ++iz) {
-                    wavefunctions_.hypercubic()[ix][iy][iz][k_wf] *= norm_factor;
-                }
-            }
+  gpu::run(n_states, [hypercubic = begin(wavefunctions_.hypercubic()), nx, ny, nz] GPU_LAMBDA (auto k_wf) {
+    double norm_squared = 0.0;
+    for (int ix = 0; ix < nx; ++ix){
+      for (int iy = 0; iy < ny; ++iy){
+        for (int iz = 0; iz < nz; ++iz){
+          complex wf_component = hypercubic[ix][iy][iz][k_wf];
+          norm_squared += norm(wf_component);
         }
+      }
     }
-}//normalize 
+
+    double norm_factor = 1.0 / sqroot(norm_squared);
+    for (int ix = 0; ix < nx; ++ix){
+      for (int iy = 0; iy < ny; ++iy){
+        for (int iz = 0; iz < nz; ++iz){
+	  hypercubic[ix][iy][iz][k_wf] *= norm_factor;
+	}
+      }
+    }
+  });
+}
+
 ////////////////////////////////////////////////////////////////////////////////
-void update(void) {
+void update(const states::orbital_set<basis::real_space, complex>& wavefunctions) {
+  wavefunctions_ = wavefunctions;
   CALI_CXX_MARK_SCOPE("wannier_update");
   int n_states = wavefunctions_.set_size();
-  int nprocs = wavefunctions_.basis().comm().size();
-  std::array<int, 2> shape;
-  int dim_x = std::round(std::cbrt(nprocs)); 
-  shape[0] = dim_x;
-  shape[1] = nprocs / dim_x;
-  auto comm = parallel::cartesian_communicator<2>(wavefunctions_.basis().comm(), shape);
   int nx = wavefunctions_.basis().local_sizes()[0];
   int ny = wavefunctions_.basis().local_sizes()[1];
   int nz = wavefunctions_.basis().local_sizes()[2];
@@ -97,6 +96,8 @@ void update(void) {
   double lx = sqroot(wavefunctions_.basis().cell()[0].norm());
   double ly = sqroot(wavefunctions_.basis().cell()[1].norm());
   double lz = sqroot(wavefunctions_.basis().cell()[2].norm());
+
+  auto point_op = wavefunctions_.basis().point_op();
 
   normalize();
 
@@ -112,52 +113,56 @@ void update(void) {
     adiag_int[i][j] = complex(0.0);
   });
 
-  for (int ix = 0; ix < nx; ++ix) {
-    for (int iy = 0; iy < ny; ++iy) {
-      for (int iz = 0; iz < nz; ++iz) {
+  gpu::array<double, 4> trig_array;
+  trig_array.reextent({6, nx, ny, nz});
 
-        auto coords = wavefunctions_.basis().point_op().rvector_cartesian(ix, iy, iz);
-        double cos_x = cos(2.0 * M_PI * coords[0] / lx);
-        double sin_x = sin(2.0 * M_PI * coords[0] / lx);
-        double cos_y = cos(2.0 * M_PI * coords[1] / ly);
-        double sin_y = sin(2.0 * M_PI * coords[1] / ly);
-        double cos_z = cos(2.0 * M_PI * coords[2] / lz);
-        double sin_z = sin(2.0 * M_PI * coords[2] / lz);
+  gpu::run(nz, ny, nx, [point_op, ta = begin(trig_array), lx, ly, lz] GPU_LAMBDA (auto iz, auto iy, auto ix) {
+    auto coords = point_op.rvector_cartesian(ix, iy, iz);
+    ta[0][ix][iy][iz] = cos(2.0 * M_PI * coords[0] / lx);
+    ta[1][ix][iy][iz] = sin(2.0 * M_PI * coords[0] / lx);
+    ta[2][ix][iy][iz] = cos(2.0 * M_PI * coords[1] / ly);
+    ta[3][ix][iy][iz] = sin(2.0 * M_PI * coords[1] / ly);
+    ta[4][ix][iy][iz] = cos(2.0 * M_PI * coords[2] / lz);
+    ta[5][ix][iy][iz] = sin(2.0 * M_PI * coords[2] / lz);
+  });
 
-        for (int k_wf = 0; k_wf < n_states; ++k_wf) {
+  gpu::run(n_states, n_states, [hypercubic = begin(wavefunctions_.hypercubic()), ta = begin(trig_array), lx, ly, lz, nx, ny, nz, a = begin(a_)] GPU_LAMBDA (auto l_wf, auto k_wf) {
+    for (int ix = 0; ix < nx; ix++){
+      for (int iy = 0; iy < ny; iy++){
+        for (int iz = 0; iz < nz; iz++){
 
-          complex c_ik = wavefunctions_.hypercubic()[ix][iy][iz][k_wf];
-          auto conj_ik = conj_cplx(c_ik);
+            complex c_ik = hypercubic[ix][iy][iz][k_wf];
+            auto conj_ik = conj_cplx(c_ik);
 
-          for (int l_wf = 0; l_wf < n_states; ++l_wf) {
+            complex c_jl = hypercubic[ix][iy][iz][l_wf];
 
-            complex c_jl = wavefunctions_.hypercubic()[ix][iy][iz][l_wf];
-
-            a_[0][k_wf][l_wf] += conj_ik * c_jl * cos_x;
-            a_[1][k_wf][l_wf] += conj_ik * c_jl * sin_x;
-            a_[2][k_wf][l_wf] += conj_ik * c_jl * cos_y;
-            a_[3][k_wf][l_wf] += conj_ik * c_jl * sin_y;
-            a_[4][k_wf][l_wf] += conj_ik * c_jl * cos_z;
-            a_[5][k_wf][l_wf] += conj_ik * c_jl * sin_z;
-
-          }
-        }
+            a[0][k_wf][l_wf] += conj_ik * c_jl * ta[0][ix][iy][iz];
+            a[1][k_wf][l_wf] += conj_ik * c_jl * ta[1][ix][iy][iz];
+            a[2][k_wf][l_wf] += conj_ik * c_jl * ta[2][ix][iy][iz];
+            a[3][k_wf][l_wf] += conj_ik * c_jl * ta[3][ix][iy][iz];
+            a[4][k_wf][l_wf] += conj_ik * c_jl * ta[4][ix][iy][iz];
+            a[5][k_wf][l_wf] += conj_ik * c_jl * ta[5][ix][iy][iz];
+	}
       }
     }
-  }
+  });
+
 }//update
 ////////////////////////////////////////////////////////////////////////////////
 void compute_transform(void)
-{ 
+{
   const int maxsweep = 100;
-  const double tol = 1.e-6;
-  wannier::jade_complex(maxsweep,tol,a_,u_,adiag_);
+  const double tol = 1.e-8;
+  jade_complex(maxsweep,tol,a_,u_,adiag_);
 }
 ////////////////////////////////////////////////////////////////////////////////
+auto get_a(void){
+  return a_;
+}
+///
 const states::orbital_set<basis::real_space, complex>& get_wavefunctions() const {
   return wavefunctions_;
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 auto center(T i, const systems::cell & cell_) {
@@ -260,8 +265,8 @@ double spread2(T i, T j, const systems::cell & cell) {
   auto recip = cell.reciprocal(j);
   double length = sqrt(recip[0]*recip[0]+ recip[1]*recip[1] + recip[2]*recip[2]);
   const double fac = 1.0 / length;
+  auto tst = 1.0 - norm(c) - norm(s);
   return fac*fac * ( 1.0 - norm(c) - norm(s) );
-
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -301,12 +306,12 @@ auto dipole(const systems::cell & cell) {
 ////////////////////////////////////////////////////////////////////////////////
 void apply_transform(void) {
 
-} 
+}
 ////////////////////////////////////////////////////////////////////////////////
 }; //tdmlwf
 } //wannier
 } //inq
-#endif 
+#endif
 
 ///////////////////////////////////////////////////////////////////
 #ifdef INQ_WANNIER_TDMLWF_TRANS_UNIT_TEST
@@ -323,32 +328,36 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
         sys.insert(ionic::species("He").pseudo_file(inq::config::path::pseudo() + "He_ONCV_PBE-1.2.upf.gz"), {8.0_b, 8.0_b, 8.0_b});
 	inq::systems::electrons el(sys, options::electrons{}.cutoff(30.0_Ry));
 	inq::ground_state::initial_guess(sys, el);
-	
+
 	inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha));
 
 	wannier::tdmlwf_trans mlwf_transformer(el.kpin()[0]);
-        mlwf_transformer.update();
-	mlwf_transformer.compute_transform();
-
-	int i = 0;
-        auto center = mlwf_transformer.center(i, el.states_basis().cell());
-
-        CHECK(center[0] == Approx(8.0_a));
-        CHECK(center[1] == Approx(8.0_a));
-        CHECK(center[2] == Approx(8.0_a));
-
-	double spread = mlwf_transformer.spread(i, el.states_basis().cell());
-        CHECK(spread == Approx(1.16_a));
-	
-	i = 1;
-        auto center2 = mlwf_transformer.center(i, el.states_basis().cell());
-
-        CHECK(center2[0] == Approx(-7.0_a));
-        CHECK(center2[1] == Approx(-7.0_a));
-        CHECK(center2[2] == Approx(-7.0_a));
-	
-	double spread2 = mlwf_transformer.spread(i, el.states_basis().cell());
-        CHECK(spread2 == Approx(1.16_a));
+	mlwf_transformer.update(el.kpin()[0]);
+        auto a_ = mlwf_transformer.get_a();
+	CHECK(real(a_[0][0][0]) == Approx(-0.68433137));
+    	CHECK(real(a_[0][1][0]) == Approx(-0.00103429));
+    	CHECK(real(a_[0][0][1]) == Approx(-0.00103429));
+    	CHECK(real(a_[0][1][1]) == Approx(-0.68104163));
+    	CHECK(real(a_[1][0][0]) == Approx(-0.09765152));
+    	CHECK(real(a_[1][1][0]) == Approx(0.00727211));
+    	CHECK(real(a_[1][0][1]) == Approx(0.00727210));
+    	CHECK(real(a_[1][1][1]) == Approx(-0.11860232));
+    	CHECK(real(a_[2][0][0]) == Approx(-0.68433137));
+    	CHECK(real(a_[2][1][0]) == Approx(-0.00103429));
+    	CHECK(real(a_[2][0][1]) == Approx(-0.00103429));
+    	CHECK(real(a_[2][1][1]) == Approx(-0.68104162));
+    	CHECK(real(a_[3][0][0]) == Approx(-0.09765152));
+    	CHECK(real(a_[3][1][0]) == Approx(0.00727211));
+    	CHECK(real(a_[3][0][1]) == Approx(0.00727210));
+    	CHECK(real(a_[3][1][1]) == Approx(-0.11860232));
+    	CHECK(real(a_[4][0][0]) == Approx(-0.68433130));
+    	CHECK(real(a_[4][1][0]) == Approx(-0.00103425));
+    	CHECK(real(a_[4][0][1]) == Approx(-0.00103453));
+    	CHECK(real(a_[4][1][1]) == Approx(-0.68104179));
+    	CHECK(real(a_[5][0][0]) == Approx(-0.09765150));
+    	CHECK(real(a_[5][1][0]) == Approx(0.00727212));
+    	CHECK(real(a_[5][0][1]) == Approx(0.00727207));
+    	CHECK(real(a_[5][1][1]) == Approx(-0.11860233));
 }
-#endif  
+#endif
 

@@ -29,7 +29,7 @@ public:
     mlwf_transformer_->update(wavefunctions);
     mlwf_transformer_->compute_transform();
 
-    output_file << "Time step: " << time_step << "\n"; 
+    output_file << "Time step: " << time_step << "\n";
     output_file << "MLWF Centers:\n";
     for (int i = 0; i < wavefunctions.set_size(); ++i) {
        auto center = mlwf_transformer_->center(i, wavefunctions.basis().cell());
@@ -63,6 +63,6 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 	using namespace inq::magnitude;
 	using namespace Catch::literals;
 	using Catch::Approx;
-	
+
 }
 #endif
