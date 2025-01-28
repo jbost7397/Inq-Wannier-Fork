@@ -51,11 +51,17 @@ GPU_FUNCTION inline auto norm(const double & x){
 GPU_FUNCTION inline double conj(const double & x){
 	return x;
 }
+GPU_FUNCTION inline auto conj_cplx(const complex & z){ //CS
+	return conj(z);
+}
 
 GPU_FUNCTION inline auto fabs(complex const & z){
 	return abs(z);
 }
 
+GPU_FUNCTION inline double sqroot(const double & x){  //CS
+	return sqrt(x);
+}
 }
 #endif
 
@@ -74,14 +80,14 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG){
 	CHECK(real(xx) == 203.42_a);
 	CHECK(imag(xx) == 0.0_a);
 	CHECK(norm(xx) == 41379.696_a);
-	CHECK(conj(xx) == xx);
-
+       	CHECK(conj(xx) == xx);
+	CHECK(sqroot(xx) ==  14.2625383435_a);
 	complex zz{-654.21, 890.74};
 
 	CHECK(real(zz) == -654.21_a);
 	CHECK(imag(zz) == 890.74);
 	CHECK(norm(zz) == 1221408.5_a);
 	CHECK(fabs(zz) == 1105.1735_a);
-
+	CHECK(conj_cplx(zz) == complex{-654.21, -890.74});  //CS
 }
 #endif
