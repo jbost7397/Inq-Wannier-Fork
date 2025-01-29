@@ -30,17 +30,17 @@ public:
     mlwf_transformer_->compute_transform();
 
     output_file << "Time step: " << time_step << "\n";
-    output_file << "MLWF Centers:\n";
+    output_file << "MLWFs:\n";
     for (int i = 0; i < wavefunctions.set_size(); ++i) {
        auto center = mlwf_transformer_->center(i, wavefunctions.basis().cell());
-       output_file << "  WF " << i << ": " << center << std::endl;
+       auto spread = mlwf_transformer_->spread(i, wavefunctions.basis().cell());
+       output_file << "  WF " << i + 1 << ": " << center[0] << "     " << center[1] << "     " << center[2] << "     Spread: " << spread << std::endl;
     }
 
-    output_file << "\nMLWF Spreads:\n";
+    /*output_file << "\nMLWF Spreads:\n";
     for (int i = 0; i < wavefunctions.set_size(); ++i) {
-       auto spread = mlwf_transformer_->spread(i, wavefunctions.basis().cell());
        output_file << "  WF " << i << ": " << spread << "\n" << std::endl;
-    }
+    }*/
 
   }
 
