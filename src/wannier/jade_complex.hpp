@@ -13,6 +13,7 @@
 #include <math/complex.hpp>
 #include <matrix/distributed.hpp>
 #include <matrix/gather_scatter.hpp>
+#include <matrix/diagonalize.hpp>
 #include <parallel/communicator.hpp>
 #include <gpu/run.hpp>
 #include <wannier/jacobi_eigenvalue.hpp>
@@ -118,22 +119,51 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                   gpu::atomic::add(&g_int[8], real(conj_cplx(h3) * h3));
 	        });
 
-                    int N = 3; // For Wannier 3x3 matrix size
+                    //int N = 3; // For Wannier 3x3 matrix size
                     //gpu::array<double,1> G = {g11, g12, g13, g21, g22, g23, g31, g32, g33};  // Matrix to be diagonalized
-                    gpu::array<double,1> Q(9); // Eigenvectors
-                    gpu::array<double,1> D(3); // Eigenvalues
-                    jacobi_eigenvalue(N, G, Q, D);
+                    //gpu::array<double,1> Q(9); // Eigenvectors
+                    //gpu::array<double,1> D(3); // Eigenvalues
+                    //jacobi_eigenvalue(N, G, Q, D);
+
+		    gpu::array<double,2> diag = {
+			    {G[0], G[1], G[2]},
+			    {G[3], G[4], G[5]},
+                            {G[6], G[7], G[8]},
+		    };
+
+		    //CS use internal routine (here for non-distributed mat since 3x3 but can move to distributed)
+		    auto evalues = matrix::diagonalize_wann(diag);
 
                     // Extract the largest eigenvalue's vector
-                    double x = Q[6], y = Q[7], z = Q[8];
-                    if (Q[6] < 0.0) {
-                        x = -x; y = -y; z = z;
-                    }
+                    //double x = Q[6], y = Q[7], z = Q[8];
+		    double x1 = diag[2][0],  y1 = diag[2][1], z1 = diag[2][2];
+		    //CS enforce sign of largest eigenvector such that it matches what jacobi would return 
+		    if (fabs(x1) >= fabs(y1) && fabs(x1) >= fabs(z1)) {
+		        if (diag[2][0] < 0.0) {
+        		  x1 = -x1; y1 = -y1; z1 = -z1;
+    			}
+		    } else if (fabs(y1) >= fabs(x1) && fabs(y1) >= fabs(z1)) {
+    			if (diag[2][1] < 0.0) {
+		          x1 = -x1; y1 = -y1; z1 = -z1;
+		        }
+		    } else {
+		        if (diag[2][2] < 0.0 && fabs(z1) >= fabs(x1) && fabs(z1) >= fabs(y1)) {
+        		  x1 = -x1; y1 = -y1; z1 = -z1;
+   			}
+		    }
+
+		    //if (Q[6] < 0.0) {
+                        //x = -x; y = -y; z = z;
+                    //}
+
+		    if (x1 < 0.0) {
+			x1 = -x1; y1 = -y1; z1 = z1; 
+		    }
 
 		    double one = 1.0;
-                    double r = sqroot((x + one) / 2.0); 
+                    double r = sqroot((x1 + one) / 2.0); 
                     complex c = complex(r, 0.0);
-                    complex s = complex(y / (2.0 * r), -z / (2.0 * r));
+                    complex s = complex(y1 / (2.0 * r), -z1 / (2.0 * r));
                     complex sconj = conj_cplx(s);
 
                     for (int k = 0; k < a.size(); ++k) {
