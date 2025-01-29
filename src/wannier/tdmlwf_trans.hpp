@@ -148,7 +148,7 @@ void update(void) {
 }//update
 ////////////////////////////////////////////////////////////////////////////////
 void compute_transform(void)
-{
+{ 
   const int maxsweep = 100;
   const double tol = 1.e-6;
   wannier::jade_complex(maxsweep,tol,a_,u_,adiag_);
@@ -157,6 +157,7 @@ void compute_transform(void)
 const states::orbital_set<basis::real_space, complex>& get_wavefunctions() const {
   return wavefunctions_;
 }
+
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 auto center(T i, const systems::cell & cell_) {
@@ -259,8 +260,8 @@ double spread2(T i, T j, const systems::cell & cell) {
   auto recip = cell.reciprocal(j);
   double length = sqrt(recip[0]*recip[0]+ recip[1]*recip[1] + recip[2]*recip[2]);
   const double fac = 1.0 / length;
-  auto tst = 1.0 - norm(c) - norm(s);
   return fac*fac * ( 1.0 - norm(c) - norm(s) );
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////
