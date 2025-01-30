@@ -20,8 +20,11 @@
 #include <systems/electrons.hpp>
 #include <basis/field.hpp>
 #include <basis/real_space.hpp>
+#include <matrix/gather_scatter.hpp>
 #include <states/ks_states.hpp>
 #include <states/orbital_set.hpp>
+#include <operations/rotate.hpp>
+#include <parallel/communicator.hpp>
 #include <wannier/jade_complex.hpp>
 #include <gpu/array.hpp>
 #include <iostream>
@@ -304,11 +307,11 @@ auto dipole(const systems::cell & cell) {
   return sum;
 }
 ////////////////////////////////////////////////////////////////////////////////
-void apply_transform(void) {
-        parallel::communicator comm{boost::mpi3::environment::get_world_instance()};
-        parallel::cartesian_communicator<2> cart_comm(comm, {});
-        auto rot = matrix::scatter(cart_comm, u_, /* root = */ 0);
-        operations::rotate(rot, phi);
+void apply_transform(states::orbital_set<basis::real_space, complex> & phi) {
+  	parallel::communicator comm{boost::mpi3::environment::get_world_instance()};
+  	parallel::cartesian_communicator<2> cart_comm(comm, {});
+	auto rot = matrix::scatter(cart_comm, u_, /* root = */ 0);	
+	operations::rotate(rot, phi);
 }
 ////////////////////////////////////////////////////////////////////////////////
 }; //tdmlwf
@@ -335,32 +338,27 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 	inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha));
 
 	wannier::tdmlwf_trans mlwf_transformer(el.kpin()[0]);
-	mlwf_transformer.update(el.kpin()[0]);
-        auto a_ = mlwf_transformer.get_a();
-	CHECK(real(a_[0][0][0]) == Approx(-0.68433137));
-    	CHECK(real(a_[0][1][0]) == Approx(-0.00103429));
-    	CHECK(real(a_[0][0][1]) == Approx(-0.00103429));
-    	CHECK(real(a_[0][1][1]) == Approx(-0.68104163));
-    	CHECK(real(a_[1][0][0]) == Approx(-0.09765152));
-    	CHECK(real(a_[1][1][0]) == Approx(0.00727211));
-    	CHECK(real(a_[1][0][1]) == Approx(0.00727210));
-    	CHECK(real(a_[1][1][1]) == Approx(-0.11860232));
-    	CHECK(real(a_[2][0][0]) == Approx(-0.68433137));
-    	CHECK(real(a_[2][1][0]) == Approx(-0.00103429));
-    	CHECK(real(a_[2][0][1]) == Approx(-0.00103429));
-    	CHECK(real(a_[2][1][1]) == Approx(-0.68104162));
-    	CHECK(real(a_[3][0][0]) == Approx(-0.09765152));
-    	CHECK(real(a_[3][1][0]) == Approx(0.00727211));
-    	CHECK(real(a_[3][0][1]) == Approx(0.00727210));
-    	CHECK(real(a_[3][1][1]) == Approx(-0.11860232));
-    	CHECK(real(a_[4][0][0]) == Approx(-0.68433130));
-    	CHECK(real(a_[4][1][0]) == Approx(-0.00103425));
-    	CHECK(real(a_[4][0][1]) == Approx(-0.00103453));
-    	CHECK(real(a_[4][1][1]) == Approx(-0.68104179));
-    	CHECK(real(a_[5][0][0]) == Approx(-0.09765150));
-    	CHECK(real(a_[5][1][0]) == Approx(0.00727212));
-    	CHECK(real(a_[5][0][1]) == Approx(0.00727207));
-    	CHECK(real(a_[5][1][1]) == Approx(-0.11860233));
+        mlwf_transformer.update(el.kpin()[0]);
+	mlwf_transformer.compute_transform();
+
+	int i = 0;
+        auto center = mlwf_transformer.center(i, el.states_basis().cell());
+
+        CHECK(center[0] == Approx(8.0_a));
+        CHECK(center[1] == Approx(8.0_a));
+        CHECK(center[2] == Approx(8.0_a));
+
+	double spread = mlwf_transformer.spread(i, el.states_basis().cell());
+        CHECK(spread == Approx(1.16_a));
+
+	i = 1;
+        auto center2 = mlwf_transformer.center(i, el.states_basis().cell());
+
+        CHECK(center2[0] == Approx(-7.0_a));
+        CHECK(center2[1] == Approx(-7.0_a));
+        CHECK(center2[2] == Approx(-7.0_a));
+
+	double spread2 = mlwf_transformer.spread(i, el.states_basis().cell());
+        CHECK(spread2 == Approx(1.16_a));
 }
 #endif
-
