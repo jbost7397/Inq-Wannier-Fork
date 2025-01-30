@@ -32,7 +32,6 @@ namespace wannier {
 template <typename T, typename T1, class MatrixType1, class MatrixType2, class MatrixType3>
 void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType3& adiag) {
 
-    CALI_CXX_MARK_SCOPE("wannier_jade");
     assert(tol > std::numeric_limits<double>::epsilon());
 
     int n = std::get<0>(sizes(a)); // 6 for all wannier
@@ -74,14 +73,18 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     //std::vector<complex> apq(a.size()*3*nploc);
     gpu::array<complex,1> apq(n * 3 * nploc);
     //fix dummy vector passing for nploc_odd case CS
- 
-    while (!done) {
+
+    CALI_CXX_MARK_SCOPE("jade");
+    {
+
+      while (!done) {
         ++nsweep;
         double diag_change = 0.0;
         // sweep local pairs and rotate 2*np -1 times
         for (int irot = 0; irot < 2*np-1; ++irot) {
-            //jacobi rotations for local pairs
-            //of diagonal elements for all pairs (apq)
+            //jacobi rotations for local pairs of diagonal elements for all pairs (apq)
+          {     CALI_CXX_MARK_SCOPE("gpu_run_loop1");
+	    //CS profile shows this is pretty fast (and correct)
 	    gpu::run(n, nploc, mloc, [n, nploc, mloc, a_int=begin(a), u_int=begin(u), apq_int=begin(apq), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA(auto k, auto ipair, auto ii) { 
 	      const int iapq = 3 * ipair + k * 3 * nploc;
               if (ii == 0) {
@@ -95,7 +98,9 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                 gpu::atomic::add(&apq_int[iapq + 2], conj_cplx(a_int[k][bot_int[ipair]][ii]) * u_int[bot_int[ipair]][ii]);
 	      }
               });
+            }
 
+          {     CALI_CXX_MARK_SCOPE("gpu_run_loop2");
             for (int ipair = 0; ipair < nploc; ++ipair) {
 	      gpu::array<double,1> G({9},0.0);
               if (top[ipair] < mloc && bot[ipair] < mloc) {
@@ -111,11 +116,8 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 		  gpu::atomic::add(&g_int[0], real(conj_cplx(h1) * h1));
                   gpu::atomic::add(&g_int[1], real(conj_cplx(h1) * h2));
                   gpu::atomic::add(&g_int[2], real(conj_cplx(h1) * h3));
-                  gpu::atomic::add(&g_int[3], real(conj_cplx(h2) * h1));
                   gpu::atomic::add(&g_int[4], real(conj_cplx(h2) * h2));
                   gpu::atomic::add(&g_int[5], real(conj_cplx(h2) * h3));
-                  gpu::atomic::add(&g_int[6], real(conj_cplx(h3) * h1));
-                  gpu::atomic::add(&g_int[7], real(conj_cplx(h3) * h2));
                   gpu::atomic::add(&g_int[8], real(conj_cplx(h3) * h3));
 	        });
 
@@ -127,8 +129,8 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
 		    gpu::array<double,2> diag = {
 			    {G[0], G[1], G[2]},
-			    {G[3], G[4], G[5]},
-                            {G[6], G[7], G[8]},
+			    {G[1], G[4], G[5]},
+                            {G[2], G[5], G[8]},
 		    };
 
 		    //CS use internal routine (here for non-distributed mat since 3x3 but can move to distributed)
@@ -213,37 +215,36 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                     diag_change += diag_change_ipair[0];
                 }
             }//for ipair
-
-            // Rotate top and bot arrays //CS is there a faster way to rotate??
+	}
+          {     CALI_CXX_MARK_SCOPE("gpu_run_loop3");
+            // Rotate top and bot arrays //CS ~85% speed up now 
             if (nploc > 0) {
 		int top_back = top[nploc - 1];
 		int bot_front = bot[0];
-		gpu::run(nploc-1, [bot_int=begin(bot)] GPU_LAMBDA (auto j) { 
+		gpu::run(nploc-1, [bot_int=begin(bot), top_int=begin(top)] GPU_LAMBDA (auto j) { 
 	          bot_int[j] = bot_int[j+1];
-		});
-		bot[nploc - 1] = top_back;
-                gpu::run(nploc-1, [top_int=begin(top)] GPU_LAMBDA (auto j) {
 		  top_int[j + 1] = top_int[j];
                 });
-		top[0] = bot_front;
+	        gpu::run(1, [nploc, top_back, bot_front, top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA (auto i) {
+		    bot_int[nploc - 1] = top_back;
+		    top_int[0] = bot_front;
             	    if (nploc > 1) {
-		      gpu::run(1, [top_int=begin(top)] GPU_LAMBDA (auto i) {
 		        int tmp = top_int[0];
 			top_int[0] = top_int[1];
 			top_int[1] = tmp;
-		      });
 	            } else {
-			gpu::run(1, [bot_int=begin(bot), top_int=begin(top)] GPU_LAMBDA (auto i) {
 			  int tmp = top_int[0];
 			  top_int[0] = bot_int[0];
 			  bot_int[0] = tmp;
-		        });
-	            } 
-	      } //if nploc >0 
+		    }
+		});
+	       }//if nploc >0 
+	    } //scope of loop 
 	} //irot*/
        done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
        //done = (nsweep >= maxsweep);
     } //while 
+    } //scope
 
     //eigenvalue array
     adiag.reextent({n, mloc}); 
