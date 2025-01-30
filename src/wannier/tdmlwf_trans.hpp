@@ -305,7 +305,10 @@ auto dipole(const systems::cell & cell) {
 }
 ////////////////////////////////////////////////////////////////////////////////
 void apply_transform(void) {
-
+        parallel::communicator comm{boost::mpi3::environment::get_world_instance()};
+        parallel::cartesian_communicator<2> cart_comm(comm, {});
+        auto rot = matrix::scatter(cart_comm, u_, /* root = */ 0);
+        operations::rotate(rot, phi);
 }
 ////////////////////////////////////////////////////////////////////////////////
 }; //tdmlwf
