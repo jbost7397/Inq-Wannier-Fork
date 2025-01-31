@@ -98,95 +98,230 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                 gpu::atomic::add(&apq_int[iapq + 2], conj_cplx(a_int[k][bot_int[ipair]][ii]) * u_int[bot_int[ipair]][ii]);
 	      }
               });
+             gpu::sync();
             }
 
-          {     CALI_CXX_MARK_SCOPE("gpu_run_loop2");
-            for (int ipair = 0; ipair < nploc; ++ipair) {
-	      gpu::array<double,1> G({9},0.0);
-              if (top[ipair] < mloc && bot[ipair] < mloc) {
-                gpu::run(n, [n, nploc, mloc, ipair, apq_int=begin(apq), g_int=begin(G)] GPU_LAMBDA (auto k) {
-		  const int iapq = 3 * ipair + k * 3 * nploc;
-                  const complex aij = apq_int[iapq];
-                  const complex aii = apq_int[iapq + 1];
-                  const complex ajj = apq_int[iapq + 2];
+          { CALI_CXX_MARK_SCOPE("gpu_run_loop2");
+	    //CS initalize gpu arrays to hold rotation values 
+	    gpu::array<complex,1> s_mat({nploc}, 0.0);
+            gpu::array<complex,1> c_mat({nploc}, 0.0);
 
-                  const complex h1 = aii - ajj;
-                  const complex h2 = aij + conj_cplx(aij);
-                  const complex h3 = complex(0.0, 1.0) * (aij - conj_cplx(aij));		  
-		  gpu::atomic::add(&g_int[0], real(conj_cplx(h1) * h1));
-                  gpu::atomic::add(&g_int[1], real(conj_cplx(h1) * h2));
-                  gpu::atomic::add(&g_int[2], real(conj_cplx(h1) * h3));
-                  gpu::atomic::add(&g_int[4], real(conj_cplx(h2) * h2));
-                  gpu::atomic::add(&g_int[5], real(conj_cplx(h2) * h3));
-                  gpu::atomic::add(&g_int[8], real(conj_cplx(h3) * h3));
-	        });
+	      //CS loop over nploc and for all pairs construct G to be diagonalized
+	      gpu::run(nploc, [mloc, nploc, n, apq_int=begin(apq), bot_int=begin(bot), top_int=begin(top), rot_array_c=begin(c_mat), rot_array_s=begin(s_mat)] GPU_LAMBDA (auto ipair) {
+	      for (int ipair = 0; ipair < nploc; ++ipair) {
+                if (top_int[ipair] < mloc && bot_int[ipair] < mloc) {
+		  double G[9] = {0.0};
+		  for (int k = 0; k < n; ++k) {
+		    const int iapq = 3 * ipair + k * 3 * nploc;
+                    const complex aij = apq_int[iapq];
+                    const complex aii = apq_int[iapq + 1];
+                    const complex ajj = apq_int[iapq + 2];
 
-                    //int N = 3; // For Wannier 3x3 matrix size
-                    //gpu::array<double,1> G = {g11, g12, g13, g21, g22, g23, g31, g32, g33};  // Matrix to be diagonalized
-                    //gpu::array<double,1> Q(9); // Eigenvectors
-                    //gpu::array<double,1> D(3); // Eigenvalues
-                    //jacobi_eigenvalue(N, G, Q, D);
+                    const complex h1 = aii - ajj;
+                    const complex h2 = aij + conj_cplx(aij);
+                    const complex h3 = complex(0.0, 1.0) * (aij - conj_cplx(aij));
+                    G[0] += real(conj_cplx(h1) * h1);
+                    G[1] += real(conj_cplx(h1) * h2);
+                    G[2] += real(conj_cplx(h1) * h3);
+                    G[3] += real(conj_cplx(h2) * h1);
+                    G[4] += real(conj_cplx(h2) * h2);
+                    G[5] += real(conj_cplx(h2) * h3);
+                    G[6] += real(conj_cplx(h3) * h1);
+                    G[7] += real(conj_cplx(h3) * h2);
+                    G[8] += real(conj_cplx(h3) * h3);
+                  }
 
-		    gpu::array<double,2> diag = {
-			    {G[0], G[1], G[2]},
-			    {G[1], G[4], G[5]},
-                            {G[2], G[5], G[8]},
-		    };
+		   //CS Jacobi within loop, initalize eigenvector and value array values 
+                   double v[9] = {0.0};
+                   double bw[3] = {0.0};
+                   double zw[3] = {0.0};
+                   double d[3] = {0.0};
 
-		    //CS use internal routine (here for non-distributed mat since 3x3 but can move to distributed)
-		    auto evalues = matrix::diagonalize_wann(diag);
+ 		   d[0] = G[0]; d[1] = G[4]; d[2] = G[8];
+	           v[0] = 1.0; v[4] = 1.0; v[8] = 1.0; 
+	           bw[0] = G[0]; bw[1] = G[4]; bw[2] = G[8];
 
-                    // Extract the largest eigenvalue's vector
-                    //double x = Q[6], y = Q[7], z = Q[8];
-		    double x1 = diag[2][0],  y1 = diag[2][1], z1 = diag[2][2];
-		    //CS enforce sign of largest eigenvector such that it matches what jacobi would return 
-		    if (fabs(x1) >= fabs(y1) && fabs(x1) >= fabs(z1)) {
-		        if (diag[2][0] < 0.0) {
-        		  x1 = -x1; y1 = -y1; z1 = -z1;
-    			}
-		    } else if (fabs(y1) >= fabs(x1) && fabs(y1) >= fabs(z1)) {
-    			if (diag[2][1] < 0.0) {
-		          x1 = -x1; y1 = -y1; z1 = -z1;
-		        }
-		    } else {
-		        if (diag[2][2] < 0.0 && fabs(z1) >= fabs(x1) && fabs(z1) >= fabs(y1)) {
-        		  x1 = -x1; y1 = -y1; z1 = -z1;
-   			}
-		    }
+	           int it_num = 0;
+		   const int it_max = 10000;
+	           int rot_num = 0; 
 
-		    //if (Q[6] < 0.0) {
-                        //x = -x; y = -y; z = z;
-                    //}
+    		   while (it_num < it_max) {
+                   it_num = it_num + 1;
 
-		    if (x1 < 0.0) {
-			x1 = -x1; y1 = -y1; z1 = z1; 
-		    }
+                   double thresh = 0.0;
+    		   for (int j = 0; j < 3; j++ ) {
+	             for (int i = 0; i < j; i++ ) {
+	               thresh = thresh + G[i+j*3] * G[i+j*3];
+      		     }
+    		   }
 
-		    double one = 1.0;
-                    double r = sqroot((x1 + one) / 2.0); 
-                    complex c = complex(r, 0.0);
-                    complex s = complex(y1 / (2.0 * r), -z1 / (2.0 * r));
-                    complex sconj = conj_cplx(s);
+    		   thresh = sqroot(thresh)/(12);
+	           if (thresh == 0.0) {
+                     break;
+                   }
 
-                    for (int k = 0; k < a.size(); ++k) {
+	           for (int p = 0; p < 3; ++p) {
+                    for (int q = p + 1; q < 3; ++q) {
+                      double gapq = 10.0 * fabs(G[p + q * 3]);
+                      double termp = gapq + fabs(d[p]);
+                      double termq = gapq + fabs(d[q]);
+                      if (4 < it_num && termp == fabs(d[p]) && termq == fabs(d[q])) {
+                        G[p + q * 3] = 0.0;
+                      } else if (thresh <= fabs(G[p + q * 3])) {
+                        double h = d[q] - d[p];
+                        double term = fabs(h) + gapq;
+
+                        double t;
+                        if (term == fabs(h)) {
+                          t = G[p + q * 3] / h;
+                        } else {
+                          double theta = 0.5 * h / G[p + q * 3];
+                          t = 1.0 / (fabs(theta) + sqroot(1.0 + theta * theta));
+                          if (theta < 0.0) {
+                            t = -t;
+                          }
+                        }
+
+                       double c = 1.0 / sqroot(1.0 + t * t);
+                       double s = t * c;
+                       double tau = s / (1.0 + c);
+                       h = t * G[p + q * 3];
+                       zw[p] -= h;
+                       zw[q] += h;
+                       d[p] -= h;
+                       d[q] += h;
+                       G[p + q * 3] = 0.0;
+
+                       for (int j = 0; j < p; ++j) {
+                         double g = G[j + p * 3];
+                         double h = G[j + q * 3];
+                         G[j + p * 3] = g - s * (h + g * tau);
+                         G[j + q * 3] = h + s * (g - h * tau);
+                       }
+
+                       for (int j = p + 1; j < q; ++j) {
+                         double g = G[p + j * 3];
+                         double h = G[j + q * 3];
+                         G[p + j * 3] = g - s * (h + g * tau);
+                         G[j + q * 3] = h + s * (g - h * tau);
+                       }
+
+                       for (int j = q + 1; j < 3; ++j) {
+                         double g = G[p + j * 3];
+                         double h = G[q + j * 3];
+                         G[p + j * 3] = g - s * (h + g * tau);
+                         G[q + j * 3] = h + s * (g - h * tau);
+                       }
+
+                       for (int j = 0; j < 3; ++j) {
+                         double g = v[j + p * 3];
+                         double h = v[j + q * 3];
+                         v[j + p * 3] = g - s * (h + g * tau);
+                         v[j + q * 3] = h + s * (g - h * tau);
+                       }
+
+                      rot_num++;
+                      }
+                    }
+                  }
+                  for (int i = 0; i < 3; ++i) {
+                    bw[i] += zw[i];
+                    d[i] = bw[i];
+                    zw[i] = 0.0;
+                  }
+                }
+
+                for (int j = 0; j < 3; ++j) {
+                  for (int i = 0; i < j; ++i) {
+                    G[i + j * 3] = G[j + i * 3];
+                  }
+                }
+
+    	       for (int k = 0; k < 2; ++k) {
+               int m = k;
+                 for (int l = k + 1; l < 3; ++l) {
+                   if (d[l] < d[m]) {
+                     m = l;
+                   }
+                 }
+                 if (m != k) {
+		   auto tmp = d[m];
+		   d[m] = d[k];
+		   d[k] = tmp; 
+                   for (int i = 0; i < 3; ++i) {
+		     auto tmp = v[i + m * 3];
+		     v[i + m * 3] = v[i + k * 3];
+		     v[i + k * 3] = tmp; 
+                   }
+                 }
+               }
+
+	       //CS v now contains the eigenvectors 
+	       double x = v[6], y = v[7], z = v[8];
+	       if (v[6] < 0.0) {
+                 x = -x; y = -y; z = z;
+               }
+
+               double one = 1.0;
+               double r = sqroot((x + one) / 2.0);
+               complex c = complex(r, 0.0);
+               complex s = complex(y / (2.0 * r), -z / (2.0 * r));
+               complex sconj = conj_cplx(s);
+	       rot_array_c[ipair] = c; 
+               rot_array_s[ipair] = s; 
+       }
+     }
+    });
+    gpu::sync();
+
+               for (int ipair = 0; ipair < nploc; ++ipair) {
+                 if (top[ipair] < mloc && bot[ipair] < mloc) {
+                    complex sconj = conj_cplx(s_mat[ipair]);
+                    complex c = c_mat[ipair];
+                    complex s = s_mat[ipair];
+                    for (int k = 0; k < n; ++k) {
                       //Apply plane rotation
-		      //routine now internal
+                      //routine now internal
 		      gpu::array<complex,1> ap(mloc);
                       gpu::array<complex,1> aq(mloc);
-		      //gpu::run(mloc, [mloc, ipair, k, ap_int=begin(ap), aq_int=begin(aq), a_int=begin(a), bot_int=begin(bot), top_int=begin(top)] GPU_LAMBDA (auto ii) {
                       for (int ii = 0; ii < mloc; ++ii) {
                         ap[ii] = c * a[k][top[ipair]][ii] + sconj * a[k][bot[ipair]][ii];
                         aq[ii] = -s*a[k][top[ipair]][ii] + c * a[k][bot[ipair]][ii];
-		        //ap[ii]=a[k][top[ipair]][ii];
-	                //aq[ii]=a[k][bot[ipair]][ii];
                       }
-	              //plane_rot(ap,aq,c,sconj); //CS slow but good for debug, need cuda solver wrapper
                       for (int ii = 0; ii < mloc; ++ii) {
                         a[k][top[ipair]][ii] = ap[ii];
                         a[k][bot[ipair]][ii] = aq[ii];
               		}
 		    }
+		  }
+		}
 
+	       /*gpu::run(nploc, [n, nploc, mloc, a_int=begin(a), top_int=begin(top), bot_int=begin(bot), c_matrix=begin(c_mat), s_matrix=begin(s_mat), ap=begin(ap_tmp), aq=begin(aq_tmp)] GPU_LAMBDA (auto ipair) {  
+	         if (top_int[ipair] < mloc && bot_int[ipair] < mloc) {
+		    int top = top_int[ipair];
+		    int bot = bot_int[ipair];
+	            complex sconj = conj_cplx(s_matrix[ipair]);
+		    complex c = c_matrix[ipair];
+		    complex s = s_matrix[ipair]; 
+                    for (int k = 0; k < n; ++k) {
+                      //Apply plane rotation
+		      //routine now internal
+                      for (int ii = 0; ii < mloc; ++ii) {
+                        complex ap = c * a_int[k][top][ii] + sconj * a_int[k][bot][ii];
+                        complex aq = -s * a_int[k][top][ii] + c * a_int[k][bot][ii];
+                        a_int[k][top][ii] = ap;
+                        a_int[k][bot][ii] = aq;
+                      }
+		   }
+		}
+              });
+              gpu::sync();*/
+
+               for (int ipair = 0; ipair < nploc; ++ipair) {
+                 if (top[ipair] < mloc && bot[ipair] < mloc) {
+                    complex sconj = conj_cplx(s_mat[ipair]);
+                    complex c = c_mat[ipair];
+                    complex s = s_mat[ipair];
 		    //rotate u 
                     //plane_rot(up, uq, c, sconj);
           	    gpu::array<complex,1> up(mloc);
@@ -199,8 +334,10 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                        u[top[ipair]][ii] = up[ii];
                        u[bot[ipair]][ii] = uq[ii];
                      }
+		 }
+	    }
 
-                    // new value of off-diag element apq
+        /*             // new value of off-diag element apq
 		    gpu::array<double,1> diag_change_ipair({1},0.0);
 		    gpu::run(n, [diag_change_ipair_int=begin(diag_change_ipair), ipair, n, nploc, apq_int=begin(apq), c, s, sconj] GPU_LAMBDA (auto k) {
 			const int iapq = 3 * ipair + k * 3 * nploc;
@@ -213,8 +350,9 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                         gpu::atomic::add(&diag_change_ipair_int[0], 2.0 * fabs(apq_new - real(aii - ajj)));
 			});
                     diag_change += diag_change_ipair[0];
-                }
-            }//for ipair
+                }*/
+ //           } //for ipair
+   //       });
 	}
           {     CALI_CXX_MARK_SCOPE("gpu_run_loop3");
             // Rotate top and bot arrays //CS ~85% speed up now 
@@ -241,8 +379,8 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 	       }//if nploc >0 
 	    } //scope of loop 
 	} //irot*/
-       done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
-       //done = (nsweep >= maxsweep);
+       //done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
+       done = (nsweep >= 30);
     } //while 
     } //scope
 
