@@ -274,6 +274,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     });
     gpu::sync();
 
+	       //CS need this final loop over ipair on gpu for fastest result, but keep getting small error
                for (int ipair = 0; ipair < nploc; ++ipair) {
                  if (top[ipair] < mloc && bot[ipair] < mloc) {
                     complex sconj = conj_cplx(s_mat[ipair]);
@@ -291,37 +292,9 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                       for (int ii = 0; ii < mloc; ++ii) {
                         a[k][top[ipair]][ii] = ap[ii];
                         a[k][bot[ipair]][ii] = aq[ii];
-              		}
+              	      }
 		    }
-		  }
-		}
 
-	       /*gpu::run(nploc, [n, nploc, mloc, a_int=begin(a), top_int=begin(top), bot_int=begin(bot), c_matrix=begin(c_mat), s_matrix=begin(s_mat), ap=begin(ap_tmp), aq=begin(aq_tmp)] GPU_LAMBDA (auto ipair) {  
-	         if (top_int[ipair] < mloc && bot_int[ipair] < mloc) {
-		    int top = top_int[ipair];
-		    int bot = bot_int[ipair];
-	            complex sconj = conj_cplx(s_matrix[ipair]);
-		    complex c = c_matrix[ipair];
-		    complex s = s_matrix[ipair]; 
-                    for (int k = 0; k < n; ++k) {
-                      //Apply plane rotation
-		      //routine now internal
-                      for (int ii = 0; ii < mloc; ++ii) {
-                        complex ap = c * a_int[k][top][ii] + sconj * a_int[k][bot][ii];
-                        complex aq = -s * a_int[k][top][ii] + c * a_int[k][bot][ii];
-                        a_int[k][top][ii] = ap;
-                        a_int[k][bot][ii] = aq;
-                      }
-		   }
-		}
-              });
-              gpu::sync();*/
-
-               for (int ipair = 0; ipair < nploc; ++ipair) {
-                 if (top[ipair] < mloc && bot[ipair] < mloc) {
-                    complex sconj = conj_cplx(s_mat[ipair]);
-                    complex c = c_mat[ipair];
-                    complex s = s_mat[ipair];
 		    //rotate u 
                     //plane_rot(up, uq, c, sconj);
           	    gpu::array<complex,1> up(mloc);
@@ -334,25 +307,21 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                        u[top[ipair]][ii] = up[ii];
                        u[bot[ipair]][ii] = uq[ii];
                      }
-		 }
-	    }
 
-        /*             // new value of off-diag element apq
-		    gpu::array<double,1> diag_change_ipair({1},0.0);
-		    gpu::run(n, [diag_change_ipair_int=begin(diag_change_ipair), ipair, n, nploc, apq_int=begin(apq), c, s, sconj] GPU_LAMBDA (auto k) {
-			const int iapq = 3 * ipair + k * 3 * nploc;
-                        const complex aii = apq_int[iapq + 1];
-                        const complex ajj = apq_int[iapq + 2];
+                    // new value of off-diag element apq
+		    double diag_change_ipair = 0.0;
+                    for (int k = 0; k < n; ++k) {
+                        const int iapq = 3 * ipair + k * 3 * nploc;
+                        const complex aii = apq[iapq + 1];
+                        const complex ajj = apq[iapq + 2];
                         const complex v1 = conj_cplx(c) * c - sconj * s;
 
-                        double apq_new = real(v1 * (aii - ajj) + 2.0 * c * s * apq_int[iapq] + 2.0 * sconj * c * apq_int[iapq]);
-                        //diag_change_ipair += 2.0 * fabs(apq_new - real(aii - ajj));
-                        gpu::atomic::add(&diag_change_ipair_int[0], 2.0 * fabs(apq_new - real(aii - ajj)));
-			});
-                    diag_change += diag_change_ipair[0];
-                }*/
- //           } //for ipair
-   //       });
+                        double apq_new = real(v1 * (aii - ajj) + 2.0 * c * s * apq[iapq] + 2.0 * sconj * c * apq[iapq]);
+                        diag_change_ipair += 2.0 * fabs(apq_new - real(aii - ajj));
+			}
+                    diag_change += diag_change_ipair;
+                } //if less than mloc 
+            }//for ipair
 	}
           {     CALI_CXX_MARK_SCOPE("gpu_run_loop3");
             // Rotate top and bot arrays //CS ~85% speed up now 
@@ -376,11 +345,11 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 			  bot_int[0] = tmp;
 		    }
 		});
-	       }//if nploc >0 
+	       } //if nploc >0 
 	    } //scope of loop 
-	} //irot*/
-       //done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
-       done = (nsweep >= 30);
+	} //irot
+       done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
+       //done = (nsweep >= 30);
     } //while 
     } //scope
 
