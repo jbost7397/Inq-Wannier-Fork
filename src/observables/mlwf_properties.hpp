@@ -26,7 +26,7 @@ public:
       : mlwf_transformer_(mlwf_transformer) {}
 
   void calculate(std::ofstream& output_file, int time_step, const states::orbital_set<basis::real_space, complex>& wavefunctions) {
-    mlwf_transformer_->update(wavefunctions);
+    mlwf_transformer_->update();
     mlwf_transformer_->compute_transform();
 
     output_file << "Time step: " << time_step << "\n";
@@ -36,15 +36,10 @@ public:
        auto spread = mlwf_transformer_->spread(i, wavefunctions.basis().cell());
        output_file << "  WF " << i + 1 << ": " << center[0] << "     " << center[1] << "     " << center[2] << "     Spread: " << spread << std::endl;
     }
-
-    /*output_file << "\nMLWF Spreads:\n";
-    for (int i = 0; i < wavefunctions.set_size(); ++i) {
-       output_file << "  WF " << i << ": " << spread << "\n" << std::endl;
-    }*/
-
   }
 
 private:
+
   std::optional<wannier::tdmlwf_trans> mlwf_transformer_;
 };
 } // namespace observables

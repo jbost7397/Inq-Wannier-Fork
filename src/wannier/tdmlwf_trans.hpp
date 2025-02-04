@@ -59,6 +59,7 @@ tdmlwf_trans(states::orbital_set<basis::real_space, complex> const & wavefunctio
 }//constructor
 
 void normalize(void) {
+
   CALI_CXX_MARK_SCOPE("wannier_normalize");
   int n_states = wavefunctions_.set_size();
   int nx = wavefunctions_.basis().local_sizes()[0];
@@ -74,6 +75,7 @@ void normalize(void) {
           norm_squared += norm(wf_component);
         }
       }
+
     }
 
     double norm_factor = 1.0 / sqroot(norm_squared);
@@ -85,8 +87,7 @@ void normalize(void) {
       }
     }
   });
-}
-
+}//normalize 
 ////////////////////////////////////////////////////////////////////////////////
 void update(const states::orbital_set<basis::real_space, complex>& wavefunctions) {
   wavefunctions_ = wavefunctions;
@@ -99,6 +100,7 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
   double lx = sqroot(wavefunctions_.basis().cell()[0].norm());
   double ly = sqroot(wavefunctions_.basis().cell()[1].norm());
   double lz = sqroot(wavefunctions_.basis().cell()[2].norm());
+  auto point_op = wavefunctions_.basis().point_op();
 
   auto point_op = wavefunctions_.basis().point_op();
 
@@ -149,7 +151,6 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
       }
     }
   });
-
 }//update
 ////////////////////////////////////////////////////////////////////////////////
 void compute_transform(void)
