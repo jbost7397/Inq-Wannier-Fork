@@ -20,12 +20,15 @@
 #include <systems/electrons.hpp>
 #include <basis/field.hpp>
 #include <basis/real_space.hpp>
+#include <matrix/gather_scatter.hpp>
 #include <states/ks_states.hpp>
 #include <states/orbital_set.hpp>
+#include <operations/rotate.hpp>
+#include <parallel/communicator.hpp>
 #include <wannier/jade_complex.hpp>
 #include <gpu/array.hpp>
 #include <iostream>
-#include <vector> 
+#include <vector>
 
 namespace inq {
 namespace wannier {
@@ -59,37 +62,32 @@ void normalize(void) {
     int nx = wavefunctions_.basis().local_sizes()[0];
     int ny = wavefunctions_.basis().local_sizes()[1];
     int nz = wavefunctions_.basis().local_sizes()[2];
-    for (int k_wf = 0; k_wf < n_states; ++k_wf) {
-        double norm_squared = 0.0;
-        for (int ix = 0; ix < nx; ++ix) {
-            for (int iy = 0; iy < ny; ++iy) {
-                for (int iz = 0; iz < nz; ++iz) {
-                    complex wf_component = wavefunctions_.hypercubic()[ix][iy][iz][k_wf];
-                    norm_squared += norm(wf_component); 
-                }
-            }
-        }
 
-        double norm_factor = 1.0 / sqroot(norm_squared);
-        for (int ix = 0; ix < nx; ++ix) {
-            for (int iy = 0; iy < ny; ++iy) {
-                for (int iz = 0; iz < nz; ++iz) {
-                    wavefunctions_.hypercubic()[ix][iy][iz][k_wf] *= norm_factor;
-                }
-            }
+  gpu::run(n_states, [hypercubic = begin(wavefunctions_.hypercubic()), nx, ny, nz] GPU_LAMBDA (auto k_wf) {
+    double norm_squared = 0.0;
+    for (int ix = 0; ix < nx; ++ix){
+      for (int iy = 0; iy < ny; ++iy){
+        for (int iz = 0; iz < nz; ++iz){
+          complex wf_component = hypercubic[ix][iy][iz][k_wf];
+          norm_squared += norm(wf_component);
         }
+      }
     }
+
+    double norm_factor = 1.0 / sqroot(norm_squared);
+    for (int ix = 0; ix < nx; ++ix){
+      for (int iy = 0; iy < ny; ++iy){
+        for (int iz = 0; iz < nz; ++iz){
+	  hypercubic[ix][iy][iz][k_wf] *= norm_factor;
+	}
+      }
+    }
+  });
 }//normalize 
 ////////////////////////////////////////////////////////////////////////////////
 void update(void) {
   CALI_CXX_MARK_SCOPE("wannier_update");
   int n_states = wavefunctions_.set_size();
-  int nprocs = wavefunctions_.basis().comm().size();
-  std::array<int, 2> shape;
-  int dim_x = std::round(std::cbrt(nprocs)); 
-  shape[0] = dim_x;
-  shape[1] = nprocs / dim_x;
-  auto comm = parallel::cartesian_communicator<2>(wavefunctions_.basis().comm(), shape);
   int nx = wavefunctions_.basis().local_sizes()[0];
   int ny = wavefunctions_.basis().local_sizes()[1];
   int nz = wavefunctions_.basis().local_sizes()[2];
@@ -97,6 +95,7 @@ void update(void) {
   double lx = sqroot(wavefunctions_.basis().cell()[0].norm());
   double ly = sqroot(wavefunctions_.basis().cell()[1].norm());
   double lz = sqroot(wavefunctions_.basis().cell()[2].norm());
+  auto point_op = wavefunctions_.basis().point_op();
 
   normalize();
 
@@ -112,39 +111,39 @@ void update(void) {
     adiag_int[i][j] = complex(0.0);
   });
 
-  for (int ix = 0; ix < nx; ++ix) {
-    for (int iy = 0; iy < ny; ++iy) {
-      for (int iz = 0; iz < nz; ++iz) {
+  gpu::array<double, 4> trig_array;
+  trig_array.reextent({6, nx, ny, nz});
 
-        auto coords = wavefunctions_.basis().point_op().rvector_cartesian(ix, iy, iz);
-        double cos_x = cos(2.0 * M_PI * coords[0] / lx);
-        double sin_x = sin(2.0 * M_PI * coords[0] / lx);
-        double cos_y = cos(2.0 * M_PI * coords[1] / ly);
-        double sin_y = sin(2.0 * M_PI * coords[1] / ly);
-        double cos_z = cos(2.0 * M_PI * coords[2] / lz);
-        double sin_z = sin(2.0 * M_PI * coords[2] / lz);
+  gpu::run(nz, ny, nx, [point_op, ta = begin(trig_array), lx, ly, lz] GPU_LAMBDA (auto iz, auto iy, auto ix) {
+    auto coords = point_op.rvector_cartesian(ix, iy, iz);
+    ta[0][ix][iy][iz] = cos(2.0 * M_PI * coords[0] / lx);
+    ta[1][ix][iy][iz] = sin(2.0 * M_PI * coords[0] / lx);
+    ta[2][ix][iy][iz] = cos(2.0 * M_PI * coords[1] / ly);
+    ta[3][ix][iy][iz] = sin(2.0 * M_PI * coords[1] / ly);
+    ta[4][ix][iy][iz] = cos(2.0 * M_PI * coords[2] / lz);
+    ta[5][ix][iy][iz] = sin(2.0 * M_PI * coords[2] / lz);
+  });
 
-        for (int k_wf = 0; k_wf < n_states; ++k_wf) {
+  gpu::run(n_states, n_states, [hypercubic = begin(wavefunctions_.hypercubic()), ta = begin(trig_array), lx, ly, lz, nx, ny, nz, a = begin(a_)] GPU_LAMBDA (auto l_wf, auto k_wf) {
+    for (int ix = 0; ix < nx; ix++){
+      for (int iy = 0; iy < ny; iy++){
+        for (int iz = 0; iz < nz; iz++){
 
-          complex c_ik = wavefunctions_.hypercubic()[ix][iy][iz][k_wf];
-          auto conj_ik = conj_cplx(c_ik);
+            complex c_ik = hypercubic[ix][iy][iz][k_wf];
+            auto conj_ik = conj_cplx(c_ik);
 
-          for (int l_wf = 0; l_wf < n_states; ++l_wf) {
+            complex c_jl = hypercubic[ix][iy][iz][l_wf];
 
-            complex c_jl = wavefunctions_.hypercubic()[ix][iy][iz][l_wf];
-
-            a_[0][k_wf][l_wf] += conj_ik * c_jl * cos_x;
-            a_[1][k_wf][l_wf] += conj_ik * c_jl * sin_x;
-            a_[2][k_wf][l_wf] += conj_ik * c_jl * cos_y;
-            a_[3][k_wf][l_wf] += conj_ik * c_jl * sin_y;
-            a_[4][k_wf][l_wf] += conj_ik * c_jl * cos_z;
-            a_[5][k_wf][l_wf] += conj_ik * c_jl * sin_z;
-
-          }
-        }
+            a[0][k_wf][l_wf] += conj_ik * c_jl * ta[0][ix][iy][iz];
+            a[1][k_wf][l_wf] += conj_ik * c_jl * ta[1][ix][iy][iz];
+            a[2][k_wf][l_wf] += conj_ik * c_jl * ta[2][ix][iy][iz];
+            a[3][k_wf][l_wf] += conj_ik * c_jl * ta[3][ix][iy][iz];
+            a[4][k_wf][l_wf] += conj_ik * c_jl * ta[4][ix][iy][iz];
+            a[5][k_wf][l_wf] += conj_ik * c_jl * ta[5][ix][iy][iz];
+	}
       }
     }
-  }
+  });
 }//update
 ////////////////////////////////////////////////////////////////////////////////
 void compute_transform(void)
@@ -299,9 +298,12 @@ auto dipole(const systems::cell & cell) {
   return sum;
 }
 ////////////////////////////////////////////////////////////////////////////////
-void apply_transform(void) {
-
-} 
+void apply_transform(states::orbital_set<basis::real_space, complex> & phi) {
+  	parallel::communicator comm{boost::mpi3::environment::get_world_instance()};
+  	parallel::cartesian_communicator<2> cart_comm(comm, {});
+	auto rot = matrix::scatter(cart_comm, u_, /* root = */ 0);	
+	operations::rotate(rot, phi);
+}
 ////////////////////////////////////////////////////////////////////////////////
 }; //tdmlwf
 } //wannier

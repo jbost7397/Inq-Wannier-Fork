@@ -16,31 +16,33 @@ namespace observables {
 
 class mlwf_properties {
 public:
-  explicit mlwf_properties(const states::orbital_set<basis::real_space, complex>& wavefunctions)
-      : wavefunctions_(wavefunctions) {}
+  mlwf_properties() : mlwf_transformer_(std::nullopt) {}
 
-  void calculate(std::ofstream& output_file, int time_step) {
-    wannier::tdmlwf_trans mlwf_transformer(wavefunctions_);
-    mlwf_transformer.update();
-    mlwf_transformer.compute_transform();
+  void set_mlwf_transformer(const wannier::tdmlwf_trans& transformer) {
+    mlwf_transformer_ = transformer;
+  }
 
-    output_file << "Time step: " << time_step << "\n"; 
-    output_file << "MLWF Centers:\n";
-    for (int i = 0; i < mlwf_transformer.get_wavefunctions().set_size(); ++i) {
-       auto center = mlwf_transformer.center(i, mlwf_transformer.get_wavefunctions().basis().cell());
-       output_file << "  WF " << i << ": " << center << std::endl;
-    }
+  explicit mlwf_properties(const wannier::tdmlwf_trans& mlwf_transformer)
+      : mlwf_transformer_(mlwf_transformer) {}
 
-    output_file << "\nMLWF Spreads:\n";
-    for (int i = 0; i < mlwf_transformer.get_wavefunctions().set_size(); ++i) {
-       auto spread = mlwf_transformer.spread(i, mlwf_transformer.get_wavefunctions().basis().cell());
-       output_file << "  WF " << i << ": " << spread << "\n" << std::endl;
+  void calculate(std::ofstream& output_file, int time_step, const states::orbital_set<basis::real_space, complex>& wavefunctions) {
+    mlwf_transformer_->update();
+    mlwf_transformer_->compute_transform();
+
+    output_file << "Time step: " << time_step << "\n";
+    output_file << "MLWFs:\n";
+    for (int i = 0; i < wavefunctions.set_size(); ++i) {
+       auto center = mlwf_transformer_->center(i, wavefunctions.basis().cell());
+       auto spread = mlwf_transformer_->spread(i, wavefunctions.basis().cell());
+       output_file << "  WF " << i + 1 << ": " << center[0] << "     " << center[1] << "     " << center[2] << "     Spread: " << spread << std::endl;
     }
 
   }
 
 private:
-  const states::orbital_set<basis::real_space, complex>& wavefunctions_;
+
+  std::optional<wannier::tdmlwf_trans> mlwf_transformer_;
+
 };
 } // namespace observables
 } // namespace inq
@@ -58,6 +60,6 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 	using namespace inq::magnitude;
 	using namespace Catch::literals;
 	using Catch::Approx;
-	
+
 }
 #endif
