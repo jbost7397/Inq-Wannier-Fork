@@ -36,13 +36,11 @@ public:
        auto spread = mlwf_transformer_->spread(i, wavefunctions.basis().cell());
        output_file << "  WF " << i + 1 << ": " << center[0] << "     " << center[1] << "     " << center[2] << "     Spread: " << spread << std::endl;
     }
-
   }
 
 private:
 
   std::optional<wannier::tdmlwf_trans> mlwf_transformer_;
-
 };
 } // namespace observables
 } // namespace inq
