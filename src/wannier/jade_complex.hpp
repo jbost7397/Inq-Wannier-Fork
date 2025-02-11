@@ -45,6 +45,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     gpu::run(mloc, mloc, [mloc, u_int=begin(u)] GPU_LAMBDA (auto ii, auto jj) {
       u_int[ii][jj] = (ii == jj) ? complex(1.0,0.0) : complex(0.0,0.0);
     });
+    gpu::sync();
 
     const int nploc = (nloc + 1) / 2;
     gpu::array<int,1> top(nploc);
@@ -59,6 +60,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
       top_int[i] = i; 
       bot_int[nploc - i - 1] = nploc + i;
     });
+    gpu::sync();
 
     int nsweep = 0;
     bool done = false;
@@ -81,6 +83,15 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
           gpu::run(mloc, mloc, [mloc, r=begin(rot_array)] GPU_LAMBDA (auto ii, auto jj) {
             r[ii][jj] = (ii == jj) ? complex(1.0,0.0) : complex(0.0,0.0);
           });
+          gpu::sync();
+
+	  //CS store original sum of diag elements of a	  
+	  gpu::array<double, 1> diag_sum_init(1, 0.0);
+	  gpu::run(n, mloc, [a_int=begin(a), diag_sum=begin(diag_sum_init)] GPU_LAMBDA (auto k, auto i) {
+	    gpu::atomic::add(&diag_sum[0], real(a_int[k][i][i])); 
+	  });
+          gpu::sync();
+
             //jacobi rotations for local pairs of diagonal elements for all pairs (apq)
           {     CALI_CXX_MARK_SCOPE("gpu_run_loop1");
 	    //CS profile shows this is pretty fast (and correct)
@@ -273,98 +284,29 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     });
     gpu::sync();
 }
+          {     CALI_CXX_MARK_SCOPE("gpu_run_loop3");
+	       //CS apply rotation 
+               namespace blas = boost::multi::blas;
 
-               for (int ipair = 0; ipair < nploc; ++ipair) {
-                 if (top[ipair] < mloc && bot[ipair] < mloc) {
-                    for (int k = 0; k < n; ++k) {
-                      //Apply plane rotation
-                      //routine now internal
-		      gpu::array<complex,1> ap(mloc);
-                      gpu::array<complex,1> aq(mloc);
-                      for (int ii = 0; ii < mloc; ++ii) {
-                        ap[ii] = rot_array[top[ipair]][top[ipair]] * a[k][top[ipair]][ii] + rot_array[top[ipair]][bot[ipair]] * a[k][bot[ipair]][ii];
-                        aq[ii] = rot_array[bot[ipair]][top[ipair]] * a[k][top[ipair]][ii] + rot_array[top[ipair]][top[ipair]] * a[k][bot[ipair]][ii];
-                      }
-                      for (int ii = 0; ii < mloc; ++ii) {
-                        a[k][top[ipair]][ii] = ap[ii];
-                        a[k][bot[ipair]][ii] = aq[ii];
-              	      }
-		    }
-		}
-		}
-		//CS gemm for a update for a and u
-		//faster, but does gemm run on gpu?? 
-		//for (int k = 0; k < 6; ++k) {
-		  //gpu::array<complex,2> a_tmp({mloc,mloc}, complex(0.0, 0.0));
-		  //auto a_tmp = +boost::multi::blas::gemm(1.0, rot_array, a[k]);
-		  //a[k] = a_tmp;
-	        //}
+	       for (int k = 0; k < n; ++k) {
+	         a[k] = +blas::gemm(1.0, rot_array, a[k]);
+	       }
+	       gpu::sync();
 
-	       gpu::array<complex,2> u_tmp({mloc,mloc}, complex(0.0, 0.0));
-	       u_tmp = +boost::multi::blas::gemm(1.0, rot_array, u);
+	       u = +blas::gemm(1.0, rot_array, u);
                gpu::sync();	       
 
-	       for (int i = 0; i < mloc; ++i) {
-	         for (int j = 0; j < mloc; ++j) {
-                   std::cout << u_tmp[i][j] << "  " << i << "  "  << j << " u new " << std::endl;
-		   //u[i][j] = u_tmp[i][j];
-               }
-	      }
-	
-               gpu::run(mloc, mloc, [u_int=begin(u), u_tmp_int=begin(u_tmp)] GPU_LAMBDA (auto i, auto j) {
-	         //u_int[i][j] = complex(0.0);
-                 u_int[i][j] = u_tmp_int[i][j];
+	       //CS get resulting diag sum and find change 
+               gpu::array<double, 1> diag_sum_end(1, 0.0);
+               gpu::run(n, mloc, [a_int=begin(a), diag_sum=begin(diag_sum_end)] GPU_LAMBDA (auto k, auto i) {
+                 gpu::atomic::add(&diag_sum[0], real(a_int[k][i][i]));
                });
-	      gpu::sync();
+               gpu::sync();
 
-	      std::cout << u_tmp[0][0] << std::endl;
-               for (int i = 0; i < mloc; ++i) {
-                 for (int j = 0; j < mloc; ++j) {
-                   std::cout << u[i][j] << "  " << i << "  "  << j << " u old " << std::endl;
-               }
-              }
+	       diag_change += 2.0 * fabs(diag_sum_end[0] - diag_sum_init[0]);
 
+	    }
 
-/*
-              for (int ipair = 0; ipair < nploc; ++ipair) {
-                 if (top[ipair] < mloc && bot[ipair] < mloc) {
-		    //rotate u 
-                    //plane_rot(up, uq, c, sconj);
-          	    gpu::array<complex,1> up(mloc);
-          	    gpu::array<complex,1> uq(mloc);
-          	    for (int ii = 0; ii < mloc; ++ii) {
-                      up[ii] = rot_array[top[ipair]][top[ipair]] * u[top[ipair]][ii] + rot_array[top[ipair]][bot[ipair]] * u[bot[ipair]][ii];
-                      uq[ii] = rot_array[bot[ipair]][top[ipair]] * u[top[ipair]][ii] + rot_array[top[ipair]][top[ipair]] * u[bot[ipair]][ii];
-          	     }
-          	     for (int ii = 0; ii < mloc; ++ii) {
-                       u[top[ipair]][ii] = up[ii];
-                       u[bot[ipair]][ii] = uq[ii];
-                     }
-		   }
-		}
-*/
-
-          {     CALI_CXX_MARK_SCOPE("gpu_run_loop4");			
-	       for (int ipair = 0; ipair < nploc; ++ipair) {
-                 if (top[ipair] < mloc && bot[ipair] < mloc) {		
-                    // new value of off-diag element apq
-		    double diag_change_ipair = 0.0;
-                    for (int k = 0; k < n; ++k) {
-                        const int iapq = 3 * ipair + k * 3 * nploc;
-		        complex c = rot_array[top[ipair]][top[ipair]];
-			complex s = -rot_array[bot[ipair]][top[ipair]];
-			complex sconj = conj_cplx(s); 
-                        const complex aii = apq[iapq + 1];
-                        const complex ajj = apq[iapq + 2];
-                        const complex v1 = conj_cplx(c) * c - sconj * s;
-
-                        double apq_new = real(v1 * (aii - ajj) + 2.0 * c * s * apq[iapq] + 2.0 * sconj * c * apq[iapq]);
-                        diag_change_ipair += 2.0 * fabs(apq_new - real(aii - ajj));
-			}
-                    diag_change += diag_change_ipair;
-                } //if less than mloc 
-            }//for ipair		
-	}
             // Rotate top and bot arrays //CS ~85% speed up now 
             if (nploc > 0) {
 		int top_back = top[nploc - 1];
@@ -386,6 +328,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 			  bot_int[0] = tmp;
 		    }
 		});
+		gpu::sync();
 	    } //if nploc >0 
 	} //irot
        std::cout << "nsweep:  " <<  nsweep << " diag change:  " << diag_change << std::endl;
@@ -398,11 +341,13 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     gpu::run(n, mloc, [adiag_int=begin(adiag)] GPU_LAMBDA (auto i, auto k) {
       adiag_int[i][k] = complex(0.0, 0.0);
     });
+    gpu::sync();
 
     //Compute diagonal elements
     gpu::run(n, mloc, nloc, [n, mloc, nloc, a_int=begin(a), u_int=begin(u), adiag_int=begin(adiag)] GPU_LAMBDA (auto kk, auto ii, auto jj) {
       gpu::atomic::add(&adiag_int[kk][ii], conj_cplx(a_int[kk][ii][jj]) * u_int[ii][jj]);
     });
+    gpu::sync();
 
 } //jade_complex
 } // namespace wannier
