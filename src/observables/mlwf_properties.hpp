@@ -25,21 +25,23 @@ public:
   explicit mlwf_properties(const wannier::tdmlwf_trans& mlwf_transformer)
       : mlwf_transformer_(mlwf_transformer) {}
 
-  void calculate(std::ofstream& output_file, int time_step, const states::orbital_set<basis::real_space, complex>& wavefunctions) {
-    mlwf_transformer_->update();
+  void calculate(std::ofstream& output_file, int time_step, states::orbital_set<basis::real_space, complex>& phi) {
+    mlwf_transformer_->update(phi);
     mlwf_transformer_->compute_transform();
+    mlwf_transformer_->apply_transform(phi);
 
-    output_file << "Time step: " << time_step << "\n";
-    output_file << "MLWFs:\n";
-    for (int i = 0; i < wavefunctions.set_size(); ++i) {
-       auto center = mlwf_transformer_->center(i, wavefunctions.basis().cell());
-       auto spread = mlwf_transformer_->spread(i, wavefunctions.basis().cell());
-       output_file << "  WF " << i + 1 << ": " << center[0] << "     " << center[1] << "     " << center[2] << "     Spread: " << spread << std::endl;
+    if(phi.basis().comm().rank() == 0){
+        output_file << "Time step: " << time_step + 1 << "\n";
+        output_file << "MLWFs:\n";
+        for (int i = 0; i < phi.set_size(); ++i) {
+                auto center = mlwf_transformer_->center(i, phi.basis().cell());
+                auto spread = mlwf_transformer_->spread(i, phi.basis().cell());
+                output_file << "  WF " << i + 1 << ": " << center[0] << "     " << center[1] << "     " << center[2] << "     Spread: " << spread << std::endl;
+        }
     }
   }
 
 private:
-
   std::optional<wannier::tdmlwf_trans> mlwf_transformer_;
 };
 } // namespace observables

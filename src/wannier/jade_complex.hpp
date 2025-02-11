@@ -35,10 +35,8 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     assert(tol > std::numeric_limits<double>::epsilon());
 
     int n = std::get<0>(sizes(a)); // 6 for all wannier
-    assert(n == 6);
     int nloc = std::get<1>(sizes(a)); 
     int mloc = std::get<2>(sizes(a)); //always equals nloc  
-    assert(nloc == mloc); 
 
     // Initialize u as identity
     u.reextent({mloc, mloc});
@@ -78,6 +76,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
         double diag_change = 0.0;
         // sweep local pairs and rotate 2*np -1 times
         for (int irot = 0; irot < 2*np-1; ++irot) {
+
 	  //CS initalize rot_array within loop so it resets to identity every time 
           gpu::array<complex,2> rot_array({mloc, mloc}, complex(0.0, 0.0));
           gpu::run(mloc, mloc, [mloc, r=begin(rot_array)] GPU_LAMBDA (auto ii, auto jj) {
@@ -107,9 +106,9 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                 gpu::atomic::add(&apq_int[iapq + 1], conj_cplx(a_int[k][top_int[ipair]][ii]) * u_int[top_int[ipair]][ii]);
                 gpu::atomic::add(&apq_int[iapq + 2], conj_cplx(a_int[k][bot_int[ipair]][ii]) * u_int[bot_int[ipair]][ii]);
 	      }
-              });
-             gpu::sync();
-            }
+            });
+            gpu::sync();
+          }
 
           { CALI_CXX_MARK_SCOPE("gpu_run_loop2");
 
@@ -279,22 +278,23 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                rot_array_int[bot_int[ipair]][bot_int[ipair]] = c;
 	       rot_array_int[top_int[ipair]][bot_int[ipair]] = sconj;
 	       rot_array_int[bot_int[ipair]][top_int[ipair]] = -s;
-       }
-     }
-    });
-    gpu::sync();
-}
+       	     } //if 
+           } //ipair 
+        }); //loop
+        gpu::sync();
+        } //timer
+
           {     CALI_CXX_MARK_SCOPE("gpu_run_loop3");
 	       //CS apply rotation 
                namespace blas = boost::multi::blas;
+
+               u = +blas::gemm(1.0, rot_array, u);
+               gpu::sync();
 
 	       for (int k = 0; k < n; ++k) {
 	         a[k] = +blas::gemm(1.0, rot_array, a[k]);
 	       }
 	       gpu::sync();
-
-	       u = +blas::gemm(1.0, rot_array, u);
-               gpu::sync();	       
 
 	       //CS get resulting diag sum and find change 
                gpu::array<double, 1> diag_sum_end(1, 0.0);
@@ -333,7 +333,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 	} //irot
        std::cout << "nsweep:  " <<  nsweep << " diag change:  " << diag_change << std::endl;
        done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
-    } //while 
+      } //while 
     } //scope
 
     //eigenvalue array

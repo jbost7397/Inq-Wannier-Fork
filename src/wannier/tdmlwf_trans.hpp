@@ -39,9 +39,6 @@ private:
 	gpu::array<complex,2> u_; //JB: have to consider between gpu::array, std::vector of std::vectors, or perhaps matrix::distributed for parallelism?
 	gpu::array<complex,3> a_;
 	gpu::array<complex,2> adiag_;
-	//std::vector<std::vector<std::vector<complex>>> a_;
-	//std::vector<std::vector<inq::complex>> adiag_;
-	//std::vector<std::vector<complex>> u_;
 	states::orbital_set<basis::real_space, complex> wavefunctions_;
 
 public:
@@ -49,15 +46,12 @@ public:
 ////////////////////////////////////////////////////////////////////////////////
 tdmlwf_trans(states::orbital_set<basis::real_space, complex> const & wavefunctions) : wavefunctions_(wavefunctions) {
   const int n_states = wavefunctions_.set_size();
-  int nx = wavefunctions_.basis().local_sizes()[0];
-  int ny = wavefunctions_.basis().local_sizes()[1];
-  int nz = wavefunctions_.basis().local_sizes()[2];
   a_.reextent({6, n_states, n_states});
   adiag_.reextent({6, n_states});
   u_.reextent({n_states, n_states});
 
 }//constructor
-
+////////////////////////////////////////////////////////////////////////////////
 void normalize(void) {
 
   CALI_CXX_MARK_SCOPE("wannier_normalize");
@@ -100,7 +94,6 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
   double lx = sqroot(wavefunctions_.basis().cell()[0].norm());
   double ly = sqroot(wavefunctions_.basis().cell()[1].norm());
   double lz = sqroot(wavefunctions_.basis().cell()[2].norm());
-  auto point_op = wavefunctions_.basis().point_op();
 
   auto point_op = wavefunctions_.basis().point_op();
 
@@ -160,10 +153,6 @@ void compute_transform(void)
   jade_complex(maxsweep,tol,a_,u_,adiag_);
 }
 ////////////////////////////////////////////////////////////////////////////////
-auto get_a(void){
-  return a_;
-}
-///
 const states::orbital_set<basis::real_space, complex>& get_wavefunctions() const {
   return wavefunctions_;
 }
@@ -224,18 +213,17 @@ bool overlap(T1 epsilon, T2 i, T2 j, const systems::cell & cell_) {
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 double total_overlaps(T epsilon, const systems::cell & cell_) {
-  int sum = 0;
-  for ( int i = 0; i < wavefunctions_.set_size(); i++ )
-  {
-    int count = 0;
-    for ( int j = 0; j < wavefunctions_.set_size(); j++ )
-    {
-      if ( overlap(epsilon,i,j,cell_) )
-        count++;
+
+  int n = wavefunctions_.set_size();
+  gpu::array<int,1> sum({1}, 0);
+  gpu::run(n, n, [epsilon, cell_, sum_int=begin(sum)] GPU_LAMBDA (auto i, auto j) {
+    if (overlap(epsilon, i, j, cell_)) {
+      gpu::atomic::add(&sum_int[0], 1);
     }
-    sum += count;
-  }
-    return ((double) sum)/(wavefunctions_.set_size()*wavefunctions_.set_size());
+  });
+  gpu::sync(); //CS probably don't need 
+
+  return static_cast<double>(sum[0]) / (n * n);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -269,7 +257,6 @@ double spread2(T i, T j, const systems::cell & cell) {
   auto recip = cell.reciprocal(j);
   double length = sqrt(recip[0]*recip[0]+ recip[1]*recip[1] + recip[2]*recip[2]);
   const double fac = 1.0 / length;
-  auto tst = 1.0 - norm(c) - norm(s);
   return fac*fac * ( 1.0 - norm(c) - norm(s) );
 }
 
@@ -298,7 +285,6 @@ double spread2(const systems::cell & cell) {
 double spread(const systems::cell & cell) {
   return sqroot(spread2(cell));
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 auto dipole(const systems::cell & cell) {
   // total electronic dipole
