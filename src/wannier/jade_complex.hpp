@@ -13,13 +13,14 @@
 #include <math/complex.hpp>
 #include <matrix/distributed.hpp>
 #include <matrix/gather_scatter.hpp>
+#include <matrix/diagonalize.hpp>
 #include <parallel/communicator.hpp>
+#include <operations/rotate.hpp>
 #include <gpu/run.hpp>
 #include <wannier/jacobi_eigenvalue.hpp>
 #include <wannier/plane_rot.hpp>
 #include <utils/raw_pointer_cast.hpp>
 #include <utils/profiling.hpp>
-
 #include <vector>
 #include <deque>
 #include <limits>
@@ -28,12 +29,9 @@
 
 namespace inq {
 namespace wannier {
-
 template <typename T, typename T1, class MatrixType1, class MatrixType2, class MatrixType3>
 void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType3& adiag) {
 
-
-    CALI_CXX_MARK_SCOPE("wannier_jade");
     assert(tol > std::numeric_limits<double>::epsilon());
 
     int n = std::get<0>(sizes(a)); // 6 for all wannier
@@ -47,12 +45,9 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     gpu::run(mloc, mloc, [mloc, u_int=begin(u)] GPU_LAMBDA (auto ii, auto jj) {
       u_int[ii][jj] = (ii == jj) ? complex(1.0,0.0) : complex(0.0,0.0);
     });
-
-    //check if number of rows is odd //CS likely not needed anymore
-    //const bool nloc_odd = (mloc % 2 != 0);
+    gpu::sync();
 
     const int nploc = (nloc + 1) / 2;
-    //std::deque<int> top(nploc), bot(nploc);
     gpu::array<int,1> top(nploc);
     gpu::array<int,1> bot(nploc);
     int np = nploc; 
@@ -65,6 +60,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
       top_int[i] = i; 
       bot_int[nploc - i - 1] = nploc + i;
     });
+    gpu::sync();
 
     int nsweep = 0;
     bool done = false;
@@ -72,17 +68,33 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     // apq[3*ipair   + k*3*nploc] = apq[k][ipair]
     // apq[3*ipair+1 + k*3*nploc] = app[k][ipair]
     // apq[3*ipair+2 + k*3*nploc] = aqq[k][ipair]
-    //std::vector<complex> apq(a.size()*3*nploc);
     gpu::array<complex,1> apq(n * 3 * nploc);
-    //fix dummy vector passing for nploc_odd case CS
- 
-    while (!done) {
+
+    CALI_CXX_MARK_SCOPE("jade");
+    {
+
+      while (!done) {
         ++nsweep;
         double diag_change = 0.0;
         // sweep local pairs and rotate 2*np -1 times
         for (int irot = 0; irot < 2*np-1; ++irot) {
-            //jacobi rotations for local pairs
-            //of diagonal elements for all pairs (apq)
+	  //CS initalize rot_array within loop so it resets to identity every time 
+          gpu::array<complex,2> rot_array({mloc, mloc}, complex(0.0, 0.0));
+          gpu::run(mloc, mloc, [mloc, r=begin(rot_array)] GPU_LAMBDA (auto ii, auto jj) {
+            r[ii][jj] = (ii == jj) ? complex(1.0,0.0) : complex(0.0,0.0);
+          });
+          gpu::sync();
+
+	  //CS store original sum of diag elements of a	  
+	  gpu::array<double, 1> diag_sum_init(1, 0.0);
+	  gpu::run(n, mloc, [a_int=begin(a), diag_sum=begin(diag_sum_init)] GPU_LAMBDA (auto k, auto i) {
+	    gpu::atomic::add(&diag_sum[0], real(a_int[k][i][i])); 
+	  });
+          gpu::sync();
+
+            //jacobi rotations for local pairs of diagonal elements for all pairs (apq)
+          {     CALI_CXX_MARK_SCOPE("gpu_run_loop1");
+	    //CS profile shows this is pretty fast (and correct)
 	    gpu::run(n, nploc, mloc, [n, nploc, mloc, a_int=begin(a), u_int=begin(u), apq_int=begin(apq), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA(auto k, auto ipair, auto ii) { 
 	      const int iapq = 3 * ipair + k * 3 * nploc;
               if (ii == 0) {
@@ -96,137 +108,246 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                 gpu::atomic::add(&apq_int[iapq + 2], conj_cplx(a_int[k][bot_int[ipair]][ii]) * u_int[bot_int[ipair]][ii]);
 	      }
               });
+             gpu::sync();
+            }
 
-            for (int ipair = 0; ipair < nploc; ++ipair) {
-	      gpu::array<double,1> G({9},0.0);
-              if (top[ipair] < mloc && bot[ipair] < mloc) {
-                gpu::run(n, [n, nploc, mloc, ipair, apq_int=begin(apq), g_int=begin(G)] GPU_LAMBDA (auto k) {
-		  const int iapq = 3 * ipair + k * 3 * nploc;
-                  const complex aij = apq_int[iapq];
-                  const complex aii = apq_int[iapq + 1];
-                  const complex ajj = apq_int[iapq + 2];
+          { CALI_CXX_MARK_SCOPE("gpu_run_loop2");
 
-                  const complex h1 = aii - ajj;
-                  const complex h2 = aij + conj_cplx(aij);
-                  const complex h3 = complex(0.0, 1.0) * (aij - conj_cplx(aij));		  
-		  gpu::atomic::add(&g_int[0], real(conj_cplx(h1) * h1));
-                  gpu::atomic::add(&g_int[1], real(conj_cplx(h1) * h2));
-                  gpu::atomic::add(&g_int[2], real(conj_cplx(h1) * h3));
-                  gpu::atomic::add(&g_int[3], real(conj_cplx(h2) * h1));
-                  gpu::atomic::add(&g_int[4], real(conj_cplx(h2) * h2));
-                  gpu::atomic::add(&g_int[5], real(conj_cplx(h2) * h3));
-                  gpu::atomic::add(&g_int[6], real(conj_cplx(h3) * h1));
-                  gpu::atomic::add(&g_int[7], real(conj_cplx(h3) * h2));
-                  gpu::atomic::add(&g_int[8], real(conj_cplx(h3) * h3));
-	        });
+	      //CS loop over nploc and for all pairs construct G to be diagonalized
+	      gpu::run(nploc, [mloc, nploc, n, apq_int=begin(apq), bot_int=begin(bot), top_int=begin(top), rot_array_int=begin(rot_array)] GPU_LAMBDA (auto ipair) {
+	      for (int ipair = 0; ipair < nploc; ++ipair) {
+                if (top_int[ipair] < mloc && bot_int[ipair] < mloc) {
+		  double G[9] = {0.0};
+		  for (int k = 0; k < n; ++k) {
+		    const int iapq = 3 * ipair + k * 3 * nploc;
+                    const complex aij = apq_int[iapq];
+                    const complex aii = apq_int[iapq + 1];
+                    const complex ajj = apq_int[iapq + 2];
 
-                    int N = 3; // For Wannier 3x3 matrix size
-                    //gpu::array<double,1> G = {g11, g12, g13, g21, g22, g23, g31, g32, g33};  // Matrix to be diagonalized
-                    gpu::array<double,1> Q(9); // Eigenvectors
-                    gpu::array<double,1> D(3); // Eigenvalues
-                    jacobi_eigenvalue(N, G, Q, D);
+                    const complex h1 = aii - ajj;
+                    const complex h2 = aij + conj_cplx(aij);
+                    const complex h3 = complex(0.0, 1.0) * (aij - conj_cplx(aij));
+                    G[0] += real(conj_cplx(h1) * h1);
+                    G[1] += real(conj_cplx(h1) * h2);
+                    G[2] += real(conj_cplx(h1) * h3);
+                    G[3] += real(conj_cplx(h2) * h1);
+                    G[4] += real(conj_cplx(h2) * h2);
+                    G[5] += real(conj_cplx(h2) * h3);
+                    G[6] += real(conj_cplx(h3) * h1);
+                    G[7] += real(conj_cplx(h3) * h2);
+                    G[8] += real(conj_cplx(h3) * h3);
+                  }
 
-                    // Extract the largest eigenvalue's vector
-                    double x = Q[6], y = Q[7], z = Q[8];
-                    if (Q[6] < 0.0) {
-                        x = -x; y = -y; z = z;
-                    }
+		   //CS Jacobi within loop, initalize eigenvector array
+                   double v[9] = {0.0};
+                   double bw[3] = {0.0};
+                   double zw[3] = {0.0};
+                   double d[3] = {0.0};
 
-		    double one = 1.0;
-                    double r = sqroot((x + one) / 2.0); 
-                    complex c = complex(r, 0.0);
-                    complex s = complex(y / (2.0 * r), -z / (2.0 * r));
-                    complex sconj = conj_cplx(s);
+ 		   d[0] = G[0]; d[1] = G[4]; d[2] = G[8];
+	           v[0] = 1.0; v[4] = 1.0; v[8] = 1.0; 
+	           bw[0] = G[0]; bw[1] = G[4]; bw[2] = G[8];
 
-                    for (int k = 0; k < a.size(); ++k) {
-                      //Apply plane rotation
-		      //routine now internal
-		      gpu::array<complex,1> ap(mloc);
-                      gpu::array<complex,1> aq(mloc);
-		      //gpu::run(mloc, [mloc, ipair, k, ap_int=begin(ap), aq_int=begin(aq), a_int=begin(a), bot_int=begin(bot), top_int=begin(top)] GPU_LAMBDA (auto ii) {
-                      for (int ii = 0; ii < mloc; ++ii) {
-                        ap[ii] = c * a[k][top[ipair]][ii] + sconj * a[k][bot[ipair]][ii];
-                        aq[ii] = -s*a[k][top[ipair]][ii] + c * a[k][bot[ipair]][ii];
-		        //ap[ii]=a[k][top[ipair]][ii];
-	                //aq[ii]=a[k][bot[ipair]][ii];
+	           int it_num = 0;
+		   const int it_max = 10000;
+	           int rot_num = 0; 
+
+    		   while (it_num < it_max) {
+                   it_num = it_num + 1;
+
+                   double thresh = 0.0;
+    		   for (int j = 0; j < 3; j++ ) {
+	             for (int i = 0; i < j; i++ ) {
+	               thresh = thresh + G[i+j*3] * G[i+j*3];
+      		     }
+    		   }
+
+    		   thresh = sqroot(thresh)/(12);
+	           if (thresh == 0.0) {
+                     break;
+                   }
+
+	           for (int p = 0; p < 3; ++p) {
+                    for (int q = p + 1; q < 3; ++q) {
+                      double gapq = 10.0 * fabs(G[p + q * 3]);
+                      double termp = gapq + fabs(d[p]);
+                      double termq = gapq + fabs(d[q]);
+                      if (4 < it_num && termp == fabs(d[p]) && termq == fabs(d[q])) {
+                        G[p + q * 3] = 0.0;
+                      } else if (thresh <= fabs(G[p + q * 3])) {
+                        double h = d[q] - d[p];
+                        double term = fabs(h) + gapq;
+
+                        double t;
+                        if (term == fabs(h)) {
+                          t = G[p + q * 3] / h;
+                        } else {
+                          double theta = 0.5 * h / G[p + q * 3];
+                          t = 1.0 / (fabs(theta) + sqroot(1.0 + theta * theta));
+                          if (theta < 0.0) {
+                            t = -t;
+                          }
+                        }
+
+                       double c = 1.0 / sqroot(1.0 + t * t);
+                       double s = t * c;
+                       double tau = s / (1.0 + c);
+                       h = t * G[p + q * 3];
+                       zw[p] -= h;
+                       zw[q] += h;
+                       d[p] -= h;
+                       d[q] += h;
+                       G[p + q * 3] = 0.0;
+
+                       for (int j = 0; j < p; ++j) {
+                         double g = G[j + p * 3];
+                         double h = G[j + q * 3];
+                         G[j + p * 3] = g - s * (h + g * tau);
+                         G[j + q * 3] = h + s * (g - h * tau);
+                       }
+
+                       for (int j = p + 1; j < q; ++j) {
+                         double g = G[p + j * 3];
+                         double h = G[j + q * 3];
+                         G[p + j * 3] = g - s * (h + g * tau);
+                         G[j + q * 3] = h + s * (g - h * tau);
+                       }
+
+                       for (int j = q + 1; j < 3; ++j) {
+                         double g = G[p + j * 3];
+                         double h = G[q + j * 3];
+                         G[p + j * 3] = g - s * (h + g * tau);
+                         G[q + j * 3] = h + s * (g - h * tau);
+                       }
+
+                       for (int j = 0; j < 3; ++j) {
+                         double g = v[j + p * 3];
+                         double h = v[j + q * 3];
+                         v[j + p * 3] = g - s * (h + g * tau);
+                         v[j + q * 3] = h + s * (g - h * tau);
+                       }
+
+                      rot_num++;
                       }
-	              //plane_rot(ap,aq,c,sconj); //CS slow but good for debug, need cuda solver wrapper
-                      for (int ii = 0; ii < mloc; ++ii) {
-                        a[k][top[ipair]][ii] = ap[ii];
-                        a[k][bot[ipair]][ii] = aq[ii];
-              		}
-		    }
-
-		    //rotate u 
-                    //plane_rot(up, uq, c, sconj);
-          	    gpu::array<complex,1> up(mloc);
-          	    gpu::array<complex,1> uq(mloc);
-          	    for (int ii = 0; ii < mloc; ++ii) {
-                      up[ii] = c * u[top[ipair]][ii] + sconj * u[bot[ipair]][ii];
-                      uq[ii] = -s*u[top[ipair]][ii] + c * u[bot[ipair]][ii];
-          	     }
-          	     for (int ii = 0; ii < mloc; ++ii) {
-                       u[top[ipair]][ii] = up[ii];
-                       u[bot[ipair]][ii] = uq[ii];
-                     }
-
-                    // new value of off-diag element apq
-		    gpu::array<double,1> diag_change_ipair({1},0.0);
-		    gpu::run(n, [diag_change_ipair_int=begin(diag_change_ipair), ipair, n, nploc, apq_int=begin(apq), c, s, sconj] GPU_LAMBDA (auto k) {
-			const int iapq = 3 * ipair + k * 3 * nploc;
-                        const complex aii = apq_int[iapq + 1];
-                        const complex ajj = apq_int[iapq + 2];
-                        const complex v1 = conj_cplx(c) * c - sconj * s;
-
-                        double apq_new = real(v1 * (aii - ajj) + 2.0 * c * s * apq_int[iapq] + 2.0 * sconj * c * apq_int[iapq]);
-                        //diag_change_ipair += 2.0 * fabs(apq_new - real(aii - ajj));
-                        gpu::atomic::add(&diag_change_ipair_int[0], 2.0 * fabs(apq_new - real(aii - ajj)));
-			});
-                    diag_change += diag_change_ipair[0];
+                    }
+                  }
+                  for (int i = 0; i < 3; ++i) {
+                    bw[i] += zw[i];
+                    d[i] = bw[i];
+                    zw[i] = 0.0;
+                  }
                 }
-            }//for ipair
 
-            // Rotate top and bot arrays //CS is there a faster way to rotate??
+                for (int j = 0; j < 3; ++j) {
+                  for (int i = 0; i < j; ++i) {
+                    G[i + j * 3] = G[j + i * 3];
+                  }
+                }
+
+    	       for (int k = 0; k < 2; ++k) {
+               int m = k;
+                 for (int l = k + 1; l < 3; ++l) {
+                   if (d[l] < d[m]) {
+                     m = l;
+                   }
+                 }
+                 if (m != k) {
+		   auto tmp = d[m];
+		   d[m] = d[k];
+		   d[k] = tmp; 
+                   for (int i = 0; i < 3; ++i) {
+		     auto tmp = v[i + m * 3];
+		     v[i + m * 3] = v[i + k * 3];
+		     v[i + k * 3] = tmp; 
+                   }
+                 }
+               }
+
+	       //CS v now contains the eigenvectors 
+	       double x = v[6], y = v[7], z = v[8];
+	       if (v[6] < 0.0) {
+                 x = -x; y = -y; z = z;
+               }
+
+               double one = 1.0;
+               double r = sqroot((x + one) / 2.0);
+               complex c = complex(r, 0.0);
+               complex s = complex(y / (2.0 * r), -z / (2.0 * r));
+               complex sconj = conj_cplx(s);
+	       //CS construct rotations as array and apply all at once 
+               rot_array_int[top_int[ipair]][top_int[ipair]] = c;
+               rot_array_int[bot_int[ipair]][bot_int[ipair]] = c;
+	       rot_array_int[top_int[ipair]][bot_int[ipair]] = sconj;
+	       rot_array_int[bot_int[ipair]][top_int[ipair]] = -s;
+       }
+     }
+    });
+    gpu::sync();
+}
+          {     CALI_CXX_MARK_SCOPE("gpu_run_loop3");
+	       //CS apply rotation 
+               namespace blas = boost::multi::blas;
+
+	       for (int k = 0; k < n; ++k) {
+	         a[k] = +blas::gemm(1.0, rot_array, a[k]);
+	       }
+	       gpu::sync();
+
+	       u = +blas::gemm(1.0, rot_array, u);
+               gpu::sync();	       
+
+	       //CS get resulting diag sum and find change 
+               gpu::array<double, 1> diag_sum_end(1, 0.0);
+               gpu::run(n, mloc, [a_int=begin(a), diag_sum=begin(diag_sum_end)] GPU_LAMBDA (auto k, auto i) {
+                 gpu::atomic::add(&diag_sum[0], real(a_int[k][i][i]));
+               });
+               gpu::sync();
+
+	       diag_change += 2.0 * fabs(diag_sum_end[0] - diag_sum_init[0]);
+
+	    }
+
+            // Rotate top and bot arrays //CS ~85% speed up now 
             if (nploc > 0) {
 		int top_back = top[nploc - 1];
 		int bot_front = bot[0];
-		gpu::run(nploc-1, [bot_int=begin(bot)] GPU_LAMBDA (auto j) { 
+		gpu::run(nploc-1, [bot_int=begin(bot), top_int=begin(top)] GPU_LAMBDA (auto j) { 
 	          bot_int[j] = bot_int[j+1];
-		});
-		bot[nploc - 1] = top_back;
-                gpu::run(nploc-1, [top_int=begin(top)] GPU_LAMBDA (auto j) {
 		  top_int[j + 1] = top_int[j];
                 });
-		top[0] = bot_front;
+	        gpu::run(1, [nploc, top_back, bot_front, top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA (auto i) {
+		    bot_int[nploc - 1] = top_back;
+		    top_int[0] = bot_front;
             	    if (nploc > 1) {
-		      gpu::run(1, [top_int=begin(top)] GPU_LAMBDA (auto i) {
 		        int tmp = top_int[0];
 			top_int[0] = top_int[1];
 			top_int[1] = tmp;
-		      });
 	            } else {
-			gpu::run(1, [bot_int=begin(bot), top_int=begin(top)] GPU_LAMBDA (auto i) {
 			  int tmp = top_int[0];
 			  top_int[0] = bot_int[0];
 			  bot_int[0] = tmp;
-		        });
-	            } 
-	      } //if nploc >0 
-	} //irot*/
+		    }
+		});
+		gpu::sync();
+	    } //if nploc >0 
+	} //irot
+       //std::cout << "nsweep:  " <<  nsweep << " diag change:  " << diag_change << std::endl;
        done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
-       //done = (nsweep >= maxsweep);
     } //while 
+    } //scope
 
     //eigenvalue array
     adiag.reextent({n, mloc}); 
     gpu::run(n, mloc, [adiag_int=begin(adiag)] GPU_LAMBDA (auto i, auto k) {
       adiag_int[i][k] = complex(0.0, 0.0);
     });
+    gpu::sync();
 
     //Compute diagonal elements
     gpu::run(n, mloc, nloc, [n, mloc, nloc, a_int=begin(a), u_int=begin(u), adiag_int=begin(adiag)] GPU_LAMBDA (auto kk, auto ii, auto jj) {
       gpu::atomic::add(&adiag_int[kk][ii], conj_cplx(a_int[kk][ii][jj]) * u_int[ii][jj]);
     });
+    gpu::sync();
 
 } //jade_complex
 } // namespace wannier

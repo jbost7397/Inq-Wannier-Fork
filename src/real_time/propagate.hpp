@@ -83,7 +83,6 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 	if(start_step == 0) func(real_time::viewables{false, start_step, start_step*dt, ions, electrons, energy, forces, ham, pert});
 	observables::mlwf_properties mlwf_props;
 	if (opts.wf_diag_value() == options::real_time::wavefunction_diag::TDMLWF) { //JLB
-		//wannier::tdmlwf_trans mlwf_transformer(electrons.kpin()[0]);
 		mlwf_props.set_mlwf_transformer(wannier::tdmlwf_trans(electrons.kpin()[0]));
 	}
 

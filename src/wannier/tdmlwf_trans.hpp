@@ -65,26 +65,33 @@ void normalize(void) {
   int ny = wavefunctions_.basis().local_sizes()[1];
   int nz = wavefunctions_.basis().local_sizes()[2];
 
-  gpu::run(n_states, [hypercubic = begin(wavefunctions_.hypercubic()), nx, ny, nz] GPU_LAMBDA (auto k_wf) {
-    double norm_squared = 0.0;
-    for (int ix = 0; ix < nx; ++ix){
-      for (int iy = 0; iy < ny; ++iy){
-        for (int iz = 0; iz < nz; ++iz){
+  gpu::array<double, 1> norm_squared_per_state({n_states}, 0.0);
+
+  gpu::run(n_states, [hypercubic = begin(wavefunctions_.hypercubic()), nx, ny, nz, nsp = begin(norm_squared_per_state)] GPU_LAMBDA (auto k_wf) {
+    for (int ix = 0; ix < nx; ++ix) {
+      for (int iy = 0; iy < ny; ++iy) {
+        for (int iz = 0; iz < nz; ++iz) {
           complex wf_component = hypercubic[ix][iy][iz][k_wf];
-          norm_squared += norm(wf_component);
+          gpu::atomic::add(&nsp[k_wf], norm(wf_component));
         }
       }
     }
+  });
 
-    double norm_factor = 1.0 / sqroot(norm_squared);
-    for (int ix = 0; ix < nx; ++ix){
-      for (int iy = 0; iy < ny; ++iy){
-        for (int iz = 0; iz < nz; ++iz){
-	  hypercubic[ix][iy][iz][k_wf] *= norm_factor;
-	}
+  auto comm = wavefunctions_.basis().comm();
+  comm.all_reduce_in_place_n(raw_pointer_cast(norm_squared_per_state.data_elements()), norm_squared_per_state.num_elements(), std::plus<>());
+
+  gpu::run(n_states, [hypercubic = begin(wavefunctions_.hypercubic()), nx, ny, nz, nsp = begin(norm_squared_per_state)] GPU_LAMBDA (auto k_wf) {
+    double norm_factor = 1.0 / sqroot(nsp[k_wf]);
+    for (int ix = 0; ix < nx; ++ix) {
+      for (int iy = 0; iy < ny; ++iy) {
+        for (int iz = 0; iz < nz; ++iz) {
+          hypercubic[ix][iy][iz][k_wf] *= norm_factor;
+        }
       }
     }
   });
+
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -99,9 +106,10 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
   double lx = sqroot(wavefunctions_.basis().cell()[0].norm());
   double ly = sqroot(wavefunctions_.basis().cell()[1].norm());
   double lz = sqroot(wavefunctions_.basis().cell()[2].norm());
-
   auto point_op = wavefunctions_.basis().point_op();
-
+  auto cubic_part_x = wavefunctions_.basis().cubic_part(0);
+  auto cubic_part_y = wavefunctions_.basis().cubic_part(1);
+  auto cubic_part_z = wavefunctions_.basis().cubic_part(2);
   normalize();
 
   gpu::run(6, n_states, n_states, [n_states, a_int=begin(a_)] GPU_LAMBDA (auto i, auto j, auto k) {
@@ -119,8 +127,11 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
   gpu::array<double, 4> trig_array;
   trig_array.reextent({6, nx, ny, nz});
 
-  gpu::run(nz, ny, nx, [point_op, ta = begin(trig_array), lx, ly, lz] GPU_LAMBDA (auto iz, auto iy, auto ix) {
-    auto coords = point_op.rvector_cartesian(ix, iy, iz);
+  gpu::run(nz, ny, nx, [cubic_part_x, cubic_part_y, cubic_part_z, point_op, ta = begin(trig_array), lx, ly, lz] GPU_LAMBDA (auto iz, auto iy, auto ix) {
+    auto ixg = cubic_part_x.local_to_global(ix);
+    auto iyg = cubic_part_y.local_to_global(iy);
+    auto izg = cubic_part_z.local_to_global(iz);
+    auto coords = point_op.rvector_cartesian(ixg, iyg, izg);
     ta[0][ix][iy][iz] = cos(2.0 * M_PI * coords[0] / lx);
     ta[1][ix][iy][iz] = sin(2.0 * M_PI * coords[0] / lx);
     ta[2][ix][iy][iz] = cos(2.0 * M_PI * coords[1] / ly);
@@ -128,27 +139,43 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
     ta[4][ix][iy][iz] = cos(2.0 * M_PI * coords[2] / lz);
     ta[5][ix][iy][iz] = sin(2.0 * M_PI * coords[2] / lz);
   });
-
-  gpu::run(n_states, n_states, [hypercubic = begin(wavefunctions_.hypercubic()), ta = begin(trig_array), lx, ly, lz, nx, ny, nz, a = begin(a_)] GPU_LAMBDA (auto l_wf, auto k_wf) {
+  
+  gpu::run(n_states, n_states, [hypercubic = begin(wavefunctions_.hypercubic()), ta = begin(trig_array), nx, ny, nz, a = begin(a_)] GPU_LAMBDA (auto l_wf, auto k_wf) {
     for (int ix = 0; ix < nx; ix++){
       for (int iy = 0; iy < ny; iy++){
         for (int iz = 0; iz < nz; iz++){
 
             complex c_ik = hypercubic[ix][iy][iz][k_wf];
             auto conj_ik = conj_cplx(c_ik);
-
             complex c_jl = hypercubic[ix][iy][iz][l_wf];
-
             a[0][k_wf][l_wf] += conj_ik * c_jl * ta[0][ix][iy][iz];
             a[1][k_wf][l_wf] += conj_ik * c_jl * ta[1][ix][iy][iz];
             a[2][k_wf][l_wf] += conj_ik * c_jl * ta[2][ix][iy][iz];
             a[3][k_wf][l_wf] += conj_ik * c_jl * ta[3][ix][iy][iz];
             a[4][k_wf][l_wf] += conj_ik * c_jl * ta[4][ix][iy][iz];
             a[5][k_wf][l_wf] += conj_ik * c_jl * ta[5][ix][iy][iz];
+	    /*gpu::atomic::add(&a[0][k_wf][l_wf], conj_ik * c_jl * ta[0][ix][iy][iz]);
+	    gpu::atomic::add(&a[1][k_wf][l_wf], conj_ik * c_jl * ta[1][ix][iy][iz]);
+	    gpu::atomic::add(&a[2][k_wf][l_wf], conj_ik * c_jl * ta[2][ix][iy][iz]);
+	    gpu::atomic::add(&a[3][k_wf][l_wf], conj_ik * c_jl * ta[3][ix][iy][iz]);
+	    gpu::atomic::add(&a[4][k_wf][l_wf], conj_ik * c_jl * ta[4][ix][iy][iz]);
+	    gpu::atomic::add(&a[5][k_wf][l_wf], conj_ik * c_jl * ta[5][ix][iy][iz]);*/
+
 	}
       }
     }
   });
+
+  gpu::sync();
+
+  if (wavefunctions.basis().comm().size() > 1) {
+    CALI_CXX_MARK_SCOPE("wannier_update::reduce_a");
+    wavefunctions.basis().comm().all_reduce_in_place_n(raw_pointer_cast(a_.data_elements()), a_.num_elements(), std::plus<>());
+  }
+
+  /*auto rank = wavefunctions.basis().comm().rank();
+
+  std::cout << "Rank " << rank << ": Reduced a_[0][0][0] = " << a_[0][0][0] << std::endl;*/
 
 }//update
 ////////////////////////////////////////////////////////////////////////////////
