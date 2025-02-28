@@ -42,6 +42,7 @@ public:
   }
 
 private:
+
   std::optional<wannier::tdmlwf_trans> mlwf_transformer_;
 };
 } // namespace observables

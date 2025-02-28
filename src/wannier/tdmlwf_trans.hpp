@@ -59,6 +59,7 @@ tdmlwf_trans(states::orbital_set<basis::real_space, complex> const & wavefunctio
 }//constructor
 
 void normalize(void) {
+
   CALI_CXX_MARK_SCOPE("wannier_normalize");
   int n_states = wavefunctions_.set_size();
   int nx = wavefunctions_.basis().local_sizes()[0];
@@ -75,6 +76,7 @@ void normalize(void) {
           gpu::atomic::add(&nsp[k_wf], norm(wf_component));
         }
       }
+
     }
   });
 
@@ -91,9 +93,7 @@ void normalize(void) {
       }
     }
   });
-
-}
-
+}//normalize 
 ////////////////////////////////////////////////////////////////////////////////
 void update(const states::orbital_set<basis::real_space, complex>& wavefunctions) {
   wavefunctions_ = wavefunctions;
