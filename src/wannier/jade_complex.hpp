@@ -114,7 +114,6 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
 	      //CS loop over nploc and for all pairs construct G to be diagonalized
 	      gpu::run(nploc, [mloc, nploc, n, apq_int=begin(apq), bot_int=begin(bot), top_int=begin(top), rot_array_int=begin(rot_array)] GPU_LAMBDA (auto ipair) {
-	      for (int ipair = 0; ipair < nploc; ++ipair) {
                 if (top_int[ipair] < mloc && bot_int[ipair] < mloc) {
 		  double G[9] = {0.0};
 		  for (int k = 0; k < n; ++k) {
@@ -279,22 +278,58 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 	       rot_array_int[top_int[ipair]][bot_int[ipair]] = sconj;
 	       rot_array_int[bot_int[ipair]][top_int[ipair]] = -s;
        	     } //if 
-           } //ipair 
         }); //loop
         gpu::sync();
         } //timer
 
           {     CALI_CXX_MARK_SCOPE("gpu_run_loop3");
 	       //CS apply rotation 
+#ifndef ENABLE_CUDA
                namespace blas = boost::multi::blas;
 
                u = +blas::gemm(1.0, rot_array, u);
                gpu::sync();
+#else 
+          gpu::array<complex, 2> u_tmp({mloc, mloc}, complex(0.0, 0.0));
+	  const cuDoubleComplex zero = make_cuDoubleComplex(0.0, 0.0);
+          const cuDoubleComplex one = make_cuDoubleComplex(1.0, 0.0);
 
-	       for (int k = 0; k < n; ++k) {
-	         a[k] = +blas::gemm(1.0, rot_array, a[k]);
-	       }
-	       gpu::sync();
+          auto status = cublasZgemm(/*cublasHandle_t handle = */ boost::multi::cuda::cublas::context::get_instance().get(),
+                                                                                                                                                                                        /*cublasOperation_t transa = */ CUBLAS_OP_N,
+                                                                                                                                                                                        /*cublasOperation_t transb = */ CUBLAS_OP_N,
+                                                                                                                                                                                        /*int m = */ mloc,
+                                                                                                                                                                                        /*int n = */ mloc,
+                                                                                                                                                                                        /*int k = */ mloc,
+                                                                                                                                                                                        /*const double *alpha = */ &one,
+
+          /*const double *A = */ reinterpret_cast<cuDoubleComplex const *>(raw_pointer_cast(rot_array.data_elements())),  // Input matrix A (rot_array)
+
+          /*int lda = */ mloc,
+
+          /*const double *B = */ reinterpret_cast<cuDoubleComplex const *>(raw_pointer_cast(u.data_elements())),  // Input matrix B (u)
+
+          /*int ldb = */ mloc,
+
+          /*const double *beta = */ &zero,
+
+          /*double *C = */ reinterpret_cast<cuDoubleComplex *>(raw_pointer_cast(u_tmp.data_elements())),  // Matrix C (overwrite u)
+
+          /*int ldc = */ mloc);
+
+          gpu::sync();
+          if (status != CUBLAS_STATUS_SUCCESS) {
+    		std::cerr << "cublasZgemm failed with status: " << status << std::endl;
+          }
+          u = u_tmp;
+          std::cout << u_tmp[0][0] << " " << u_tmp[1][0] << std::endl;
+#endif
+
+               namespace blas = boost::multi::blas;
+               for (int k = 0; k < n; ++k) {
+                 a[k] = +blas::gemm(1.0, rot_array, a[k]);
+               }
+               gpu::sync();
+
 
 	       //CS get resulting diag sum and find change 
                gpu::array<double, 1> diag_sum_end(1, 0.0);
