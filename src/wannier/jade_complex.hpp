@@ -43,7 +43,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     gpu::run(mloc, mloc, [mloc, u_int=begin(u)] GPU_LAMBDA (auto ii, auto jj) {
       u_int[ii][jj] = (ii == jj) ? complex(1.0,0.0) : complex(0.0,0.0);
     });
-    gpu::sync();
+    //gpu::sync();
 
     const int nploc = (nloc + 1) / 2;
     gpu::array<int,1> top(nploc);
@@ -58,7 +58,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
       top_int[i] = i; 
       bot_int[nploc - i - 1] = nploc + i;
     });
-    gpu::sync();
+    //gpu::sync();
 
     int nsweep = 0;
     bool done = false;
@@ -74,7 +74,19 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
       while (!done) {
         ++nsweep;
         double diag_change = 0.0;
-        // sweep local pairs and rotate 2*np -1 times
+        gpu::array<double, 1> diag_sum_init(1, 0.0);
+        gpu::run(n, mloc, [a_int=begin(a), diag_sum=begin(diag_sum_init)] GPU_LAMBDA (auto k, auto i) {
+          gpu::atomic::add(&diag_sum[0], real(a_int[k][i][i]));
+        });
+
+        //CS initalize rot_array within loop so it resets to identity every time
+/*        gpu::array<complex,2> rot_array({mloc, mloc}, complex(0.0, 0.0));
+        gpu::run(mloc, mloc, [mloc, r=begin(rot_array)] GPU_LAMBDA (auto ii, auto jj) {
+          r[ii][jj] = (ii == jj) ? complex(1.0,0.0) : complex(0.0,0.0);
+        });
+        gpu::sync();
+*/
+        // sweep pairs and rotate 2*np -1 times
         for (int irot = 0; irot < 2*np-1; ++irot) {
 
 	  //CS initalize rot_array within loop so it resets to identity every time 
@@ -82,13 +94,6 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
           gpu::run(mloc, mloc, [mloc, r=begin(rot_array)] GPU_LAMBDA (auto ii, auto jj) {
             r[ii][jj] = (ii == jj) ? complex(1.0,0.0) : complex(0.0,0.0);
           });
-          gpu::sync();
-
-	  //CS store original sum of diag elements of a	  
-	  gpu::array<double, 1> diag_sum_init(1, 0.0);
-	  gpu::run(n, mloc, [a_int=begin(a), diag_sum=begin(diag_sum_init)] GPU_LAMBDA (auto k, auto i) {
-	    gpu::atomic::add(&diag_sum[0], real(a_int[k][i][i])); 
-	  });
           gpu::sync();
 
             //jacobi rotations for local pairs of diagonal elements for all pairs (apq)
@@ -276,7 +281,12 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                rot_array_int[top_int[ipair]][top_int[ipair]] = c;
                rot_array_int[bot_int[ipair]][bot_int[ipair]] = c;
 	       rot_array_int[top_int[ipair]][bot_int[ipair]] = sconj;
-	       rot_array_int[bot_int[ipair]][top_int[ipair]] = -s;
+	       rot_array_int[bot_int[ipair]][top_int[ipair]] = -s; 
+/*	       gpu::atomic::add(&rot_array_int[top_int[ipair]][top_int[ipair]], c);
+	       gpu::atomic::add(&rot_array_int[bot_int[ipair]][bot_int[ipair]], c);
+	       gpu::atomic::add(&rot_array_int[top_int[ipair]][bot_int[ipair]], sconj);
+	       gpu::atomic::add(&rot_array_int[bot_int[ipair]][top_int[ipair]], -s);
+*/
        	     } //if 
         }); //loop
         gpu::sync();
@@ -284,75 +294,36 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
           {     CALI_CXX_MARK_SCOPE("gpu_run_loop3");
 	       //CS apply rotation 
-#ifndef ENABLE_CUDA
                namespace blas = boost::multi::blas;
 
                u = +blas::gemm(1.0, rot_array, u);
-               gpu::sync();
-#else 
-          gpu::array<complex, 2> u_tmp({mloc, mloc}, complex(0.0, 0.0));
-	  const cuDoubleComplex zero = make_cuDoubleComplex(0.0, 0.0);
-          const cuDoubleComplex one = make_cuDoubleComplex(1.0, 0.0);
+               //gpu::sync();
 
-          auto status = cublasZgemm(/*cublasHandle_t handle = */ boost::multi::cuda::cublas::context::get_instance().get(),
-                                                                                                                                                                                        /*cublasOperation_t transa = */ CUBLAS_OP_N,
-                                                                                                                                                                                        /*cublasOperation_t transb = */ CUBLAS_OP_N,
-                                                                                                                                                                                        /*int m = */ mloc,
-                                                                                                                                                                                        /*int n = */ mloc,
-                                                                                                                                                                                        /*int k = */ mloc,
-                                                                                                                                                                                        /*const double *alpha = */ &one,
-
-          /*const double *A = */ reinterpret_cast<cuDoubleComplex const *>(raw_pointer_cast(rot_array.data_elements())),  // Input matrix A (rot_array)
-
-          /*int lda = */ mloc,
-
-          /*const double *B = */ reinterpret_cast<cuDoubleComplex const *>(raw_pointer_cast(u.data_elements())),  // Input matrix B (u)
-
-          /*int ldb = */ mloc,
-
-          /*const double *beta = */ &zero,
-
-          /*double *C = */ reinterpret_cast<cuDoubleComplex *>(raw_pointer_cast(u_tmp.data_elements())),  // Matrix C (overwrite u)
-
-          /*int ldc = */ mloc);
-
-          gpu::sync();
-          if (status != CUBLAS_STATUS_SUCCESS) {
-    		std::cerr << "cublasZgemm failed with status: " << status << std::endl;
           }
-          u = u_tmp;
-          std::cout << u_tmp[0][0] << " " << u_tmp[1][0] << std::endl;
-#endif
-
+          {     CALI_CXX_MARK_SCOPE("gpu_run_loop4");
                namespace blas = boost::multi::blas;
                for (int k = 0; k < n; ++k) {
                  a[k] = +blas::gemm(1.0, rot_array, a[k]);
-               }
+	       }
                gpu::sync();
-
-
-	       //CS get resulting diag sum and find change 
-               gpu::array<double, 1> diag_sum_end(1, 0.0);
-               gpu::run(n, mloc, [a_int=begin(a), diag_sum=begin(diag_sum_end)] GPU_LAMBDA (auto k, auto i) {
-                 gpu::atomic::add(&diag_sum[0], real(a_int[k][i][i]));
-               });
-               gpu::sync();
-
-	       diag_change += 2.0 * fabs(diag_sum_end[0] - diag_sum_init[0]);
-
-	    }
-
+	  }
             // Rotate top and bot arrays //CS ~85% speed up now 
+          {     CALI_CXX_MARK_SCOPE("gpu_run_loop5");
             if (nploc > 0) {
-		int top_back = top[nploc - 1];
-		int bot_front = bot[0];
+                gpu::array<int, 1> bounds({2}, 0);
+		gpu::run(1, [nploc, bounds_int=begin(bounds), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA (auto i) {
+	          bounds_int[0] = top_int[nploc-1];
+                  bounds_int[1] = bot_int[0];
+		});
+
 		gpu::run(nploc-1, [bot_int=begin(bot), top_int=begin(top)] GPU_LAMBDA (auto j) { 
 	          bot_int[j] = bot_int[j+1];
 		  top_int[j + 1] = top_int[j];
                 });
-	        gpu::run(1, [nploc, top_back, bot_front, top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA (auto i) {
-		    bot_int[nploc - 1] = top_back;
-		    top_int[0] = bot_front;
+
+	        gpu::run(1, [nploc, top_int=begin(top), bot_int=begin(bot), bounds_int=begin(bounds)] GPU_LAMBDA (auto i) {
+		    bot_int[nploc - 1] = bounds_int[0]; 
+		    top_int[0] = bounds_int[1]; 
             	    if (nploc > 1) {
 		        int tmp = top_int[0];
 			top_int[0] = top_int[1];
@@ -365,10 +336,30 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 		});
 		gpu::sync();
 	    } //if nploc >0 
+          } //scope
 	} //irot
+/*  {     CALI_CXX_MARK_SCOPE("gpu_run_loop3");
+               //CS apply rotation
+        namespace blas = boost::multi::blas;
+        u = +blas::gemm(1.0, rot_array, u);
+
+   }
+   {     CALI_CXX_MARK_SCOPE("gpu_run_loop4");
+         namespace blas = boost::multi::blas;
+         for (int k = 0; k < n; ++k) {
+           a[k] = +blas::gemm(1.0, rot_array, a[k]);
+         }
+         gpu::sync();
+   }*/
+       gpu::array<double, 1> diag_sum_end(1, 0.0);
+       gpu::run(n, mloc, [a_int=begin(a), diag_sum=begin(diag_sum_end)] GPU_LAMBDA (auto k, auto i) {
+         gpu::atomic::add(&diag_sum[0], real(a_int[k][i][i]));
+       });
+       gpu::sync();
+       diag_change += 2.0 * fabs(diag_sum_end[0] - diag_sum_init[0]);
        std::cout << "nsweep:  " <<  nsweep << " diag change:  " << diag_change << std::endl;
        done = (fabs(diag_change) < tol) || (nsweep >= maxsweep);
-      } //while 
+     } //while 
     } //scope
 
     //eigenvalue array
