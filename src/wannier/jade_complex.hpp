@@ -79,13 +79,6 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
           gpu::atomic::add(&diag_sum[0], real(a_int[k][i][i]));
         });
 
-        //CS initalize rot_array within loop so it resets to identity every time
-/*        gpu::array<complex,2> rot_array({mloc, mloc}, complex(0.0, 0.0));
-        gpu::run(mloc, mloc, [mloc, r=begin(rot_array)] GPU_LAMBDA (auto ii, auto jj) {
-          r[ii][jj] = (ii == jj) ? complex(1.0,0.0) : complex(0.0,0.0);
-        });
-        gpu::sync();
-*/
         // sweep pairs and rotate 2*np -1 times
         for (int irot = 0; irot < 2*np-1; ++irot) {
 
@@ -282,11 +275,6 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                rot_array_int[bot_int[ipair]][bot_int[ipair]] = c;
 	       rot_array_int[top_int[ipair]][bot_int[ipair]] = sconj;
 	       rot_array_int[bot_int[ipair]][top_int[ipair]] = -s; 
-/*	       gpu::atomic::add(&rot_array_int[top_int[ipair]][top_int[ipair]], c);
-	       gpu::atomic::add(&rot_array_int[bot_int[ipair]][bot_int[ipair]], c);
-	       gpu::atomic::add(&rot_array_int[top_int[ipair]][bot_int[ipair]], sconj);
-	       gpu::atomic::add(&rot_array_int[bot_int[ipair]][top_int[ipair]], -s);
-*/
        	     } //if 
         }); //loop
         gpu::sync();
@@ -297,18 +285,19 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                namespace blas = boost::multi::blas;
 
                u = +blas::gemm(1.0, rot_array, u);
-               //gpu::sync();
 
-          }
-          {     CALI_CXX_MARK_SCOPE("gpu_run_loop4");
-               namespace blas = boost::multi::blas;
-               for (int k = 0; k < n; ++k) {
-                 a[k] = +blas::gemm(1.0, rot_array, a[k]);
-	       }
+               a[0] = +blas::gemm(1.0, rot_array, a[0]);
+               a[1] = +blas::gemm(1.0, rot_array, a[1]);
+               a[2] = +blas::gemm(1.0, rot_array, a[2]);
+               a[3] = +blas::gemm(1.0, rot_array, a[3]);
+               a[4] = +blas::gemm(1.0, rot_array, a[4]);
+               a[5] = +blas::gemm(1.0, rot_array, a[5]);
+
                gpu::sync();
 	  }
+
             // Rotate top and bot arrays //CS ~85% speed up now 
-          {     CALI_CXX_MARK_SCOPE("gpu_run_loop5");
+          {     CALI_CXX_MARK_SCOPE("gpu_run_loop4");
             if (nploc > 0) {
                 gpu::array<int, 1> bounds({2}, 0);
 		gpu::run(1, [nploc, bounds_int=begin(bounds), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA (auto i) {
@@ -338,19 +327,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 	    } //if nploc >0 
           } //scope
 	} //irot
-/*  {     CALI_CXX_MARK_SCOPE("gpu_run_loop3");
-               //CS apply rotation
-        namespace blas = boost::multi::blas;
-        u = +blas::gemm(1.0, rot_array, u);
 
-   }
-   {     CALI_CXX_MARK_SCOPE("gpu_run_loop4");
-         namespace blas = boost::multi::blas;
-         for (int k = 0; k < n; ++k) {
-           a[k] = +blas::gemm(1.0, rot_array, a[k]);
-         }
-         gpu::sync();
-   }*/
        gpu::array<double, 1> diag_sum_end(1, 0.0);
        gpu::run(n, mloc, [a_int=begin(a), diag_sum=begin(diag_sum_end)] GPU_LAMBDA (auto k, auto i) {
          gpu::atomic::add(&diag_sum[0], real(a_int[k][i][i]));
