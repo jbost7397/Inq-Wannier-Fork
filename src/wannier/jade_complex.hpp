@@ -89,6 +89,9 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
           });
           gpu::sync();
 
+	  //CS mat needed to update a and u within loop 2
+          gpu::array<complex,2> tmp ({mloc, mloc}, complex(0.0, 0.0));
+
             //jacobi rotations for local pairs of diagonal elements for all pairs (apq)
           {     CALI_CXX_MARK_SCOPE("gpu_run_loop1");
 	    //CS profile shows this is pretty fast (and correct)
@@ -111,7 +114,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
           { CALI_CXX_MARK_SCOPE("gpu_run_loop2");
 
 	      //CS loop over nploc and for all pairs construct G to be diagonalized
-	      gpu::run(nploc, [mloc, nploc, n, apq_int=begin(apq), bot_int=begin(bot), top_int=begin(top), rot_array_int=begin(rot_array)] GPU_LAMBDA (auto ipair) {
+	      gpu::run(nploc, mloc, [mloc, nploc, n, apq_int=begin(apq), bot_int=begin(bot), top_int=begin(top), u_int=begin(u), a_int=begin(a), tmp_int=begin(tmp)] GPU_LAMBDA (auto ipair, auto ii) {
                 if (top_int[ipair] < mloc && bot_int[ipair] < mloc) {
 		  double G[9] = {0.0};
 		  for (int k = 0; k < n; ++k) {
@@ -271,30 +274,30 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                complex s = complex(y / (2.0 * r), -z / (2.0 * r));
                complex sconj = conj_cplx(s);
 	       //CS construct rotations as array and apply all at once 
-               rot_array_int[top_int[ipair]][top_int[ipair]] = c;
-               rot_array_int[bot_int[ipair]][bot_int[ipair]] = c;
-	       rot_array_int[top_int[ipair]][bot_int[ipair]] = sconj;
-	       rot_array_int[bot_int[ipair]][top_int[ipair]] = -s; 
+               //rot_array_int[top_int[ipair]][top_int[ipair]] = c;
+               //rot_array_int[bot_int[ipair]][bot_int[ipair]] = c;
+	       //rot_array_int[top_int[ipair]][bot_int[ipair]] = sconj;
+	       //rot_array_int[bot_int[ipair]][top_int[ipair]] = -s; 
+
+               for (int kk = 0; kk < n; ++kk) {
+	         //CS for pair, update columns of a
+                 tmp_int[top_int[ipair]][ii] = c * a_int[kk][top_int[ipair]][ii] + sconj * a_int[kk][bot_int[ipair]][ii];
+                 tmp_int[bot_int[ipair]][ii] = -s * a_int[kk][top_int[ipair]][ii] + c * a_int[kk][bot_int[ipair]][ii];
+
+	         a_int[kk][top_int[ipair]][ii] = tmp_int[top_int[ipair]][ii];
+	         a_int[kk][bot_int[ipair]][ii] = tmp_int[bot_int[ipair]][ii];
+	       }
+
+	       //CS for pair update columns of u 
+               tmp_int[top_int[ipair]][ii] = c * u_int[top_int[ipair]][ii] + sconj * u_int[bot_int[ipair]][ii];
+	       tmp_int[bot_int[ipair]][ii] = -s * u_int[top_int[ipair]][ii] + c * u_int[bot_int[ipair]][ii];
+
+               u_int[top_int[ipair]][ii] = tmp_int[top_int[ipair]][ii]; 
+               u_int[bot_int[ipair]][ii] = tmp_int[bot_int[ipair]][ii];
        	     } //if 
         }); //loop
         gpu::sync();
         } //timer
-
-          {     CALI_CXX_MARK_SCOPE("gpu_run_loop3");
-	       //CS apply rotation 
-               namespace blas = boost::multi::blas;
-
-               u = +blas::gemm(1.0, rot_array, u);
-
-               a[0] = +blas::gemm(1.0, rot_array, a[0]);
-               a[1] = +blas::gemm(1.0, rot_array, a[1]);
-               a[2] = +blas::gemm(1.0, rot_array, a[2]);
-               a[3] = +blas::gemm(1.0, rot_array, a[3]);
-               a[4] = +blas::gemm(1.0, rot_array, a[4]);
-               a[5] = +blas::gemm(1.0, rot_array, a[5]);
-
-               gpu::sync();
-	  }
 
             // Rotate top and bot arrays //CS ~85% speed up now 
           {     CALI_CXX_MARK_SCOPE("gpu_run_loop4");
