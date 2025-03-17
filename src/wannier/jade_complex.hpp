@@ -43,7 +43,6 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     gpu::run(mloc, mloc, [mloc, u_int=begin(u)] GPU_LAMBDA (auto ii, auto jj) {
       u_int[ii][jj] = (ii == jj) ? complex(1.0,0.0) : complex(0.0,0.0);
     });
-    //gpu::sync();
 
     const int nploc = (nloc + 1) / 2;
     gpu::array<int,1> top(nploc);
@@ -83,14 +82,14 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
         for (int irot = 0; irot < 2*np-1; ++irot) {
 
 	  //CS initalize rot_array within loop so it resets to identity every time 
-          gpu::array<complex,2> rot_array({mloc, mloc}, complex(0.0, 0.0));
-          gpu::run(mloc, mloc, [mloc, r=begin(rot_array)] GPU_LAMBDA (auto ii, auto jj) {
+          //CS mat needed to update a and u within loop 2
+          gpu::array<complex,2> rot_array({mloc, mloc});
+          gpu::array<complex,2> tmp_mat ({mloc, mloc});
+          gpu::run(mloc, mloc, [r=begin(rot_array), tmp=begin(tmp_mat)] GPU_LAMBDA (auto ii, auto jj) {
             r[ii][jj] = (ii == jj) ? complex(1.0,0.0) : complex(0.0,0.0);
+            tmp[ii][jj] = complex(0.0,0.0);
           });
           gpu::sync();
-
-	  //CS mat needed to update a and u within loop 2
-          gpu::array<complex,2> tmp ({mloc, mloc}, complex(0.0, 0.0));
 
             //jacobi rotations for local pairs of diagonal elements for all pairs (apq)
           {     CALI_CXX_MARK_SCOPE("gpu_run_loop1");
@@ -114,7 +113,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
           { CALI_CXX_MARK_SCOPE("gpu_run_loop2");
 
 	      //CS loop over nploc and for all pairs construct G to be diagonalized
-	      gpu::run(nploc, mloc, [mloc, nploc, n, apq_int=begin(apq), bot_int=begin(bot), top_int=begin(top), u_int=begin(u), a_int=begin(a), tmp_int=begin(tmp)] GPU_LAMBDA (auto ipair, auto ii) {
+	      gpu::run(nploc, mloc, [mloc, nploc, n, apq_int=begin(apq), bot_int=begin(bot), top_int=begin(top), u_int=begin(u), a_int=begin(a), tmp_int=begin(tmp_mat)] GPU_LAMBDA (auto ipair, auto ii) {
                 if (top_int[ipair] < mloc && bot_int[ipair] < mloc) {
 		  double G[9] = {0.0};
 		  for (int k = 0; k < n; ++k) {
@@ -273,11 +272,6 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                complex c = complex(r, 0.0);
                complex s = complex(y / (2.0 * r), -z / (2.0 * r));
                complex sconj = conj_cplx(s);
-	       //CS construct rotations as array and apply all at once 
-               //rot_array_int[top_int[ipair]][top_int[ipair]] = c;
-               //rot_array_int[bot_int[ipair]][bot_int[ipair]] = c;
-	       //rot_array_int[top_int[ipair]][bot_int[ipair]] = sconj;
-	       //rot_array_int[bot_int[ipair]][top_int[ipair]] = -s; 
 
                for (int kk = 0; kk < n; ++kk) {
 	         //CS for pair, update columns of a
@@ -300,7 +294,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
         } //timer
 
             // Rotate top and bot arrays //CS ~85% speed up now 
-          {     CALI_CXX_MARK_SCOPE("gpu_run_loop4");
+          {     CALI_CXX_MARK_SCOPE("gpu_run_loop3");
             if (nploc > 0) {
                 gpu::array<int, 1> bounds({2}, 0);
 		gpu::run(1, [nploc, bounds_int=begin(bounds), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA (auto i) {
