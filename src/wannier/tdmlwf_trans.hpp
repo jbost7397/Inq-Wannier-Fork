@@ -160,7 +160,7 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
 void compute_transform(void)
 {
   const int maxsweep = 100;
-  const double tol = 1.e-6;
+  const double tol = 1.e-5;
   jade_complex(maxsweep,tol,a_,u_,adiag_);
 }
 ////////////////////////////////////////////////////////////////////////////////

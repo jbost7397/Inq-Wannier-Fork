@@ -67,8 +67,8 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     gpu::array<complex,1> apq(n * 3 * nploc);
     const int apq_size = 3 * n * nploc;
 
-    parallel::communicator comm{boost::mpi3::environment::get_world_instance()};
-    parallel::cartesian_communicator<2> cart_comm(comm, {});
+    //parallel::communicator comm{boost::mpi3::environment::get_world_instance()};
+    //parallel::cartesian_communicator<2> cart_comm(comm, {});
 
     CALI_CXX_MARK_SCOPE("jade");
     {
@@ -101,13 +101,20 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
           gpu::sync();
 
           {     CALI_CXX_MARK_SCOPE("gpu_run_loop1");
-	    gpu::run(n, nploc, [n, nploc, mloc, a_int=begin(a), u_int=begin(u), apq_int=begin(apq), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA(auto k, auto ipair) { 
+	    gpu::run(n, nploc, [nploc, mloc, a_int=begin(a), u_int=begin(u), apq_int=begin(apq), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA(auto k, auto ipair) { 
               
-		const int iapq = 3 * ipair  + k * 3 * nploc;
+		const int iapq = 3 * ipair + k * 3 * nploc;
 	        complex local_apq[3] = {complex(0.0, 0.0), complex(0.0, 0.0), complex(0.0, 0.0)};
 
 	        if (top_int[ipair] < mloc && bot_int[ipair] < mloc) {
+
+                  //__shared__ complex a_shared[128][128];
+		  //__shared__ complex u_shared[128][128];
+
 	          for (int ii = 0; ii < mloc; ++ii) { 
+                    //gpu::atomic::add(&apq_int[iapq], conj_cplx(a_int[k][top_int[ipair]][ii]) * u_int[bot_int[ipair]][ii]);
+                    //gpu::atomic::add(&apq_int[iapq + 1], conj_cplx(a_int[k][top_int[ipair]][ii]) * u_int[top_int[ipair]][ii]);
+                    //gpu::atomic::add(&apq_int[iapq + 2], conj_cplx(a_int[k][bot_int[ipair]][ii]) * u_int[bot_int[ipair]][ii]);		  
        		    local_apq[0] += conj_cplx(a_int[k][top_int[ipair]][ii]) * u_int[bot_int[ipair]][ii];
         	    local_apq[1] += conj_cplx(a_int[k][top_int[ipair]][ii]) * u_int[top_int[ipair]][ii];
         	    local_apq[2] += conj_cplx(a_int[k][bot_int[ipair]][ii]) * u_int[bot_int[ipair]][ii];
@@ -123,7 +130,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
           { CALI_CXX_MARK_SCOPE("gpu_run_loop2");
 
 	      //CS loop over nploc and for all pairs construct G to be diagonalized
-	      gpu::run(nploc, mloc, [mloc, nploc, n, apq_int=begin(apq), bot_int=begin(bot), top_int=begin(top), u_int=begin(u), a_int=begin(a), tmp_int=begin(tmp_mat)] GPU_LAMBDA (auto ipair, auto ii) {
+	      gpu::run(mloc, nploc, [mloc, nploc, n, apq_int=begin(apq), bot_int=begin(bot), top_int=begin(top), u_int=begin(u), a_int=begin(a), tmp_int=begin(tmp_mat)] GPU_LAMBDA (auto ii, auto ipair) {
                 if (top_int[ipair] < mloc && bot_int[ipair] < mloc) {
 		  double G[9] = {0.0};
                   for (int k = 0; k < n; ++k) {
