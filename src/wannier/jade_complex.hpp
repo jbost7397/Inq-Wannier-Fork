@@ -15,7 +15,7 @@
 #include <matrix/gather_scatter.hpp>
 #include <matrix/diagonalize.hpp>
 #include <parallel/communicator.hpp>
-#include <operations/rotate.hpp>
+#include <operations/sum.hpp>
 #include <gpu/run.hpp>
 #include <wannier/jacobi_eigenvalue.hpp>
 #include <wannier/plane_rot.hpp>
@@ -40,7 +40,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
     // Initialize u as identity
     u.reextent({mloc, mloc});
-    gpu::run(mloc, mloc, [u_int=begin(u)] GPU_LAMBDA (auto ii, auto jj) {
+    gpu::run(mloc, mloc, [u_int=begin(u)] GPU_LAMBDA (auto jj, auto ii) {
       u_int[ii][jj] = (ii == jj) ? complex(1.0,0.0) : complex(0.0,0.0);
     });
 
@@ -60,15 +60,6 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
     int nsweep = 0;
     bool done = false;
-    // allocate matrix element packed array apq
-    // apq[3*ipair   + k*3*nploc] = apq[k][ipair]
-    // apq[3*ipair+1 + k*3*nploc] = app[k][ipair]
-    // apq[3*ipair+2 + k*3*nploc] = aqq[k][ipair]
-    gpu::array<complex,1> apq(n * 3 * nploc);
-    const int apq_size = 3 * n * nploc;
-
-    //parallel::communicator comm{boost::mpi3::environment::get_world_instance()};
-    //parallel::cartesian_communicator<2> cart_comm(comm, {});
 
     CALI_CXX_MARK_SCOPE("jade");
     {
@@ -86,58 +77,55 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
         for (int irot = 0; irot < 2*np-1; ++irot) {
 
 	  //CS initalize rot_array within loop so it resets to identity every time 
-          //CS mat needed to update a and u within loop 2
+          //CS mat needed to update a and u within loop 3
           gpu::array<complex,2> rot_array ({mloc, mloc});
           gpu::array<complex,2> tmp_mat ({mloc, mloc});
-          gpu::run(mloc, mloc, [r=begin(rot_array), tmp=begin(tmp_mat)] GPU_LAMBDA (auto ii, auto jj) {
+          gpu::run(mloc, mloc, [r=begin(rot_array), tmp=begin(tmp_mat)] GPU_LAMBDA (auto jj, auto ii) {
               r[ii][jj] = (ii == jj) ? complex(1.0,0.0) : complex(0.0,0.0);
               tmp[ii][jj] = complex(0.0,0.0);
           });
 
-          //jacobi rotations for local pairs of diagonal elements for all pairs (apq)
-	  gpu::run(apq_size, [apq_in=begin(apq)] GPU_LAMBDA (auto k) {
-            apq_in[k] = complex(0.0,0.0);
-	  });
-          gpu::sync();
+          // allocate matrix element packed array apq
+	  gpu::array<complex, 3> apq({n, nploc, 3});
+          gpu::run(n, nploc, [apq_int=begin(apq)] GPU_LAMBDA (auto k, auto ipair) {
+            apq_int[k][ipair][0] = complex(0.0, 0.0);
+            apq_int[k][ipair][1] = complex(0.0, 0.0);
+            apq_int[k][ipair][2] = complex(0.0, 0.0);
+          });
 
-          {     CALI_CXX_MARK_SCOPE("gpu_run_loop1");
-	    gpu::run(n, nploc, [nploc, mloc, a_int=begin(a), u_int=begin(u), apq_int=begin(apq), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA(auto k, auto ipair) { 
-              
-		const int iapq = 3 * ipair + k * 3 * nploc;
-	        complex local_apq[3] = {complex(0.0, 0.0), complex(0.0, 0.0), complex(0.0, 0.0)};
+		//CS this is the bottleneck step
+          {     CALI_CXX_MARK_SCOPE("jade_loop1");
+	    gpu::run(n, nploc, [mloc, a_int=begin(a), u_int=begin(u), apq_int=begin(apq), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA (auto k, auto ipair) { 
 
-	        if (top_int[ipair] < mloc && bot_int[ipair] < mloc) {
-
-                  //__shared__ complex a_shared[128][128];
-		  //__shared__ complex u_shared[128][128];
+		int bot = bot_int[ipair];
+		int top = top_int[ipair];
+		if (top < mloc && bot < mloc) {
+	          complex local_apq[3] = {complex(0.0, 0.0), complex(0.0, 0.0), complex(0.0, 0.0)};
 
 	          for (int ii = 0; ii < mloc; ++ii) { 
-                    //gpu::atomic::add(&apq_int[iapq], conj_cplx(a_int[k][top_int[ipair]][ii]) * u_int[bot_int[ipair]][ii]);
-                    //gpu::atomic::add(&apq_int[iapq + 1], conj_cplx(a_int[k][top_int[ipair]][ii]) * u_int[top_int[ipair]][ii]);
-                    //gpu::atomic::add(&apq_int[iapq + 2], conj_cplx(a_int[k][bot_int[ipair]][ii]) * u_int[bot_int[ipair]][ii]);		  
-       		    local_apq[0] += conj_cplx(a_int[k][top_int[ipair]][ii]) * u_int[bot_int[ipair]][ii];
-        	    local_apq[1] += conj_cplx(a_int[k][top_int[ipair]][ii]) * u_int[top_int[ipair]][ii];
-        	    local_apq[2] += conj_cplx(a_int[k][bot_int[ipair]][ii]) * u_int[bot_int[ipair]][ii];
+		    local_apq[0] += conj_cplx(a_int[k][top][ii]) * u_int[bot][ii];
+		    local_apq[1] += conj_cplx(a_int[k][top][ii]) * u_int[top][ii];
+                    local_apq[2] += conj_cplx(a_int[k][bot][ii]) * u_int[bot][ii];
 	          }
-    		}
-		gpu::atomic::add(&apq_int[iapq], local_apq[0]);
-                gpu::atomic::add(&apq_int[iapq + 1], local_apq[1]);
-    		gpu::atomic::add(&apq_int[iapq + 2], local_apq[2]);
+
+		apq_int[k][ipair][0] = local_apq[0];
+                apq_int[k][ipair][1] = local_apq[1];
+                apq_int[k][ipair][2] = local_apq[2];
+              }
            });
            gpu::sync();
           }
 
-          { CALI_CXX_MARK_SCOPE("gpu_run_loop2");
+          { CALI_CXX_MARK_SCOPE("jade_loop2");
 
-	      //CS loop over nploc and for all pairs construct G to be diagonalized
-	      gpu::run(mloc, nploc, [mloc, nploc, n, apq_int=begin(apq), bot_int=begin(bot), top_int=begin(top), u_int=begin(u), a_int=begin(a), tmp_int=begin(tmp_mat)] GPU_LAMBDA (auto ii, auto ipair) {
+	     //CS loop over nploc and for all pairs construct G to be diagonalized
+	     gpu::run(nploc, [mloc, nploc, n, apq_int=begin(apq), bot_int=begin(bot), top_int=begin(top), rot_array_int=begin(rot_array)] GPU_LAMBDA (auto ipair) {
                 if (top_int[ipair] < mloc && bot_int[ipair] < mloc) {
 		  double G[9] = {0.0};
                   for (int k = 0; k < n; ++k) {
-                    const int iapq = 3 * ipair + k * 3 * nploc;
-                    const complex aij = apq_int[iapq];
-                    const complex aii = apq_int[iapq + 1];
-                    const complex ajj = apq_int[iapq + 2];
+		    const complex aij = apq_int[k][ipair][0];
+                    const complex aii = apq_int[k][ipair][1];
+                    const complex ajj = apq_int[k][ipair][2];
 
                     const complex h1 = aii - ajj;
                     const complex h2 = aij + conj_cplx(aij);
@@ -145,13 +133,13 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                     G[0] += real(conj_cplx(h1) * h1);
                     G[1] += real(conj_cplx(h1) * h2);
                     G[2] += real(conj_cplx(h1) * h3);
-                    G[3] += real(conj_cplx(h2) * h1);
                     G[4] += real(conj_cplx(h2) * h2);
                     G[5] += real(conj_cplx(h2) * h3);
-                    G[6] += real(conj_cplx(h3) * h1);
-                    G[7] += real(conj_cplx(h3) * h2);
                     G[8] += real(conj_cplx(h3) * h3);
                   }
+		  G[3] = G[1];
+		  G[6] = G[2];
+		  G[7] = G[5];
 
 		   //CS Jacobi within loop, initalize eigenvector array
                    double v[9] = {0.0};
@@ -168,18 +156,13 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 	           int rot_num = 0; 
 
     		   while (it_num < it_max) {
-                   it_num = it_num + 1;
+                     it_num = it_num + 1;
 
-                   double thresh = 0.0;
-    		   for (int j = 0; j < 3; j++ ) {
-	             for (int i = 0; i < j; i++ ) {
-	               thresh = thresh + G[i+j*3] * G[i+j*3];
-      		     }
-    		   }
+		     double thresh = G[3] * G[3] + G[6] * G[6] + G[7] * G[7]; 
 
-    		   thresh = sqroot(thresh)/(12);
-	           if (thresh == 0.0) {
-                     break;
+    		     thresh = sqroot(thresh)/(12.0);
+	             if (thresh == 0.0) {
+                       break;
                    }
 
 	           for (int p = 0; p < 3; ++p) {
@@ -214,69 +197,62 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                        d[q] += h;
                        G[p + q * 3] = 0.0;
 
-                       for (int j = 0; j < p; ++j) {
-                         double g = G[j + p * 3];
-                         double h = G[j + q * 3];
-                         G[j + p * 3] = g - s * (h + g * tau);
-                         G[j + q * 3] = h + s * (g - h * tau);
-                       }
+		       if (p == 0 && q == 1) {
+	                 double g = G[6];
+		         double h = G[7]; 
+		         G[6] = g - s * (h + g * tau);
+			 G[7] = h + s * (g - h * tau);
+			 g = v[0]; h = v[3]; v[0] = g - s * (h + g * tau); v[3] = h + s * (g - h * tau);
+			 g = v[1]; h = v[4]; v[1] = g - s * (h + g * tau); v[4] = h + s * (g - h * tau);
+                         g = v[2]; h = v[5]; v[2] = g - s * (h + g * tau); v[5] = h + s * (g - h * tau);
+		       }
 
-                       for (int j = p + 1; j < q; ++j) {
-                         double g = G[p + j * 3];
-                         double h = G[j + q * 3];
-                         G[p + j * 3] = g - s * (h + g * tau);
-                         G[j + q * 3] = h + s * (g - h * tau);
+                       if (p == 0 && q == 2) {
+                         double g = G[3];
+                         double h = G[7];
+                         G[3] = g - s * (h + g * tau);
+                         G[7] = h + s * (g - h * tau);
+                         g = v[0]; h = v[6]; v[0] = g - s * (h + g * tau); v[6] = h + s * (g - h * tau);
+                         g = v[1]; h = v[7]; v[1] = g - s * (h + g * tau); v[7] = h + s * (g - h * tau);
+                         g = v[2]; h = v[8]; v[2] = g - s * (h + g * tau); v[8] = h + s * (g - h * tau);
+                       }	
+	
+                       if (p == 1 && q == 2) {
+                         double g = G[3];
+                         double h = G[6];
+                         G[3] = g - s * (h + g * tau);
+                         G[6] = h + s * (g - h * tau);
+                         g = v[3]; h = v[6]; v[3] = g - s * (h + g * tau); v[6] = h + s * (g - h * tau);
+                         g = v[4]; h = v[7]; v[4] = g - s * (h + g * tau); v[7] = h + s * (g - h * tau);
+                         g = v[5]; h = v[8]; v[5] = g - s * (h + g * tau); v[8] = h + s * (g - h * tau);
                        }
-
-                       for (int j = q + 1; j < 3; ++j) {
-                         double g = G[p + j * 3];
-                         double h = G[q + j * 3];
-                         G[p + j * 3] = g - s * (h + g * tau);
-                         G[q + j * 3] = h + s * (g - h * tau);
-                       }
-
-                       for (int j = 0; j < 3; ++j) {
-                         double g = v[j + p * 3];
-                         double h = v[j + q * 3];
-                         v[j + p * 3] = g - s * (h + g * tau);
-                         v[j + q * 3] = h + s * (g - h * tau);
-                       }
-
                       rot_num++;
                       }
                     }
                   }
-                  for (int i = 0; i < 3; ++i) {
-                    bw[i] += zw[i];
-                    d[i] = bw[i];
-                    zw[i] = 0.0;
-                  }
+		  bw[0] += zw[0]; d[0] = bw[0]; zw[0] = 0.0;
+                  bw[1] += zw[1]; d[1] = bw[1]; zw[1] = 0.0;
+                  bw[2] += zw[2]; d[2] = bw[2]; zw[2] = 0.0;
                 }
 
-                for (int j = 0; j < 3; ++j) {
-                  for (int i = 0; i < j; ++i) {
-                    G[i + j * 3] = G[j + i * 3];
-                  }
-                }
+	        int m = 0;
+		if (d[1] < d[m]) m = 1;
+                if (d[2] < d[m]) m = 2;
+		if (m != 0) {
+	          auto tmp = d[m]; d[m] = d[0]; d[0] = tmp;
+		  auto tmp0 = v[0 + m * 3]; v[0 + m * 3] = v[0]; v[0] = tmp0;
+		  auto tmp1 = v[1 + m * 3]; v[1 + m * 3] = v[1]; v[1] = tmp1;
+    		  auto tmp2 = v[2 + m * 3]; v[2 + m * 3] = v[2]; v[2] = tmp2;
+		}
 
-    	       for (int k = 0; k < 2; ++k) {
-               int m = k;
-                 for (int l = k + 1; l < 3; ++l) {
-                   if (d[l] < d[m]) {
-                     m = l;
-                   }
-                 }
-                 if (m != k) {
-		   auto tmp = d[m];
-		   d[m] = d[k];
-		   d[k] = tmp; 
-                   for (int i = 0; i < 3; ++i) {
-		     auto tmp = v[i + m * 3];
-		     v[i + m * 3] = v[i + k * 3];
-		     v[i + k * 3] = tmp; 
-                   }
-                 }
-               }
+                m = 1;
+                if (d[2] < d[m]) m = 2;
+                if (m != 1) {
+                  auto tmp = d[m]; d[m] = d[1]; d[1] = tmp;
+                  auto tmp0 = v[0 + m * 3]; v[0 + m * 3] = v[3]; v[3] = tmp0;
+                  auto tmp1 = v[1 + m * 3]; v[1 + m * 3] = v[4]; v[4] = tmp1;
+                  auto tmp2 = v[2 + m * 3]; v[2 + m * 3] = v[5]; v[5] = tmp2;
+                }
 
 	       //CS v now contains the eigenvectors 
 	       double x = v[6], y = v[7], z = v[8];
@@ -288,29 +264,48 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                double r = sqroot((x + one) / 2.0);
                complex c = complex(r, 0.0);
                complex s = complex(y / (2.0 * r), -z / (2.0 * r));
-               complex sconj = conj_cplx(s);
 
-               for (int kk = 0; kk < n; ++kk) {
-	         //CS for pair, update columns of a
-                 tmp_int[top_int[ipair]][ii] = c * a_int[kk][top_int[ipair]][ii] + sconj * a_int[kk][bot_int[ipair]][ii];
-                 tmp_int[bot_int[ipair]][ii] = -s * a_int[kk][top_int[ipair]][ii] + c * a_int[kk][bot_int[ipair]][ii];
-
-	         a_int[kk][top_int[ipair]][ii] = tmp_int[top_int[ipair]][ii];
-	         a_int[kk][bot_int[ipair]][ii] = tmp_int[bot_int[ipair]][ii];
-	       }
-
-	       //CS for pair update columns of u 
-               tmp_int[top_int[ipair]][ii] = c * u_int[top_int[ipair]][ii] + sconj * u_int[bot_int[ipair]][ii];
-	       tmp_int[bot_int[ipair]][ii] = -s * u_int[top_int[ipair]][ii] + c * u_int[bot_int[ipair]][ii];
-
-               u_int[top_int[ipair]][ii] = tmp_int[top_int[ipair]][ii]; 
-               u_int[bot_int[ipair]][ii] = tmp_int[bot_int[ipair]][ii];
+               rot_array_int[top_int[ipair]][top_int[ipair]] = c;
+	       rot_array_int[bot_int[ipair]][top_int[ipair]] = -s;
        	     } //if 
         }); //loop
         gpu::sync();
         } //timer
 
-          {     CALI_CXX_MARK_SCOPE("gpu_run_loop3");
+
+          {     CALI_CXX_MARK_SCOPE("jade_loop3");
+              gpu::run(mloc, nploc, [mloc, bot_int=begin(bot), top_int=begin(top), u_int=begin(u), a_int=begin(a), tmp_int=begin(tmp_mat), rot_array_int=begin(rot_array)] GPU_LAMBDA (auto ii, auto ipair) {
+
+              int top = top_int[ipair];
+	      int bot = bot_int[ipair];
+
+              if (top < mloc && bot < mloc) {
+                complex c = rot_array_int[top][top];
+                complex s = rot_array_int[bot][top];
+		complex sconj = -conj_cplx(s);
+
+		#pragma unroll 
+                for (int kk = 0; kk < 6; ++kk) {
+                 //CS for pair, update columns of a
+                  tmp_int[top][ii] = c * a_int[kk][top][ii] + sconj * a_int[kk][bot][ii];
+                  tmp_int[bot][ii] = s * a_int[kk][top][ii] + c * a_int[kk][bot][ii];
+                  a_int[kk][top][ii] = tmp_int[top][ii];
+                  a_int[kk][bot][ii] = tmp_int[bot][ii];
+                }
+
+                //CS for pair update columns of u
+                tmp_int[top][ii] = c * u_int[top][ii] + sconj * u_int[bot][ii];
+                tmp_int[bot][ii] = s * u_int[top][ii] + c * u_int[bot][ii];
+                u_int[top][ii] = tmp_int[top][ii];
+                u_int[bot][ii] = tmp_int[bot][ii];
+
+	      }
+	    });
+	   gpu::sync();
+	}//timer 
+
+
+          {     CALI_CXX_MARK_SCOPE("jade_loop4");
 
             if (nploc > 0) {
                 gpu::array<int, 1> bounds({2}, 0);
