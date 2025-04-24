@@ -80,10 +80,10 @@ private:
 
 		auto stress1d = gpu::run(6, gpu::reduce(gphi.local_set_size()), gpu::reduce(gphi.basis().local_size()), 0.0,
 														 [metric = gphi.basis().cell().metric(), gph = begin(gphi.matrix()), occ = begin(occupations)] GPU_LAMBDA (auto index, auto ist, auto ip) {
-															 int alpha, beta;
-															 stress_component(index, alpha, beta);
-															 auto grad_cart = metric.to_cartesian(gph[ip][ist]);
-															 return occ[ist]*real(conj(grad_cart[alpha])*grad_cart[beta]);
+				int alpha, beta;
+			        stress_component(index, alpha, beta);
+				auto grad_cart = metric.to_cartesian(gph[ip][ist]);
+				return occ[ist]*real(conj(grad_cart[alpha])*grad_cart[beta]);
 														 });
 		
 		if(gphi.full_comm().size() > 1) gphi.full_comm().all_reduce_n(raw_pointer_cast(stress1d.data_elements()), 6);

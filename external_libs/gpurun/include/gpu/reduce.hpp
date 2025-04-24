@@ -425,7 +425,94 @@ gpu::array<Type, 1>  run(long sizex, reduce const & redy, reduce const & redz, T
 #endif
 
 }
+//CS
+#ifdef ENABLE_GPU
+template <typename KernelType, typename ArrayType>
+__global__ void reduce_kernel_vvr(long sizex, long sizey, long sizez, KernelType kernel, ArrayType odata) {
 
+    extern __shared__ char shared_mem[];
+    auto reduction_buffer = (typename ArrayType::element *) shared_mem;
+
+    unsigned int ix = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int iy = blockIdx.y * blockDim.y + threadIdx.y;
+    unsigned int tid = threadIdx.z;
+    unsigned int iz = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (ix >= sizex || iy >= sizey) return;
+
+    if (iz < sizez) {
+        reduction_buffer[threadIdx.x + blockDim.x * (threadIdx.y + blockDim.y * tid)] = kernel(ix, iy, iz);
+    } else {
+        reduction_buffer[threadIdx.x + blockDim.x * (threadIdx.y + blockDim.y * tid)] = (typename ArrayType::element) 0.0;
+    }
+    __syncthreads();
+
+    // Reduce over z-dimension (blockDim.z → assumed to be a multiple of 2)
+    for (unsigned int s = blockDim.z / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            reduction_buffer[threadIdx.x + blockDim.x * (threadIdx.y + blockDim.y * tid)] += 
+                reduction_buffer[threadIdx.x + blockDim.x * (threadIdx.y + blockDim.y * (tid + s))];
+        }
+        __syncthreads();
+    }
+
+    if (tid == 0) odata[iy][ix] = reduction_buffer[threadIdx.x + blockDim.x * (threadIdx.y)];
+}
+#endif
+
+template <typename Type, typename KernelType>
+gpu::array<Type, 2> run(long sizex, long sizey, reduce const & redz, Type const init, KernelType kernel) {
+
+	auto const sizez = redz.size;
+
+#ifndef ENABLE_GPU
+
+    gpu::array<Type, 2> accumulator({sizey, sizex}, init);
+    for (long iz = 0; iz < sizez; ++iz) {
+        for (long iy = 0; iy < sizey; ++iy) {
+            for (long ix = 0; ix < sizex; ++ix) {
+                accumulator[iy][ix] += kernel(ix, iy, iz);
+            }
+        }
+    }
+    return accumulator;
+
+#else
+
+    gpu::array<Type, 2> result;
+
+    auto blocksize = max_blocksize(reduce_kernel_vvr<KernelType, decltype(begin(result))>);
+
+    unsigned bsizex = 4;
+    if (sizex <= 2) bsizex = sizex;
+    unsigned bsizey = max(1u, blocksize / bsizex / 4); // Try to leave room for blockDim.z
+    unsigned bsizez = blocksize / (bsizex * bsizey);
+
+    unsigned nblockx = (sizex + bsizex - 1) / bsizex;
+    unsigned nblocky = (sizey + bsizey - 1) / bsizey;
+    unsigned nblockz = (sizez + bsizez - 1) / bsizez;
+
+    result.reextent({sizey, sizex});
+
+    dim3 dg(nblockx, nblocky, nblockz);
+    dim3 db(bsizex, bsizey, bsizez);
+
+    auto shared_mem_size = bsizex * bsizey * bsizez * sizeof(Type);
+    assert(shared_mem_size <= 48 * 1024); // 48KB shared memory cap
+
+    reduce_kernel_vvr<<<dg, db, shared_mem_size>>>(sizex, sizey, sizez, kernel, begin(result));
+    check_error(last_error());
+    gpu::sync();
+
+    gpu::run(sizex, sizey, [res = begin(result), init] GPU_LAMBDA(auto iy, auto ix) {
+      res[iy][ix] += init;
+    });
+
+    return result;
+
+#endif
+}
+//CS
 }
 #endif
 

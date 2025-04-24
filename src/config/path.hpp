@@ -17,6 +17,7 @@ namespace config {
 struct path {
   static std::string share(){ return SHARE_DIR + std::string("/") ; }
   static std::string unit_tests_data(){ return share() + std::string("unit_tests_data/"); }
+  static std::string pseudo(){ return SHARE_DIR + std::string("/../pseudopod/pseudopotentials/quantum-simulation.org/sg15/");}
 };
 
 }
