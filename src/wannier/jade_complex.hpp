@@ -87,117 +87,45 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
               tmp[ii][jj] = complex(0.0,0.0);
           });
 
-          // allocate matrix element packed array apq
-	  gpu::array<complex, 3> apq({n, nploc, 3});
-          gpu::run(n, nploc, [apq_int=begin(apq)] GPU_LAMBDA (auto k, auto ipair) {
-            apq_int[k][ipair][0] = complex(0.0, 0.0);
-            apq_int[k][ipair][1] = complex(0.0, 0.0);
-            apq_int[k][ipair][2] = complex(0.0, 0.0);
-          });
-
 	  //CS make a 2d for reduction (will move this outside of the irot loop if faster)
-	  gpu::array<complex,2> a_test({flat, mloc});
+	  gpu::array<complex,2> a_flat({flat, mloc});
           {     CALI_CXX_MARK_SCOPE("jade_loop_flat");
-	  gpu::run(n * mloc * mloc, [a_int=begin(a), a_tmp=begin(a_test), mloc] GPU_LAMBDA (auto idx) {
+	  gpu::run(n * mloc * mloc, [mloc, a_int=begin(a), a_flat_int=begin(a_flat)] GPU_LAMBDA (auto idx) {
             int k = idx / (mloc * mloc);
             int rest = idx % (mloc * mloc);
             int ii = rest / mloc;
             int jj = rest % mloc;
-	    a_tmp[k * mloc + ii][jj] = a_int[k][ii][jj];
+	    a_flat_int[k * mloc + ii][jj] = a_int[k][ii][jj];
 	  });
 	  }
 
 	   //CS reduce over mloc 
-	  gpu::array<complex,1> apq_zero (flat_np); 
-          gpu::array<complex,1> apq_one (flat_np);
-          gpu::array<complex,1> apq_two (flat_np);
-     	  gpu::array<vector3<complex>, 1> test(flat_np);
-
+     	  gpu::array<vector3<complex>, 1> apq_flat(flat_np);
           {     CALI_CXX_MARK_SCOPE("jade_loop_reduce_all");
-          test = gpu::run(flat_np, gpu::reduce(mloc), zero<vector3<complex>>(), [nploc, mloc, a_int=begin(a_test), u_int=begin(u), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA (auto ipair, auto ii) {
+          apq_flat = gpu::run(flat_np, gpu::reduce(mloc), zero<vector3<complex>>(), [nploc, mloc, a_int=begin(a_flat), u_int=begin(u), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA (auto ipair, auto ii) {
             int k = ipair / nploc;
             int jj = ipair % nploc;
             int bot = bot_int[jj];
             int top = top_int[jj];
             if (top < mloc && bot < mloc) {
-              return vector3<complex>({conj_cplx(a_int[k * mloc + top][ii]) * u_int[bot][ii], conj_cplx(a_int[k * mloc + top][ii]) * u_int[top][ii], 
+              return vector3<complex>({conj_cplx(a_int[k * mloc + top][ii]) * u_int[bot][ii], 
+	        conj_cplx(a_int[k * mloc + top][ii]) * u_int[top][ii], 
 		conj_cplx(a_int[k * mloc + bot][ii]) * u_int[bot][ii]});
 	    }
 	    });
 	  }
-
-          {     CALI_CXX_MARK_SCOPE("jade_loop_reduce");
-	  apq_zero = gpu::run(flat_np, gpu::reduce(mloc), complex(0.0,0.0), [nploc, mloc, a_int=begin(a_test), u_int=begin(u), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA (auto ipair, auto ii) {
-            int k = ipair / nploc;
-            int jj = ipair % nploc;
-	    int bot = bot_int[jj];
-	    int top = top_int[jj];
-	    if (top < mloc && bot < mloc) {
-	      return conj_cplx(a_int[k * mloc + top][ii]) * u_int[bot][ii];
-	    }
-           }); 
-          apq_one = gpu::run(flat_np, gpu::reduce(mloc), complex(0.0,0.0), [nploc, mloc, a_int=begin(a_test), u_int=begin(u), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA (auto ipair, auto ii) {
-            int k = ipair / nploc;
-            int jj = ipair % nploc;
-            int bot = bot_int[jj];
-            int top = top_int[jj];
-            if (top < mloc && bot < mloc) {
-              return conj_cplx(a_int[k * mloc + top][ii]) * u_int[top][ii];
-            }
-           });
-          apq_two = gpu::run(flat_np, gpu::reduce(mloc), complex(0.0,0.0), [nploc, mloc, a_int=begin(a_test), u_int=begin(u), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA (auto ipair, auto ii) {
-            int k = ipair / nploc;
-            int jj = ipair % nploc;
-            int bot = bot_int[jj];
-            int top = top_int[jj];
-            if (top < mloc && bot < mloc) {
-              return conj_cplx(a_int[k * mloc + bot][ii]) * u_int[bot][ii];
-            }
-           });
-	  }
-
-           //std::cout << test[0][0] << " " << test[0][1] << std::endl;
-	   //std::cout << apq_zero[0] << " " << apq_one[0] << std::endl;
-
-
-		//CS this is the bottleneck step
-          {     CALI_CXX_MARK_SCOPE("jade_testing_1");
-	  gpu::run(n, nploc, [mloc, a_int=begin(a), u_int=begin(u), apq_int=begin(apq), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA (auto k, auto ipair) { 
-
-		int bot = bot_int[ipair];
-		int top = top_int[ipair];
-		if (top < mloc && bot < mloc) {
-	          complex local_apq[3] = {complex(0.0, 0.0), complex(0.0, 0.0), complex(0.0, 0.0)};
-
-	          for (int ii = 0; ii < mloc; ++ii) { 
-		    local_apq[0] += conj_cplx(a_int[k][top][ii]) * u_int[bot][ii];
-		    local_apq[1] += conj_cplx(a_int[k][top][ii]) * u_int[top][ii];
-                    local_apq[2] += conj_cplx(a_int[k][bot][ii]) * u_int[bot][ii];
-	          }
-		apq_int[k][ipair][0] = local_apq[0];
-                apq_int[k][ipair][1] = local_apq[1];
-                apq_int[k][ipair][2] = local_apq[2];
-              }
-           });
            gpu::sync();
-         }
 
           { CALI_CXX_MARK_SCOPE("jade_loop2");
 	     
 	     //CS loop over nploc and for all pairs construct G to be diagonalized
-	     gpu::run(nploc, [mloc, nploc, n, tmp=begin(test), apq0=begin(apq_zero), apq1=begin(apq_one), apq2=begin(apq_two), apq_int=begin(apq), bot_int=begin(bot), top_int=begin(top), rot_array_int=begin(rot_array)] GPU_LAMBDA (auto ipair) {
+	     gpu::run(nploc, [mloc, nploc, n, apq_flat_int=begin(apq_flat), bot_int=begin(bot), top_int=begin(top), rot_array_int=begin(rot_array)] GPU_LAMBDA (auto ipair) {
                 if (top_int[ipair] < mloc && bot_int[ipair] < mloc) {
 		  double G[9] = {0.0};
                   for (int k = 0; k < n; ++k) {
-		    //const complex aij = apq_int[k][ipair][0];
-		    const complex aij = tmp[k * nploc + ipair][0];
-		    //const complex aij = apq0[k * nploc + ipair];
-                    //const complex aii = apq_int[k][ipair][1];
-		    //const complex aii = apq1[k * nploc + ipair];
-		    const complex aii = tmp[k * nploc + ipair][1];
-                    //const complex ajj = apq_int[k][ipair][2];
-	            //const complex ajj = apq2[k * nploc + ipair];
-		    const complex ajj = tmp[k * nploc + ipair][2];
+		    const complex aij = apq_flat_int[k * nploc + ipair][0];
+		    const complex aii = apq_flat_int[k * nploc + ipair][1];
+		    const complex ajj = apq_flat_int[k * nploc + ipair][2];
 		
                     const complex h1 = aii - ajj;
                     const complex h2 = aij + conj_cplx(aij);
