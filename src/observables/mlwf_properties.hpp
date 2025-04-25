@@ -27,7 +27,13 @@ public:
 
   void calculate(std::ofstream& output_file, int time_step, states::orbital_set<basis::real_space, complex>& phi) {
     mlwf_transformer_->update(phi);
-    mlwf_transformer_->compute_transform();
+    if (time_step == 0) {
+	double set_tol = 1e-7;
+        mlwf_transformer_->compute_transform(set_tol);
+    } else {
+	double set_tol = 5e-5;
+        mlwf_transformer_->compute_transform(set_tol);
+    }
     mlwf_transformer_->apply_transform(phi);
 
     if(phi.basis().comm().rank() == 0){

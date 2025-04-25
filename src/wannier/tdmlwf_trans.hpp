@@ -37,7 +37,7 @@ namespace wannier {
 class tdmlwf_trans {
 
 private:
-	gpu::array<complex,2> u_; //JB: have to consider between gpu::array, std::vector of std::vectors, or perhaps matrix::distributed for parallelism?
+	gpu::array<complex,2> u_; //JB
 	gpu::array<complex,3> a_;
 	gpu::array<complex,2> adiag_;
 	states::orbital_set<basis::real_space, complex> wavefunctions_;
@@ -152,16 +152,11 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
     CALI_CXX_MARK_SCOPE("wannier_update::reduce_a");
     wavefunctions.basis().comm().all_reduce_in_place_n(raw_pointer_cast(a_.data_elements()), a_.num_elements(), std::plus<>());
   }
-
-  /*auto rank = wavefunctions.basis().comm().rank();
-
-  std::cout << "Rank " << rank << ": Reduced a_[0][0][0] = " << a_[0][0][0] << std::endl;*/
 }//update
 ////////////////////////////////////////////////////////////////////////////////
-void compute_transform(void)
+void compute_transform(double tol)
 {
   const int maxsweep = 100;
-  const double tol = 1.e-5;
   jade_complex(maxsweep,tol,a_,u_,adiag_);
 }
 ////////////////////////////////////////////////////////////////////////////////
@@ -339,7 +334,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 
 	wannier::tdmlwf_trans mlwf_transformer(el.kpin()[0]);
         mlwf_transformer.update(el.kpin()[0]);
-	mlwf_transformer.compute_transform();
+	mlwf_transformer.compute_transform(1e-8);
 
 	int i = 0;
         auto center = mlwf_transformer.center(i, el.states_basis().cell());
