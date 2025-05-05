@@ -142,6 +142,8 @@ private:
 
 	std::optional<double> dt_;
 	std::optional<int> num_steps_;
+	std::optional<double> epsilon_;
+	std::optional<bool> enforce_cutoff_;
 	std::optional<electron_propagator> prop_;
 	std::optional<ion_dynamics> ion_dynamics_;
 	std::optional<wavefunction_diag> wf_diag_;
@@ -165,14 +167,24 @@ public:
 		return solver;
 	}
 
-	auto propagation_time(quantity<magnitude::time> pt) const {	
+	auto propagation_time(quantity<magnitude::time> pt) const {
 		real_time solver = *this;;
 		solver.num_steps_ = ceil(pt.in_atomic_units()/dt());
 		return solver;
 	}
-	
+				
 	auto num_steps() const {
 		return num_steps_.value_or(100);
+	}
+
+	auto epsilon(quantity<magnitude::length> epsilon) const {
+		real_time solver = *this;;
+		solver.epsilon_ = epsilon.in_atomic_units();
+		return solver;
+	}
+
+	auto epsilon() const {
+		return epsilon_.value_or(15);
 	}
 
 	auto etrs() {
@@ -214,21 +226,30 @@ public:
 	}
 
 	auto t_wavefunction_diag() {
-        	real_time rt = *this;
-        	rt.wf_diag_ = wavefunction_diag::T;
-        	return rt;
+        	real_time solver = *this;
+        	solver.wf_diag_ = wavefunction_diag::T;
+        	return solver;
     	}
 
     	auto tdmlwf() {
-        	real_time rt = *this;
-        	rt.wf_diag_ = wavefunction_diag::TDMLWF;
-        	return rt;
+        	real_time solver = *this;
+        	solver.wf_diag_ = wavefunction_diag::TDMLWF;
+        	return solver;
     	}
 
    	 auto wf_diag_value() const {
         	return wf_diag_.value_or(wavefunction_diag::T);
     	}
 
+	 auto enforce_cutoff(bool value) const {
+	 	real_time solver = *this;
+    		solver.enforce_cutoff_ = true;
+    		return solver;
+	}
+
+	auto enforce_cutoff_value() const {
+		return enforce_cutoff_.value_or(false);  
+	}
 
 	auto observables_dipole() {
 		real_time solver = *this;;
@@ -294,11 +315,6 @@ public:
 		if(not self.num_steps_.has_value()) out << " *";
 		out << "\n";
 
-		auto time = self.num_steps()*self.dt();
-		out << "  propagation-time   = " << time << " atu | " << time/in_atomic_units(1.0_fs) << " fs";
-		if(not self.num_steps_.has_value()) out << " *";
-		out << "\n";
-
 		out << "  ion-dynamics       = " << self.ion_dynamics_value();
 		if(not self.ion_dynamics_.has_value()) out << " *";
 		out << "\n";
@@ -308,7 +324,7 @@ public:
 		if(self.obs_.empty()) out << " *";
 		out << "\n";
 		
-		out << "\n  * default values\n" << std::endl;
+		out << "\n  * default values" << std::endl;
 		
 		return out;
 	}

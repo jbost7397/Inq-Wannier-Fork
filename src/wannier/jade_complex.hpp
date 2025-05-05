@@ -320,6 +320,8 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                   bounds_int[1] = bot_int[0];
 		});
 
+		gpu::sync();
+
                 gpu::run(nploc, [nploc, top_int=begin(top), bot_int=begin(bot), bounds_int=begin(bounds)] GPU_LAMBDA (auto i) {
 	          if (i < nploc - 1) {
                     bot_int[i] = bot_int[i+1];
