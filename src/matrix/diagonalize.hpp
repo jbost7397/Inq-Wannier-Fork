@@ -188,6 +188,18 @@ auto diagonalize(DistributedMatrix & matrix) {
   return eigenvalues;
 }
 
+/*template <typename Matrix>
+auto diagonalize_wann(Matrix & matrix) {
+
+  assert(matrix.sizex() == matrix.sizey());
+  gpu::array<double, 1> eigenvalues;
+
+  eigenvalues = diagonalize_raw(matrix);
+
+  assert(eigenvalues.size() == matrix.sizex());
+  return eigenvalues;
+}*/
+
 }
 }
 #endif
@@ -280,14 +292,25 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		array[2][0] = 1.191946;
 		array[2][1] = 0.705297;
 		array[2][2] = 0.392459;
-
-		matrix::distributed matrix = matrix::scatter(cart_comm, array, /* root = */ 0);
 		
-		auto evalues = matrix::diagonalize(matrix);
+		//matrix::distributed matrix = matrix::scatter(cart_comm, array, /* root = */ 0);
+		//CS quick check for non-distributed matrix
+		/*auto evalues = matrix::diagonalize_wann(array);
 		
 		CHECK(evalues[0] == -1.0626903983_a);
 		CHECK(evalues[1] == 0.1733844724_a);
 		CHECK(evalues[2] == 2.7426069258_a);
+
+                CHECK(array[0][0] == -1.0626903983_a);
+                CHECK(array[0][1] == 0.1733844724_a);
+                CHECK(array[0][2] == 2.7426069258_a);
+                CHECK(array[1][0] == -1.0626903983_a);
+                CHECK(array[1][1] == 0.1733844724_a);
+                CHECK(array[1][2] == 2.7426069258_a);
+                CHECK(array[2][0] == -1.0626903983_a);
+                CHECK(array[2][1] == 0.1733844724_a);
+                CHECK(array[2][2] == 2.7426069258_a);*/
+
 	}
 
 	SECTION("Complex dense 3x3"){

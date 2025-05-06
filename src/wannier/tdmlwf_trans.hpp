@@ -85,6 +85,18 @@ void normalize(CommType & comm) {
 
   gpu::run(n_states_local, [hypercubic = begin(wavefunctions_.hypercubic()), offset, nx, ny, nz, nsp = begin(norm_squared_per_state)] GPU_LAMBDA (auto k_wf) {
     double norm_factor = 1.0 / sqroot(nsp[k_wf + offset]);
+          gpu::atomic::add(&nsp[k_wf], norm(wf_component));
+        }
+      }
+
+    }
+  });
+
+  auto comm = wavefunctions_.basis().comm();
+  comm.all_reduce_in_place_n(raw_pointer_cast(norm_squared_per_state.data_elements()), norm_squared_per_state.num_elements(), std::plus<>());
+
+  gpu::run(n_states, [hypercubic = begin(wavefunctions_.hypercubic()), nx, ny, nz, nsp = begin(norm_squared_per_state)] GPU_LAMBDA (auto k_wf) {
+    double norm_factor = 1.0 / sqroot(nsp[k_wf]);
     for (int ix = 0; ix < nx; ++ix) {
       for (int iy = 0; iy < ny; ++iy) {
         for (int iz = 0; iz < nz; ++iz) {
@@ -265,6 +277,43 @@ void compute_transform(double tol)
   jade_complex(maxsweep,tol,a_,u_,adiag_);
 }
 ////////////////////////////////////////////////////////////////////////////////
+=======
+	    /*gpu::atomic::add(&a[0][k_wf][l_wf], conj_ik * c_jl * ta[0][ix][iy][iz]);
+	    gpu::atomic::add(&a[1][k_wf][l_wf], conj_ik * c_jl * ta[1][ix][iy][iz]);
+	    gpu::atomic::add(&a[2][k_wf][l_wf], conj_ik * c_jl * ta[2][ix][iy][iz]);
+	    gpu::atomic::add(&a[3][k_wf][l_wf], conj_ik * c_jl * ta[3][ix][iy][iz]);
+	    gpu::atomic::add(&a[4][k_wf][l_wf], conj_ik * c_jl * ta[4][ix][iy][iz]);
+	    gpu::atomic::add(&a[5][k_wf][l_wf], conj_ik * c_jl * ta[5][ix][iy][iz]);*/
+
+	}
+      }
+    }
+  });
+
+  gpu::sync();
+
+  if (wavefunctions.basis().comm().size() > 1) {
+    CALI_CXX_MARK_SCOPE("wannier_update::reduce_a");
+    wavefunctions.basis().comm().all_reduce_in_place_n(raw_pointer_cast(a_.data_elements()), a_.num_elements(), std::plus<>());
+  }
+
+  /*auto rank = wavefunctions.basis().comm().rank();
+
+  std::cout << "Rank " << rank << ": Reduced a_[0][0][0] = " << a_[0][0][0] << std::endl;*/
+
+}//update
+////////////////////////////////////////////////////////////////////////////////
+void compute_transform(void)
+{
+  const int maxsweep = 100;
+  const double tol = 1.e-8;
+  jade_complex(maxsweep,tol,a_,u_,adiag_);
+}
+////////////////////////////////////////////////////////////////////////////////
+auto get_a(void){
+  return a_;
+}
+///
 const states::orbital_set<basis::real_space, complex>& get_wavefunctions() const {
   return wavefunctions_;
 }
@@ -335,7 +384,6 @@ auto get_overlaps_of_j(T epsilon, int j, const systems::cell & cell_) const {
 	olap_j.reextent(count);
 	return olap_j;
 }
-
 
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>

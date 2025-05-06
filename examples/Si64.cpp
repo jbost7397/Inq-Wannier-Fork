@@ -14,7 +14,7 @@ int main(int argc, char ** argv){
 	using namespace inq::magnitude;
         bool groundstate_only = false;
 
-	auto a = 40.72_b;
+	auto a = 20.36_b;
 	systems::ions ions(systems::cell::cubic(a));
 	
         //Base positions of the 8 atoms in the unit cell
@@ -28,12 +28,12 @@ int main(int argc, char ** argv){
         {0.0,  0.5,  0.5 },
         {0.25, 0.75, 0.75}
 	};
-    	for (int ix = 0; ix < 4; ++ix) {
-        	for (int iy = 0; iy < 4; ++iy) {
-        		for (int iz = 0; iz < 4; ++iz) {
+    	for (int ix = 0; ix < 2; ++ix) {
+        	for (int iy = 0; iy < 2; ++iy) {
+        		for (int iz = 0; iz < 2; ++iz) {
                 		for (const auto& pos : base_positions) {
                 			// Add each base position to the supercell.
-					ions.insert_fractional("Si", {(pos[0] + ix)/4.0, (pos[1] + iy)/4.0, (pos[2] + iz)/4.0});
+					ions.insert_fractional("Si", {(pos[0] + ix)/2.0, (pos[1] + iy)/2.0, (pos[2] + iz)/2.0});
                 		}
             	    	}
         	}
@@ -50,7 +50,8 @@ int main(int argc, char ** argv){
                 el.save(restart_dir);
         }
 
-        real_time::propagate(ions, el, [](auto){}, options::theory{}.pbe(), options::real_time{}.num_steps(3).dt(0.0565_atomictime).tdmlwf());
+        real_time::propagate(ions, el, [](auto){}, options::theory{}.pbe(), options::real_time{}.num_steps(100).dt(0.0565_atomictime).tdmlwf());
 
         return 1;
 }
+
