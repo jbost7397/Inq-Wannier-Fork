@@ -63,9 +63,9 @@ void normalize(CommType & comm) {
   int nz = wavefunctions_.basis().local_sizes()[2];
   auto rank = comm.rank();
   int offset = rank * n_states_local;
-  /*if(n_states_local == n_states_global) {
+  if(n_states_local == n_states_global) {
      offset = 0;
-  }*/
+  }
 
   gpu::array<double, 1> norm_squared_per_state({n_states_global}, 0.0);
 
@@ -85,18 +85,6 @@ void normalize(CommType & comm) {
 
   gpu::run(n_states_local, [hypercubic = begin(wavefunctions_.hypercubic()), offset, nx, ny, nz, nsp = begin(norm_squared_per_state)] GPU_LAMBDA (auto k_wf) {
     double norm_factor = 1.0 / sqroot(nsp[k_wf + offset]);
-          gpu::atomic::add(&nsp[k_wf], norm(wf_component));
-        }
-      }
-
-    }
-  });
-
-  auto comm = wavefunctions_.basis().comm();
-  comm.all_reduce_in_place_n(raw_pointer_cast(norm_squared_per_state.data_elements()), norm_squared_per_state.num_elements(), std::plus<>());
-
-  gpu::run(n_states, [hypercubic = begin(wavefunctions_.hypercubic()), nx, ny, nz, nsp = begin(norm_squared_per_state)] GPU_LAMBDA (auto k_wf) {
-    double norm_factor = 1.0 / sqroot(nsp[k_wf]);
     for (int ix = 0; ix < nx; ++ix) {
       for (int iy = 0; iy < ny; ++iy) {
         for (int iz = 0; iz < nz; ++iz) {
@@ -105,7 +93,7 @@ void normalize(CommType & comm) {
       }
     }
   });
-}//normalize 
+}//normalize
 ////////////////////////////////////////////////////////////////////////////////
 template <class CommType>
 gpu::array<complex, 2> prepare_buffer(CommType & comm){
@@ -177,7 +165,7 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
     ta[4][ix][iy][iz] = cos(2.0 * M_PI * coords[2] / lz);
     ta[5][ix][iy][iz] = sin(2.0 * M_PI * coords[2] / lz);
   });
-  
+
   if (n_states_global > n_states_local) { //parallelized along states
     parallel::communicator comm2{boost::mpi3::environment::get_world_instance()};
     auto buf = prepare_buffer(comm2);
@@ -197,8 +185,8 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
             int index_k = k_wf + ix * ny * nz * n_states_local + iy * nz * n_states_local + iz * n_states_local;
             int index_l = local_index_l + ix * ny * nz * n_states_local + iy * nz * n_states_local + iz * n_states_local;
 
-            complex conj_ik = conj_cplx(rec_buf[rank][index_k]); 
-            complex c_jl = rec_buf[owner_rank_l][index_l];           
+            complex conj_ik = conj_cplx(rec_buf[rank][index_k]);
+            complex c_jl = rec_buf[owner_rank_l][index_l];
 
             a[0][global_k_wf][l_wf] += conj_ik * c_jl * ta[0][ix][iy][iz];
             a[1][global_k_wf][l_wf] += conj_ik * c_jl * ta[1][ix][iy][iz];
@@ -211,7 +199,7 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
         }
       }
     });
-    
+
     gpu::sync();
     comm.barrier();
 
@@ -225,7 +213,7 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
 
     comm.barrier();
 
-    if(rank == 0){
+    /*if(rank == 0){
     	std::ofstream output_file("a_mat.dat", std::ios_base::app);
     	for (int i = 0; i < n_states_global; i++){
 		    for (int j = 0; j < n_states_global; j++){
@@ -237,11 +225,11 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
 			    output_file << a_[5][i][j] << std::endl;
 		    }
     	}
-    }
+    }*/
     /*std::cout << "Rank " << rank << ": Reduced a_[0][0][0] = " << a_[0][0][0] << std::endl;
     std::cout << "Rank " << rank << ": Reduced a_[4][555][555] = " << a_[4][555][555] << std::endl;*/
   }
-  
+
   else{
     gpu::run(n_states_global, n_states_global, [hypercubic = begin(wavefunctions_.hypercubic()), ta = begin(trig_array), nx, ny, nz, a = begin(a_)] GPU_LAMBDA (auto l_wf, auto k_wf) {
       for (int ix = 0; ix < nx; ix++){
@@ -277,43 +265,6 @@ void compute_transform(double tol)
   jade_complex(maxsweep,tol,a_,u_,adiag_);
 }
 ////////////////////////////////////////////////////////////////////////////////
-=======
-	    /*gpu::atomic::add(&a[0][k_wf][l_wf], conj_ik * c_jl * ta[0][ix][iy][iz]);
-	    gpu::atomic::add(&a[1][k_wf][l_wf], conj_ik * c_jl * ta[1][ix][iy][iz]);
-	    gpu::atomic::add(&a[2][k_wf][l_wf], conj_ik * c_jl * ta[2][ix][iy][iz]);
-	    gpu::atomic::add(&a[3][k_wf][l_wf], conj_ik * c_jl * ta[3][ix][iy][iz]);
-	    gpu::atomic::add(&a[4][k_wf][l_wf], conj_ik * c_jl * ta[4][ix][iy][iz]);
-	    gpu::atomic::add(&a[5][k_wf][l_wf], conj_ik * c_jl * ta[5][ix][iy][iz]);*/
-
-	}
-      }
-    }
-  });
-
-  gpu::sync();
-
-  if (wavefunctions.basis().comm().size() > 1) {
-    CALI_CXX_MARK_SCOPE("wannier_update::reduce_a");
-    wavefunctions.basis().comm().all_reduce_in_place_n(raw_pointer_cast(a_.data_elements()), a_.num_elements(), std::plus<>());
-  }
-
-  /*auto rank = wavefunctions.basis().comm().rank();
-
-  std::cout << "Rank " << rank << ": Reduced a_[0][0][0] = " << a_[0][0][0] << std::endl;*/
-
-}//update
-////////////////////////////////////////////////////////////////////////////////
-void compute_transform(void)
-{
-  const int maxsweep = 100;
-  const double tol = 1.e-8;
-  jade_complex(maxsweep,tol,a_,u_,adiag_);
-}
-////////////////////////////////////////////////////////////////////////////////
-auto get_a(void){
-  return a_;
-}
-///
 const states::orbital_set<basis::real_space, complex>& get_wavefunctions() const {
   return wavefunctions_;
 }
@@ -385,6 +336,7 @@ auto get_overlaps_of_j(T epsilon, int j, const systems::cell & cell_) const {
 	return olap_j;
 }
 
+
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 double total_overlaps(T epsilon, const systems::cell & cell_) {
@@ -396,7 +348,7 @@ double total_overlaps(T epsilon, const systems::cell & cell_) {
       gpu::atomic::add(&sum_int[0], 1);
     }
   });
-  gpu::sync(); //CS probably don't need 
+  gpu::sync(); //CS probably don't need
 
   return static_cast<double>(sum[0]) / (n * n);
 }
@@ -410,7 +362,7 @@ double pair_fraction(T epsilon, const systems::cell & cell_) {
   gpu::array<int,1> sum({1}, 0);
 
   gpu::run(n, n, [epsilon, cell_, sum_int=begin(sum)] GPU_LAMBDA (auto i, auto j) {
-    if (j > i) { //CS avoid duplicates 
+    if (j > i) { //CS avoid duplicates
         if (overlap(epsilon, i, j, cell_)) {
             gpu::atomic::add(&sum_int[0], 1);
         }
@@ -473,7 +425,7 @@ auto dipole(const systems::cell & cell) {
 template <class CommType>
 void apply_transform(states::orbital_set<basis::real_space, complex> & phi, CommType & comm) {
   	parallel::cartesian_communicator<2> cart_comm(comm, {});
-	auto rot = matrix::scatter(cart_comm, u_, /* root = */ 0);	
+	auto rot = matrix::scatter(cart_comm, u_, /* root = */ 0);
 	operations::rotate(rot, phi);
 }
 ////////////////////////////////////////////////////////////////////////////////
