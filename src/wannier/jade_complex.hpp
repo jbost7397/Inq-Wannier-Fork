@@ -30,27 +30,6 @@
 namespace inq {
 namespace wannier {
 
-template <typename AType, typename UType, typename Toptype, typename Bottype>
-struct apq_comp {
-
-    AType a_int;
-    UType u_int;
-    Toptype top_int;
-    Bottype bot_int;
-    int mloc; 
-
-    apq_comp(AType a, UType u, Toptype top, Bottype bot, int mloc_val)
-        : a_int(a), u_int(u), top_int(top), bot_int(bot), mloc(mloc_val) {}
-    GPU_FUNCTION auto operator()(long ipair, long ii) const {
-
-	int bot = bot_int[ipair];
-	int top = top_int[ipair];
-        if (top < mloc && bot < mloc) {
-	return conj_cplx(a_int[top][ii]) * u_int[bot][ii];
-      }
-    }
-};
-
 template <typename T, typename T1, class MatrixType1, class MatrixType2, class MatrixType3>
 void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType3& adiag) {
 
@@ -116,16 +95,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
           });
 
 		//CS this is the bottleneck step
-          //{     CALI_CXX_MARK_SCOPE("jade_loop1");
-
-	  //gpu::array<complex,1> apq_zero({n*nploc});  
-       	  //for (int i = 0; i < n; ++i) {
-            auto apq_zero = gpu::run(nploc, gpu::reduce(mloc), apq_comp<decltype(begin(a[0])),decltype(begin(u)),decltype(begin(top)),decltype(begin(bot))>
-            {begin(a[0]), begin(u), begin(top), begin(bot), mloc});
-	  //}
-          //}
-
-          {     CALI_CXX_MARK_SCOPE("jade_loop1.5");
+          {     CALI_CXX_MARK_SCOPE("jade_loop1");
 	  gpu::run(n, nploc, [mloc, a_int=begin(a), u_int=begin(u), apq_int=begin(apq), top_int=begin(top), bot_int=begin(bot)] GPU_LAMBDA (auto k, auto ipair) { 
 
 		int bot = bot_int[ipair];
