@@ -111,11 +111,11 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
             if (top < mloc && bot < mloc) {
 	      int top_idx = k * mloc + top;
 	      int bot_idx = k * mloc + bot;
-              return vector3<complex>({conj_cplx(a_int[top_idx][ii]) * u_int[bot][ii], 
-	        conj_cplx(a_int[top_idx][ii]) * u_int[top][ii], 
-		conj_cplx(a_int[bot_idx][ii]) * u_int[bot][ii]});
+              return vector3<complex>({conj_cplx(a_int[top_idx][ii]) * u_int[bot][ii], conj_cplx(a_int[top_idx][ii]) * u_int[top][ii], conj_cplx(a_int[bot_idx][ii]) * u_int[bot][ii]});
+	    } else {
+	      return vector3<complex>({0.0, 0.0, 0.0});
 	    }
-	    });
+	  });
 	  }
            gpu::sync();
 
