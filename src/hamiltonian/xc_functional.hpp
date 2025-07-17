@@ -89,6 +89,14 @@ namespace hamiltonian {
 			return 0.0;
 		}
 
+		auto cam_coefficients() const {
+			double omega = 0.0, alpha = 0.0, beta = 0.0;
+			if(xc_hyb_type(libxc_func_ptr()) == XC_HYB_CAM) {
+		 	  xc_hyb_cam_coef(libxc_func_ptr(), &omega, &alpha, &beta);
+			}
+			return vector3<double>(alpha, beta, omega);
+		}
+
 		std::string name() const {
 			if(id_ == XC_NONE)         return "";			
 			if(id_ == XC_HARTREE_FOCK) return "Exact exchange";
@@ -206,12 +214,18 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 
 	inq::hamiltonian::xc_functional b3lyp(XC_HYB_GGA_XC_B3LYP, 1);
 	inq::hamiltonian::xc_functional pbeh(XC_HYB_GGA_XC_PBEH, 1);
+	inq::hamiltonian::xc_functional hse(XC_HYB_GGA_XC_HSE06, 1);
 	
 	SECTION("HYBRIDS"){
 		CHECK(b3lyp.exx_coefficient() == 0.2_a);
 		CHECK(b3lyp.kind_name() == "Exchange-correlation");
 		CHECK(b3lyp.family_name() == "GGA");
 		CHECK(pbeh.exx_coefficient() == 0.25_a);
+		CHECK(hse.family_name() == "GGA");
+                CHECK(hse.kind_name() == "Exchange-correlation");
+		CHECK(hse.cam_coefficients()[0] == 0.0_a);
+                CHECK(hse.cam_coefficients()[1] == 0.25_a);
+                CHECK(hse.cam_coefficients()[2] == 0.11_a);
 	}
 
 	SECTION("COPY AND ASSIGNMENT"){
@@ -226,6 +240,9 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 
 		copy2 = std::move(b3lyp);
 		CHECK(copy2.exx_coefficient() == 0.2_a);
+
+                auto copy3 = hse;
+                CHECK(copy3.cam_coefficients()[2] == 0.11_a);
 	}
 	
 }
