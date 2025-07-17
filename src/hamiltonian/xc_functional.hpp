@@ -94,7 +94,7 @@ namespace hamiltonian {
 			if(xc_hyb_type(libxc_func_ptr()) == XC_HYB_CAM) {
 		 	  xc_hyb_cam_coef(libxc_func_ptr(), &omega, &alpha, &beta);
 			}
-			return vector3<double>(alpha, beta, omega);
+			return vector3<double>(alpha, beta + alpha, omega); //CS this should match qbach format for RSH
 		}
 
 		std::string name() const {
@@ -215,6 +215,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 	inq::hamiltonian::xc_functional b3lyp(XC_HYB_GGA_XC_B3LYP, 1);
 	inq::hamiltonian::xc_functional pbeh(XC_HYB_GGA_XC_PBEH, 1);
 	inq::hamiltonian::xc_functional hse(XC_HYB_GGA_XC_HSE06, 1);
+	inq::hamiltonian::xc_functional camb3lyp(XC_HYB_GGA_XC_CAM_B3LYP, 1); 
 	
 	SECTION("HYBRIDS"){
 		CHECK(b3lyp.exx_coefficient() == 0.2_a);
@@ -226,6 +227,9 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		CHECK(hse.cam_coefficients()[0] == 0.0_a);
                 CHECK(hse.cam_coefficients()[1] == 0.25_a);
                 CHECK(hse.cam_coefficients()[2] == 0.11_a);
+                CHECK(camb3lyp.cam_coefficients()[0] == 0.65_a);
+                CHECK(camb3lyp.cam_coefficients()[1] == 0.19_a);
+                CHECK(camb3lyp.cam_coefficients()[2] == 0.33_a);
 	}
 
 	SECTION("COPY AND ASSIGNMENT"){
