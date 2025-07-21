@@ -31,8 +31,23 @@ public:
 	struct poisson_kernel_3d {
 		GPU_FUNCTION auto operator()(vector3<double, cartesian> gg, double const zeroterm) const {
 			auto g2 = norm(gg);
-			if(g2 < 1e-6) return zeroterm;
-			return -1.0/g2;
+			const double alpha = 0.25;
+			const double beta = 0.25;
+			const double omega = 0.0;
+			if (alpha == beta) { // global hybrid case
+			  if(g2 < 1e-6) return zeroterm;
+			  return -1.0/g2;
+			}
+ 			else { 
+			  const double fac = beta / (omega * omega); 
+			  const double x = g2 * fac;  
+			  if (g2 == 0) return (beta - alpha) * fac * 2; //value from limit as g2 -> 0, fac of 2 assumes usage of complex basis 
+			  else if (g2 < 1e-6) return alpha/g2 + fac * beta * (1.0 - 0.5 * x);
+			  else return (beta + (alpha - beta) * exp(-x)) / g2;
+			}
+
+			//if(g2 < 1e-6) return zeroterm;
+			//return -1.0/g2;
 		}
 	};
 
