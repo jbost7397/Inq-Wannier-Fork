@@ -70,12 +70,13 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		
 	parallel::communicator comm{boost::mpi3::environment::get_world_instance()};
 	auto par = input::parallelization(comm);
+	//CS update tests to take exchange coeff as vector3
 
 	{
 		systems::ions ions(systems::cell::orthorhombic(6.0_b, 10.0_b, 6.0_b));
 		systems::electrons electrons(par, ions, options::electrons{}.cutoff(15.0_Ha).extra_electrons(20.0));
 		ground_state::initial_guess(ions, electrons);
-		hamiltonian::ks_hamiltonian<double> ham(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(), ions, 0.0, /* use_ace = */ true);
+		hamiltonian::ks_hamiltonian<double> ham(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(), ions, {0.0, 0.0, 0.0}, /* use_ace = */ true);
 		
 		SECTION("Gamma - no atoms"){
 
@@ -129,7 +130,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		systems::ions ions(systems::cell::orthorhombic(6.0_b, 10.0_b, 6.0_b));
 		systems::electrons electrons(par, ions, options::electrons{}.cutoff(15.0_Ha).extra_electrons(20.0), input::kpoints::point(0.25, 0.25, 0.25));
 		ground_state::initial_guess(ions, electrons);
-		hamiltonian::ks_hamiltonian<double> ham(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(), ions, 0.0, /* use_ace = */ true);
+		hamiltonian::ks_hamiltonian<double> ham(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(), ions, {0.0, 0.0, 0.0}, /* use_ace = */ true);
 		
 		SECTION("1/4 1/4 1/4 - no atoms"){
 			
@@ -185,7 +186,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		ions.insert("Ag", {2.0_b, 0.7_b, 0.0_b});	
 		systems::electrons electrons(par, ions, options::electrons{}.cutoff(15.0_Ha));
 		ground_state::initial_guess(ions, electrons);
-		hamiltonian::ks_hamiltonian<double> ham(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(), ions, 0.0, /* use_ace = */ true);
+		hamiltonian::ks_hamiltonian<double> ham(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(), ions, {0.0, 0.0, 0.0}, /* use_ace = */ true);
 		
 		SECTION("Gamma - atoms"){
 
@@ -236,7 +237,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		ions.insert("Ag", {2.0_b, 0.7_b, 0.0_b});	
 		systems::electrons electrons(par, ions, options::electrons{}.cutoff(15.0_Ha), input::kpoints::point(0.25, 0.25, 0.25));
 		ground_state::initial_guess(ions, electrons);
-		hamiltonian::ks_hamiltonian<double> ham(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(), ions, 0.0, /* use_ace = */ true);
+		hamiltonian::ks_hamiltonian<double> ham(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(), ions, {0.0, 0.0, 0.0}, /* use_ace = */ true);
 		
 		SECTION("Gamma - atoms"){
 

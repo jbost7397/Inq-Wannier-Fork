@@ -35,7 +35,7 @@ namespace hamiltonian {
 		gpu::array<int, 1> kpoint_indices_;
 		std::optional<basis::field_set<basis::real_space, complex, parallel::arbitrary_partition>> orbitals_;
 		std::vector<states::orbital_set<basis::real_space, complex>> ace_orbitals_;
-		double exchange_coefficient_;
+		vector3<double> exchange_coefficients_;
 		bool use_ace_;
 		bool use_cutoff_;
 		singularity_correction sing_;
@@ -45,14 +45,14 @@ namespace hamiltonian {
 
   public:
 
-		exchange_operator(systems::cell const & cell, ionic::brillouin const & bzone, double const exchange_coefficient, bool const use_ace):
-			exchange_coefficient_(exchange_coefficient),
+		exchange_operator(systems::cell const & cell, ionic::brillouin const & bzone, vector3<double> const & exchange_coefficients, bool const use_ace):
+			exchange_coefficients_(exchange_coefficients),
 			use_ace_(use_ace),
 			sing_(cell, bzone){
 		}
 
-		exchange_operator(systems::cell const & cell, ionic::brillouin const & bzone, double const exchange_coefficient, wannier::tdmlwf_trans mlwf, bool const use_ace, bool const use_cutoff, double const epsilon):
-			exchange_coefficient_(exchange_coefficient),
+		exchange_operator(systems::cell const & cell, ionic::brillouin const & bzone, vector3<double> const & exchange_coefficients, wannier::tdmlwf_trans mlwf, bool const use_ace, bool const use_cutoff, double const epsilon):
+			exchange_coefficients_(exchange_coefficients),
 			use_ace_(use_ace),
 			use_cutoff_(use_cutoff),
 			sing_(cell, bzone),
@@ -207,7 +207,8 @@ namespace hamiltonian {
 
 			CALI_CXX_MARK_SCOPE("exchange_operator::direct");
 
-			double factor = -0.5*scale*exchange_coefficient_;
+			//double factor = -0.5*scale*exchange_coefficient_;
+			double factor = -0.5 * scale * exchange_coefficients_[0];  //CS with range seperation, pass coeffs directly into solver 
 
 			if(not orbitals_->set_part().parallel()){
 				if(use_cutoff_) block_exchange_w_cutoff(factor, orbitals_->matrix(), occupations_, kpoints_, kpoint_indices_, phi, exxphi, mlwf_, epsilon_);
@@ -275,7 +276,7 @@ namespace hamiltonian {
 		//////////////////////////////////////////////////////////////////////////////////
 
 		bool enabled() const {
-			return fabs(exchange_coefficient_) > 1.0e-14;
+			return fabs(exchange_coefficients_[0] + exchange_coefficients_[1] + exchange_coefficients_[2]) > 1.0e-14;
 		}
 
   };
