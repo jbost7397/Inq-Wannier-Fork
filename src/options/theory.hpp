@@ -101,6 +101,14 @@ public:
 		return inter;
 	}
 
+	auto hse()  const {
+		theory inter = *this;
+                inter.hartree_potential_ = true;
+                inter.exchange_ = XC_HYB_GGA_XC_HSE06;
+                inter.correlation_ = XC_NONE;
+                return inter;
+        }
+		
 	auto exchange_coefficient() const {
 		if(exchange() == XC_HARTREE_FOCK) return 1.0;
 		if(exchange() == XC_NONE) return 0.0;
