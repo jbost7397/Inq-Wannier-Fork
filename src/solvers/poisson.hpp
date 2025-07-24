@@ -49,8 +49,8 @@ public:
 			const double beta = exchange_coefficients_[1];
 			const double omega = exchange_coefficients_[2];
 			if (alpha == beta && omega == 0.0) {
-			  if(g2 < 1e-6) return zeroterm;
-                          return -1.0/g2;
+			  if(g2 < 1e-6) return alpha * zeroterm;
+                          return -alpha/g2;
 			} else { 
 			  const double fac = 0.25 / (omega * omega); 
 			  const double x = g2 * fac;  

@@ -188,7 +188,7 @@ namespace hamiltonian {
 									 });
 				}
 
-				solvers::poisson::in_place(rhoij, -phi.kpoint() + kpt[jj], sing_(idx[jj]));
+				solvers::poisson::in_place(rhoij, -phi.kpoint() + kpt[jj], sing_(idx[jj]), exchange_coefficients_);
 
 				{ CALI_CXX_MARK_SCOPE("exchange_operator::mulitplication");
 					gpu::run(olaps_j.size(), exxphi.basis().local_size(),
@@ -208,8 +208,8 @@ namespace hamiltonian {
 			CALI_CXX_MARK_SCOPE("exchange_operator::direct");
 
 			//double factor = -0.5*scale*exchange_coefficient_;
-			double factor = -0.5 * scale * exchange_coefficients_[0];  //CS with range seperation now vec, test pbe0
-			//double factor = -0.5 * scale; 
+			//double factor = -0.5 * scale * exchange_coefficients_[0];  //CS with range seperation now vec, test pbe0
+			double factor = -0.5 * scale; //test using coeff within poisson solver  
 
 			if(not orbitals_->set_part().parallel()){
 				if(use_cutoff_) block_exchange_w_cutoff(factor, orbitals_->matrix(), occupations_, kpoints_, kpoint_indices_, phi, exxphi, mlwf_, epsilon_);
