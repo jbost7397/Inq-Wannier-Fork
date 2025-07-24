@@ -237,13 +237,13 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		CHECK(pbeh.exx_coefficients()[0] == 0.25_a);
 		CHECK(hse.family_name() == "GGA");
                 CHECK(hse.kind_name() == "Exchange-correlation");
-/*		CHECK(hse.cam_coefficients()[0] == 0.0_a);
-                CHECK(hse.cam_coefficients()[1] == 0.25_a);
-                CHECK(hse.cam_coefficients()[2] == 0.11_a);
-                CHECK(camb3lyp.cam_coefficients()[0] == 0.65_a);
-                CHECK(camb3lyp.cam_coefficients()[1] == 0.19_a);
-                CHECK(camb3lyp.cam_coefficients()[2] == 0.33_a);
-*/	}
+		CHECK(hse.exx_coefficients()[0] == 0.0_a);
+                CHECK(hse.exx_coefficients()[1] == 0.25_a);
+                CHECK(hse.exx_coefficients()[2] == 0.11_a);
+                CHECK(camb3lyp.exx_coefficients()[0] == 0.65_a);
+                CHECK(camb3lyp.exx_coefficients()[1] == 0.19_a);
+                CHECK(camb3lyp.exx_coefficients()[2] == 0.33_a);
+	}
 
 	SECTION("COPY AND ASSIGNMENT"){
 		auto copy = b3lyp;
@@ -259,7 +259,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		CHECK(copy2.exx_coefficients()[0] == 0.2_a);
 
                 auto copy3 = hse;
-//                CHECK(copy3.cam_coefficients()[2] == 0.11_a);
+                CHECK(copy3.exx_coefficients()[2] == 0.11_a);
 	}
 	
 }
