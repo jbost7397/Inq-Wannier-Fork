@@ -108,6 +108,14 @@ public:
                 inter.correlation_ = XC_NONE;
                 return inter;
         }
+
+        auto cam_b3lyp()  const {
+                theory inter = *this;
+                inter.hartree_potential_ = true;
+                inter.exchange_ = XC_HYB_GGA_XC_CAM_B3LYP;
+                inter.correlation_ = XC_NONE;
+                return inter;
+        }
 		
 	auto exchange_coefficient() const {
 		if(exchange() == XC_HARTREE_FOCK) return 1.0;
