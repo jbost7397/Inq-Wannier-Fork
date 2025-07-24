@@ -45,14 +45,14 @@ public:
 
 		GPU_FUNCTION auto operator()(vector3<double, cartesian> gg, double const zeroterm) const {
 			auto g2 = norm(gg);
-			const double alpha = 0.25;
-			const double beta = 0.25;
-			const double omega = 0.0;
+			const double alpha = exchange_coefficients_[0];
+			const double beta = exchange_coefficients_[1];
+			const double omega = exchange_coefficients_[2];
 			if (alpha == beta && omega == 0.0) {
 			  if(g2 < 1e-6) return zeroterm;
                           return -1.0/g2;
 			} else { 
-			  const double fac = beta / (omega * omega); 
+			  const double fac = 0.25 / (omega * omega); 
 			  const double x = g2 * fac;  
 			  if (g2 == 0) return -((beta - alpha) * fac * 2); //value from limit as g2 -> 0, assume leading term cancels with that, 2 from complex basis 
 			  else if (g2 < 1e-6) return -(alpha/g2 + fac * beta * (1.0 - 0.5 * x)); //regular part of Taylor expansion at 0 
