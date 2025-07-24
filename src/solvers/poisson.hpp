@@ -41,7 +41,7 @@ public:
         ///////////////////////////////////////////////////////////////////////////////////////////////////
 	//CS
         struct poisson_kernel_3d_hybrid {
-	  vector3<double> exx_coeffs;
+	  vector3<double> exchange_coefficients_;
 
 		GPU_FUNCTION auto operator()(vector3<double, cartesian> gg, double const zeroterm) const {
 			auto g2 = norm(gg);
@@ -136,12 +136,12 @@ private:
 
         ///////////////////////////////////////////////////////////////////////////////////////////////////
 	//CS
-        static void poisson_solve_in_place_3d_hybrid(basis::field_set<basis::real_space, complex> & density, vector3<double> const & gshift, double const zeroterm, vector3<double> const exx_coeffs) {
+        static void poisson_solve_in_place_3d_hybrid(basis::field_set<basis::real_space, complex> & density, vector3<double> const & gshift, double const zeroterm, vector3<double> const exchange_coefficients_) {
 
                 CALI_CXX_MARK_FUNCTION;
 
                 auto potential_fs = operations::transform::to_fourier(std::move(density));
-                poisson_apply_kernel(poisson_kernel_3d_hybrid{exx_coeffs}, potential_fs, gshift, zeroterm);
+                poisson_apply_kernel(poisson_kernel_3d_hybrid{exchange_coefficients_}, potential_fs, gshift, zeroterm);
                 density = operations::transform::to_real(std::move(potential_fs),  /*normalize = */ false);
         }
 	//CS
@@ -233,18 +233,19 @@ public:
 	///////////////////////////////////////////////////////////////////////////////////////////////////
 
 	template <typename Space = cartesian>
-	static void in_place(basis::field_set<basis::real_space, complex> & density, vector3<double, Space> const & gshift = {0.0, 0.0, 0.0}, double const zeroterm = 0.0, vector3<double> const & exx_coeffs = {0.0, 0.0, 0.0}) {
+	static void in_place(basis::field_set<basis::real_space, complex> & density, vector3<double, Space> const & gshift = {0.0, 0.0, 0.0}, double const zeroterm = 0.0, vector3<double> const & exchange_coefficients_ = {0.0, 0.0, 0.0}) {
 
 		CALI_CXX_MARK_SCOPE("poisson(complex)");
 
 		auto gshift_cart = density.basis().cell().metric().to_cartesian(gshift);
 		
 		if(density.basis().cell().periodicity() == 3){
-			if (exx_coeffs == vector3<double>{0.0, 0.0, 0.0}) {
+			if (exchange_coefficients_ == vector3<double>{0.0, 0.0, 0.0}) {
 				poisson_solve_in_place_3d(density, gshift_cart, zeroterm);
 		  	} else {
-        			poisson_solve_in_place_3d_hybrid(density, gshift_cart, zeroterm, exx_coeffs);
+        			poisson_solve_in_place_3d_hybrid(density, gshift_cart, zeroterm, exchange_coefficients_);
 		  	}
+
 		} else if(density.basis().cell().periodicity() == 2){
 			return poisson_solve_in_place_2d(density, gshift_cart, zeroterm);
 		} else {

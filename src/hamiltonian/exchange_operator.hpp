@@ -150,11 +150,11 @@ namespace hamiltonian {
 				{ CALI_CXX_MARK_SCOPE("exchange_operator::generate_density");
 					gpu::run(nst, phi.basis().local_size(),
 									 [rho = begin(rhoij.matrix()), hfo = begin(hf), ph = begin(phi.matrix()), jj] GPU_LAMBDA (auto ist, auto ipoint){
-										 rho[ipoint][ist] = conj(hfo[ipoint][jj])*ph[ipoint][ist];
+										 rho[ipoint][ist] = conj(hfo[ipoint][jj])*ph[ipoint][ist];  
 									 });
 				}
 
-				solvers::poisson::in_place(rhoij, -phi.kpoint() + kpt[jj], sing_(idx[jj]));
+				solvers::poisson::in_place(rhoij, -phi.kpoint() + kpt[jj], sing_(idx[jj]), exchange_coefficients_);
 
 				{ CALI_CXX_MARK_SCOPE("exchange_operator::mulitplication");
 					gpu::run(nst, exxphi.basis().local_size(),
@@ -208,7 +208,8 @@ namespace hamiltonian {
 			CALI_CXX_MARK_SCOPE("exchange_operator::direct");
 
 			//double factor = -0.5*scale*exchange_coefficient_;
-			double factor = -0.5 * scale * exchange_coefficients_[0];  //CS with range seperation, pass coeffs directly into solver 
+			double factor = -0.5 * scale * exchange_coefficients_[0];  //CS with range seperation now vec, test pbe0
+			//double factor = -0.5 * scale; 
 
 			if(not orbitals_->set_part().parallel()){
 				if(use_cutoff_) block_exchange_w_cutoff(factor, orbitals_->matrix(), occupations_, kpoints_, kpoint_indices_, phi, exxphi, mlwf_, epsilon_);
