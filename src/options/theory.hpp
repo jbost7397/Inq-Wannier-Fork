@@ -109,7 +109,7 @@ public:
                 return inter;
         }
 
-        auto cam_b3lyp()  const {
+        auto camb3lyp()  const {
                 theory inter = *this;
                 inter.hartree_potential_ = true;
                 inter.exchange_ = XC_HYB_GGA_XC_CAM_B3LYP;
@@ -265,7 +265,14 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		CHECK(read_inter.exchange_coefficient() == 0.0);
 		CHECK(read_inter.has_induced_vector_potential() == false);
   }
+
+  SECTION("Hybrid"){
+
+    auto inter = options::theory{}.camb3lyp();
+		CHECK(inter.exchange() == XC_HYB_GGA_XC_CAM_B3LYP);
 	
+	}
+
   SECTION("Hartee-Fock"){
 
     auto inter = options::theory{}.hartree_fock();

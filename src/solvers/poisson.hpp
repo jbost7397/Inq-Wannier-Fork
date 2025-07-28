@@ -48,15 +48,28 @@ public:
 			const double alpha = exchange_coefficients_[0];
 			const double beta = exchange_coefficients_[1];
 			const double omega = exchange_coefficients_[2];
-			if (alpha == beta && omega == 0.0) {
+			if (alpha == beta && omega == 0.0) { 	
+			  //CS global hybrid case
 			  if(g2 < 1e-6) return alpha * zeroterm;
                           return -alpha/g2;
+			} else if (alpha == 0.0 && omega > 0.0) {  
+			  //For HSE or other XC with only SR Exact exchange
+			  //Adapted from Schlipf et al.    Phys. Rev. B 84, 125142 (2011)
+			  const double fac = 0.25 / (omega * omega);
+                          const double x = g2 * fac;
+			  //keep only 2nd and 3rd term from Taylor expansion at zero, 
+			  //first term will drop anyways when alpha=0 thus no zeroterm here 
+			  if (g2 < 1e-6) return -fac * beta * (1.0 - 0.5 * x); 
+			  //sign convention to match kernel application
+                          else return -beta/g2 + beta * exp(-x) / g2; 
 			} else { 
+			  //General RSH case			
 			  const double fac = 0.25 / (omega * omega); 
 			  const double x = g2 * fac;  
-			  if (g2 == 0) return -((beta - alpha) * fac * 2); //value from limit as g2 -> 0, assume leading term cancels with that, 2 from complex basis 
-			  else if (g2 < 1e-6) return -(alpha/g2 + fac * beta * (1.0 - 0.5 * x)); //regular part of Taylor expansion at 0 
-			  else return -((beta + (alpha - beta) * exp(-x)) / g2); //CS all get negative sign to be consistient with global case 
+			  //general case, use zeroterm to approximate 1/g2 as in global case for small g. 
+			  //also keep 2nd and third terms if taylor expansion here
+			  if (g2 < 1e-6) return alpha * zeroterm - fac * beta * (1.0 - 0.5 * x);
+			  else return ( -beta - (alpha - beta) * exp(-x)) / g2;
 			}
 		}
 	};
@@ -238,7 +251,7 @@ public:
 		CALI_CXX_MARK_SCOPE("poisson(complex)");
 
 		auto gshift_cart = density.basis().cell().metric().to_cartesian(gshift);
-		
+
 		if(density.basis().cell().periodicity() == 3){
 			if (exchange_coefficients_ == vector3<double>{0.0, 0.0, 0.0}) {
 				poisson_solve_in_place_3d(density, gshift_cart, zeroterm);
