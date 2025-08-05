@@ -207,21 +207,17 @@ namespace hamiltonian {
 
 			CALI_CXX_MARK_SCOPE("exchange_operator::direct");
 
-			//double factor = -0.5*scale*exchange_coefficient_;
-			//double factor = -0.5 * scale * exchange_coefficients_[0];  //CS with range seperation now vec, test pbe0
-			double factor = -0.5 * scale; //test using coeff within poisson solver  
+			double factor = -0.5 * scale; 
 
 			if(not orbitals_->set_part().parallel()){
-				if(use_cutoff_) block_exchange_w_cutoff(factor, orbitals_->matrix(), occupations_, kpoints_, kpoint_indices_, phi, exxphi, mlwf_, epsilon_);
-				else block_exchange(factor, orbitals_->matrix(), occupations_, kpoints_, kpoint_indices_, phi, exxphi);
+				block_exchange(factor, orbitals_->matrix(), occupations_, kpoints_, kpoint_indices_, phi, exxphi);
 			} else {
 				auto occ_it = parallel::array_iterator(orbitals_->set_part(), orbitals_->set_comm(), occupations_);
 				auto kpt_it = parallel::array_iterator(orbitals_->set_part(), orbitals_->set_comm(), kpoints_);
 				auto idx_it = parallel::array_iterator(orbitals_->set_part(), orbitals_->set_comm(), kpoint_indices_);
 				auto hfo_it = parallel::block_array_iterator(orbitals_->basis().local_size(), orbitals_->set_part(), orbitals_->set_comm(), orbitals_->matrix());
 				for(; hfo_it != hfo_it.end(); ++hfo_it){
-					if(use_cutoff_) block_exchange_w_cutoff(factor, orbitals_->matrix(), occupations_, kpoints_, kpoint_indices_, phi, exxphi, mlwf_, epsilon_);
-					else block_exchange(factor, orbitals_->matrix(), occupations_, kpoints_, kpoint_indices_, phi, exxphi);
+					block_exchange(factor, orbitals_->matrix(), occupations_, kpoints_, kpoint_indices_, phi, exxphi);
 					++occ_it;
 					++kpt_it;
 					++idx_it;

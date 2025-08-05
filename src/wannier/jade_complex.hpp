@@ -114,7 +114,9 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
               return vector3<complex>({conj_cplx(a_int[top_idx][ii]) * u_int[bot][ii], 
 	        conj_cplx(a_int[top_idx][ii]) * u_int[top][ii], 
 		conj_cplx(a_int[bot_idx][ii]) * u_int[bot][ii]});
-	    }
+  	      } else {
+    		return vector3<complex>({0.0, 0.0, 0.0});
+	      } 
 	    });
 	  }
            gpu::sync();
