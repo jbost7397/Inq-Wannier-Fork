@@ -13,13 +13,19 @@
 
 namespace inq {
 namespace config {
+namespace path {
 
-struct path {
-  static std::string share(){ return SHARE_DIR + std::string("/") ; }
-  static std::string unit_tests_data(){ return share() + std::string("unit_tests_data/"); }
-  static std::string pseudo(){ return SHARE_DIR + std::string("/../pseudopod/pseudopotentials/quantum-simulation.org/sg15/");}
-};
+std::string share(){
+	auto env = std::getenv("INQ_SHARE_PATH");
+	if(env == NULL) return SHARE_DIR + std::string("/");
+	return env + std::string("/");
+}
 
+std::string unit_tests_data(){
+	return share() + std::string("unit_tests_data/");
+}
+
+}
 }
 }
 #endif
@@ -30,9 +36,30 @@ struct path {
 #include <catch2/catch_all.hpp>
 
 TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
+
+	auto env = std::getenv("INQ_SHARE_PATH");
+	std::string original_var;
+	if(env != NULL) original_var = env;
+	REQUIRE(unsetenv("INQ_SHARE_PATH") == 0);
+	
   SECTION("Share path"){
     CHECK(inq::config::path::share() == SHARE_DIR + std::string("/"));
   }
+
+	SECTION("Unit test path"){
+    CHECK(inq::config::path::unit_tests_data() == SHARE_DIR + std::string("/unit_tests_data/"));
+  }
+	
+	SECTION("Path from environment variable"){
+		REQUIRE(setenv("INQ_SHARE_PATH", "/basura", 1) == 0);
+    CHECK(inq::config::path::share() == std::string("/basura/"));
+		REQUIRE(unsetenv("INQ_SHARE_PATH") == 0);
+  }
+	
+	if(not original_var.empty()) {
+		REQUIRE(setenv("INQ_SHARE_PATH", original_var.c_str(), 1) == 0);
+	}
+	
 }
 
 #endif

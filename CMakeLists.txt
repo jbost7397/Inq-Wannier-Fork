@@ -171,10 +171,6 @@ target_include_directories(inq INTERFACE ${PROJECT_SOURCE_DIR}/external_libs/gpu
 add_subdirectory(external_libs/sharmonic)
 target_include_directories(inq INTERFACE ${PROJECT_SOURCE_DIR}/external_libs/sharmonic/include ${PROJECT_BINARY_DIR}/external_libs/sharmonic)
 
-#PSEUDOPOD
-add_subdirectory(external_libs/pseudopod)
-target_include_directories(inq INTERFACE ${PROJECT_BINARY_DIR}/external_libs/pseudopod)
-
 #LIBXC
 message("\nCONFIGURING LIBXC\n")
 set(DISABLE_FXC ON)
@@ -185,6 +181,25 @@ set(Libxc_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/external_libs/libxc/src/ ${PROJECT_
 
 target_include_directories(inq INTERFACE ${Libxc_INCLUDE_DIRS})
 target_link_libraries(inq INTERFACE ${Libxc_LIBRARIES} xc)
+
+########################
+# LIBPAW INTERFACE
+########################
+
+message("\nCONFIGURING LIBPAW INTERFACE\n")
+add_subdirectory(external_libs/libpaw_interface)
+target_include_directories(inq INTERFACE ${PROJECT_SOURCE_DIR}/external_libs/libpaw_interface/)
+target_include_directories(inq INTERFACE ${PROJECT_BINARY_DIR}/external_libs/libpaw_interface/)
+message("\nDONE CONFIGURING LIBPAW INTERFACE\n")
+set(libpaw_interface_include_dirs ${PROJECT_SOURCE_DIR}/external_libs/libpaw_interface)
+
+target_link_libraries(inq INTERFACE libpaw_interface)
+
+
+#PSEUDOPOD
+add_subdirectory(external_libs/pseudopod)
+target_include_directories(inq INTERFACE ${PROJECT_BINARY_DIR}/external_libs/pseudopod)
+
 
 # MPI3
 # set(bmpi3_INCLUDE_DIRS ${PROJECT_SOURCE_DIR}/external_libs/mpi3/include)
@@ -284,15 +299,8 @@ set(PYBIND11_PYTHON_VERSION ${Python_VERSION})  # Force Pybind11 into the same v
 
 add_subdirectory(python)
 
-########################
-# LIBPAW INTERFACE
-########################
 
-message("\nCONFIGURING LIBPAW INTERFACE\n")
-add_subdirectory(external_libs/libpaw_interface)
-target_include_directories(inq INTERFACE ${PROJECT_SOURCE_DIR}/external_libs/libpaw_interface/)
-message("\nDONE CONFIGURING LIBPAW INTERFACE\n")
-	
+
 #######################
 # GENERATE inq_config.h
 ######################
@@ -322,6 +330,18 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(Catch2)
 #link_libraries(Catch2::Catch2WithMain)
+
+#####################
+# BUILD DIRECTORIES
+#####################
+
+set(INQ_PATHS
+  "INQ_SHARE_PATH=set:${PROJECT_SOURCE_DIR}/share"
+  "PSEUDOPOD_SHARE_PATH=set:${PROJECT_SOURCE_DIR}/external_libs/pseudopod/share"
+  "PYTHONPATH=path_list_prepend:${PROJECT_BINARY_DIR}/python"
+  "PYTHONPATH=path_list_prepend:${PROJECT_SOURCE_DIR}/python"
+  "PATH=path_list_prepend:${PROJECT_BINARY_DIR}/src"
+)
 
 add_subdirectory(src)
 add_subdirectory(tests)
