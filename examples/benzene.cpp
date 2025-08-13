@@ -15,32 +15,21 @@ int main(int argc, char ** argv){
         bool groundstate_only = false;
 
 	auto & env = inq::input::environment::global();
-	inq::systems::ions sys(inq::systems::cell::cubic(25.0_b).periodic());
-	sys.insert(ionic::species("C").pseudo_file(inq::config::path::pseudo() + "C_ONCV_PBE-1.2.upf.gz"), {0.6825_A, -0.0924_A, 1.2087_A});
-        sys.insert(ionic::species("C").pseudo_file(inq::config::path::pseudo() + "C_ONCV_PBE-1.2.upf.gz"), {-0.7075_A, -0.0352_A, 1.1973_A});
-        sys.insert(ionic::species("C").pseudo_file(inq::config::path::pseudo() + "C_ONCV_PBE-1.2.upf.gz"), {-1.3898_A, 0.0572_A, -0.0114_A});
-        sys.insert(ionic::species("C").pseudo_file(inq::config::path::pseudo() + "C_ONCV_PBE-1.2.upf.gz"), {-0.6824_A, 0.0925_A, -1.2088_A});
-        sys.insert(ionic::species("C").pseudo_file(inq::config::path::pseudo() + "C_ONCV_PBE-1.2.upf.gz"), {0.7075_A, 0.0352_A, -1.1973_A});
-        sys.insert(ionic::species("C").pseudo_file(inq::config::path::pseudo() + "C_ONCV_PBE-1.2.upf.gz"), {1.3899_A, -0.0572_A, 0.0114_A});
-        sys.insert(ionic::species("H").pseudo_file(inq::config::path::pseudo() + "H_ONCV_PBE-1.2.upf.gz"), {1.2194_A, -0.1652_A, 2.1600_A}); 
-        sys.insert(ionic::species("H").pseudo_file(inq::config::path::pseudo() + "H_ONCV_PBE-1.2.upf.gz"), {-1.2644_A, -0.0630_A, 2.1393_A});
-        sys.insert(ionic::species("H").pseudo_file(inq::config::path::pseudo() + "H_ONCV_PBE-1.2.upf.gz"), {-2.4836_A, 0.1021_A, -0.0204_A});
-        sys.insert(ionic::species("H").pseudo_file(inq::config::path::pseudo() + "H_ONCV_PBE-1.2.upf.gz"), {-1.2194_A, 0.1652_A, -2.1599_A});
-        sys.insert(ionic::species("H").pseudo_file(inq::config::path::pseudo() + "H_ONCV_PBE-1.2.upf.gz"), {1.2641_A, 0.0628_A, -2.1395_A});
-        sys.insert(ionic::species("H").pseudo_file(inq::config::path::pseudo() + "H_ONCV_PBE-1.2.upf.gz"), {2.4836_A, -0.1022_A, 0.0205_A});
-	inq::systems::electrons el(env.par().states().domains(1), sys, options::electrons{}.cutoff(30.0_Ry));
+        auto ions = systems::ions::parse(config::path::unit_tests_data() + "benzne.xyz", systems::cell::cubic(30.0_b).periodic());
+        ions.species_list().pseudopotentials() = pseudo::set_id::sg15();
+	inq::systems::electrons el(env.par().states().domains(1), ions, options::electrons{}.cutoff(30.0_Ry));
 
         std::string restart_dir = "benzene_restart";
         auto not_found_gs = groundstate_only or not el.try_load(restart_dir);
         if(not_found_gs){
-                inq::ground_state::initial_guess(sys, el);
-                try { inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-8_Ha)); }
+                inq::ground_state::initial_guess(ions, el);
+                try { inq::ground_state::calculate(ions, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-8_Ha)); }
                 catch(...){ }
                 el.save(restart_dir);
         }
 
         if(not groundstate_only){
-                        real_time::propagate(sys, el, [](auto){}, options::theory{}.pbe(), options::real_time{}.num_steps(100).dt(0.0565_atomictime).tdmlwf());
+                        real_time::propagate(ions, el, [](auto){}, options::theory{}.pbe(), options::real_time{}.num_steps(100).dt(0.0565_atomictime).tdmlwf());
         }
 
         return 1;

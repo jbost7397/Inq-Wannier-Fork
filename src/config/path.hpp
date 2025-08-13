@@ -25,6 +25,10 @@ std::string unit_tests_data(){
 	return share() + std::string("unit_tests_data/");
 }
 
+std::string pseudo() { 
+	return share() + std::string("../pseudopod/pseudopotentials/quantum-simulation.org/sg15/");
+}
+
 }
 }
 }
