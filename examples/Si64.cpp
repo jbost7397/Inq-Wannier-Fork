@@ -12,7 +12,6 @@ int main(int argc, char ** argv){
 
 	using namespace inq;
 	using namespace inq::magnitude;
-        bool groundstate_only = false;
 
 	auto a = 20.36_b;
 	systems::ions ions(systems::cell::cubic(a));
@@ -41,16 +40,10 @@ int main(int argc, char ** argv){
 
 	systems::electrons el(ions, options::electrons{}.cutoff(15.0_Ry), input::kpoints::grid({1, 1, 1}, true));
 	
-        std::string restart_dir = "Si64_restart";
-        auto not_found_gs = groundstate_only or not el.try_load(restart_dir);
-        if(not_found_gs){
-                inq::ground_state::initial_guess(ions, el);
-                try { inq::ground_state::calculate(ions, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-8_Ha)); }
-                catch(...){ }
-                el.save(restart_dir);
-        }
+        inq::ground_state::initial_guess(ions, el);
+        inq::ground_state::calculate(ions, el, inq::options::theory{}.pbe0(), inq::options::ground_state{}.energy_tolerance(1e-8_Ha)); 
 
-        real_time::propagate(ions, el, [](auto){}, options::theory{}.pbe(), options::real_time{}.num_steps(100).dt(0.0565_atomictime).tdmlwf());
+        real_time::propagate(ions, el, [](auto){}, options::theory{}.pbe0(), options::real_time{}.num_steps(100).dt(0.0565_atomictime).tdmlwf());
 
         return 1;
 }
