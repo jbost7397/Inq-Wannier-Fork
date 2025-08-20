@@ -14,6 +14,7 @@
 #include <basis/real_space.hpp>
 #include <basis/spherical_grid.hpp>
 #include <hamiltonian/atomic_potential.hpp>
+#include <matrix/lu.hpp>
 #include <utils/profiling.hpp>
 #include <utils/raw_pointer_cast.hpp>
 
@@ -21,6 +22,17 @@ namespace inq {
 namespace hamiltonian {
 
 class projector_all {
+
+	int nprojs_;
+	long max_sphere_size_;
+	int max_nlm_;
+	gpu::array<vector3<int>, 2> points_;
+	gpu::array<vector3<float, contravariant>, 2> positions_;
+	gpu::array<double, 3> lu_coeff_;
+	gpu::array<double, 3> matrices_;
+	gpu::array<int, 1> nlm_;
+	gpu::array<int, 1> iatom_;
+	gpu::array<bool, 1> locally_empty_;
 
 public: // for CUDA
 	
@@ -38,7 +50,7 @@ public: // for CUDA
 
 		points_ = decltype(points_)({nprojs_, max_sphere_size_});
 		positions_ = decltype(positions_)({nprojs_, max_sphere_size_});		
-    coeff_ = decltype(coeff_)({nprojs_, max_nlm_}, 0.0);
+    lu_coeff_ = decltype(lu_coeff_)({nprojs_, max_nlm_, max_nlm_}, 0.0);
     matrices_ = decltype(matrices_)({nprojs_, max_nlm_, max_sphere_size_});
 		
     auto iproj = 0;
@@ -61,8 +73,10 @@ public: // for CUDA
 									 mat[iproj][ilm][ipoint] = 0.0;								 
 								 }
 							 });
-								 
-      coeff_[iproj]({0, it->nproj_}) = it->kb_coeff_;
+
+			auto coeff = it->kb_coeff_;
+			matrix::lu_raw(coeff);
+			lu_coeff_[iproj]({0, it->nproj_}, {0, it->nproj_}) = coeff;
 
 			nlm_[iproj] = it->nproj_;
 			iatom_[iproj] = it->iatom_;
@@ -174,21 +188,46 @@ public:
 	}
 
 	////////////////////////////////////////////////////////////////////////////////////////////
+
+	template <typename ProjectionsType>
+	void multiply_by_coefficients(ProjectionsType & projections_all) const {
+		
+		CALI_CXX_MARK_FUNCTION;
+
+		auto nst = get<2>(sizes(projections_all));
+
+		gpu::run(nst, nprojs_,
+						 [proj = begin(projections_all), coe = begin(lu_coeff_), nlm = max_nlm_]
+						 GPU_LAMBDA (auto ist, auto iproj){
+							 using type = typename ProjectionsType::element_type;
+							 
+							 //multiply by U in place
+							 for(int ilm = 0; ilm < nlm; ilm++) {
+								 auto acc = zero<type>();
+								 for(int jlm = ilm; jlm < nlm; jlm++) acc += coe[iproj][jlm][ilm]*proj[iproj][jlm][ist];
+								 proj[iproj][ilm][ist] = acc;
+							 }
+
+							 //multiply by L in place
+							 for(int ilm = nlm - 1; ilm >= 0; ilm--) {
+								 auto acc = zero<type>();
+								 for(int jlm = 0; jlm < ilm; jlm++) acc += coe[iproj][jlm][ilm]*proj[iproj][jlm][ist];
+								 proj[iproj][ilm][ist] += acc;
+							 }
+							 
+						 });
+		
+	}
+	
+	////////////////////////////////////////////////////////////////////////////////////////////
 	
 	template <typename KpointType>
 	gpu::array<complex, 3> project(states::orbital_set<basis::real_space, complex> const & phi, KpointType const & kpoint) const {
 		
 		auto projections_all = calculate_projections(phi, kpoint);
 
-    { CALI_CXX_MARK_SCOPE("projector_scal");
-				
-      gpu::run(phi.local_set_size(), max_nlm_, nprojs_,
-               [proj = begin(projections_all), coe = begin(coeff_)]
-               GPU_LAMBDA (auto ist, auto ilm, auto iproj){
-                 proj[iproj][ilm][ist] = proj[iproj][ilm][ist]*coe[iproj][ilm];
-               });
-		}
-
+		multiply_by_coefficients(projections_all);
+		
 		gpu::array<complex, 3> sphere_phi_all({nprojs_, max_sphere_size_, phi.local_set_size()});
 		
 #ifndef ENABLE_CUDA
@@ -261,13 +300,20 @@ public:
 		auto projections_all = calculate_projections(phi, kpoint);
 		
 		auto en = gpu::run(gpu::reduce(phi.local_set_size()), gpu::reduce(max_nlm_), gpu::reduce(nprojs_), 0.0,
-											 [proj = begin(projections_all), coe = begin(coeff_), occ = begin(occupations), spinor_size = phi.local_spinor_set_size()]
+											 [proj = begin(projections_all), coe = begin(lu_coeff_), occ = begin(occupations), spinor_size = phi.local_spinor_set_size(), nlm = max_nlm_]
 											 GPU_LAMBDA (auto ist, auto ilm, auto iproj){
+
+												 auto pp = proj[iproj][ilm][ist]; // the L diagonal values are 1.0
+												 auto qq = coe[iproj][ilm][ilm]*proj[iproj][ilm][ist];
+												 for(int jlm = ilm + 1; jlm < nlm; jlm++) {
+													 pp += coe[iproj][ilm][jlm]*proj[iproj][jlm][ist];
+													 qq += coe[iproj][jlm][ilm]*proj[iproj][jlm][ist];
+												 }
+
 												 auto ist_spinor = ist%spinor_size;
-												 auto pp = proj[iproj][ilm][ist];
-												 return real(conj(pp)*pp)*coe[iproj][ilm]*occ[ist_spinor];
+												 return occ[ist_spinor]*real(conj(pp)*qq);
 											 });
-		
+
 		if(reduce_states and phi.set_comm().size() > 1) {
 			CALI_CXX_MARK_SCOPE("projector_all::energy::reduce_states");
 			phi.set_comm().all_reduce_in_place_n(&en, 1, std::plus<>{});
@@ -346,14 +392,7 @@ public:
 			blas::real_doubled(rpa) = blas::gemm(phi.basis().volume_element(), matrices_[iproj], blas::real_doubled(sra));
 		}
 
-    { CALI_CXX_MARK_SCOPE("position_commutator_scal");
-				
-      gpu::run(phi.local_set_size(), max_nlm_, nprojs_,
-               [rproj = begin(rprojections_all), coe = begin(coeff_)]
-               GPU_LAMBDA (auto ist, auto ilm, auto iproj){
-                 rproj[iproj][ilm][ist] *= coe[iproj][ilm];
-               });
-		}
+		multiply_by_coefficients(rprojections_all);
 
 		if(phi.basis().comm().size() > 1) {
 			phi.basis().comm().all_reduce_in_place_n(raw_pointer_cast(rprojections_all.data_elements()), rprojections_all.num_elements(), std::plus<>{});
@@ -388,22 +427,6 @@ public:
 							 });
 		}
 	}
-
-	////////////////////////////////////////////////////////////////////////////////////////////		
-
-
-private:
-			
-	int nprojs_;
-	long max_sphere_size_;
-	int max_nlm_;
-	gpu::array<vector3<int>, 2> points_;
-	gpu::array<vector3<float, contravariant>, 2> positions_;
-	gpu::array<double, 2> coeff_;
-	gpu::array<double, 3> matrices_;
-	gpu::array<int, 1> nlm_;
-	gpu::array<int, 1> iatom_;
-	gpu::array<bool, 1> locally_empty_;
   
 };
   
