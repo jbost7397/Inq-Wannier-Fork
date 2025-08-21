@@ -46,7 +46,7 @@ public:
     comm.barrier();
     mlwf_transformer_->apply_transform(phi, comm);
 
-    /*if(comm.rank() == 0){
+    if(comm.rank() == 0){
     	output_file << "Time step: " << time_step + 1 << "\n";
     	output_file << "MLWFs:\n";
     	for (int i = 0; i < phi.set_size(); ++i) {
@@ -54,7 +54,7 @@ public:
        		auto spread = mlwf_transformer_->spread(i, phi.basis().cell());
        		output_file << "  WF " << i + 1 << ": " << center[0] << "     " << center[1] << "     " << center[2] << "     Spread: " << spread << std::endl;
     	}
-    }*/
+    }
   }
 
 private:
