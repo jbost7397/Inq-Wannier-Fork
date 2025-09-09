@@ -16,6 +16,7 @@
 #include <operations/integral.hpp>
 #include <hamiltonian/xc_term.hpp>
 #include <hamiltonian/atomic_potential.hpp>
+#include <hamiltonian/zeeman_coupling.hpp>
 #include <options/theory.hpp>
 #include <perturbations/none.hpp>
 #include <solvers/velocity_verlet.hpp>
@@ -74,9 +75,7 @@ public:
 		
 		CALI_CXX_MARK_FUNCTION;
 		
-		solvers::poisson poisson_solver;
-		
-		auto ionic_long_range = poisson_solver(atomic_pot.ionic_density(comm, density_basis_, ions));
+		auto ionic_long_range = solvers::poisson::solve(atomic_pot.ionic_density(comm, density_basis_, ions));
 		auto ionic_short_range = atomic_pot.local_potential(comm, density_basis_, ions);
 		vion_ = operations::add(ionic_long_range, ionic_short_range);
 		
@@ -97,8 +96,6 @@ public:
 			
 		energy.external(operations::integral_product(total_density, vion_));
 
-		solvers::poisson poisson_solver;
-
 		//IONIC POTENTIAL
 		auto vscalar = vion_;
 
@@ -117,7 +114,7 @@ public:
 		
 		// Hartree
 		if(theory_.hartree_potential()){
-			auto vhartree = poisson_solver(total_density);
+			auto vhartree = solvers::poisson::solve(total_density);
 			energy.hartree(0.5*operations::integral_product(total_density, vhartree));
 			operations::increment(vscalar, vhartree);
 		} else {
@@ -136,7 +133,15 @@ public:
 		
 		// XC
 		double exc, nvxc;
-		xc_(spin_density, core_density_, vks, exc, nvxc);
+		hamiltonian.vxc_ = xc_(spin_density, core_density_, exc, nvxc);
+
+		assert(hamiltonian.vxc_.set_size() == vks.set_size());
+		
+		gpu::run(hamiltonian.vxc_.local_set_size(), hamiltonian.vxc_.basis().local_size(),
+						 [vx = begin(hamiltonian.vxc_.matrix()), vk = begin(vks.matrix())] GPU_LAMBDA (auto is, auto ip){
+							 vk[ip][is] += vx[ip][is];
+						 });
+
 		energy.xc(exc);
 		energy.nvxc(nvxc);
 
@@ -157,6 +162,18 @@ public:
 
 		if(has_induced_vector_potential()){
 			hamiltonian.uniform_vector_potential_ += induced_vector_potential_;
+		}
+
+		// THE MAGNETIC FIELD
+		
+		if (pert_.has_magnetic_field()) {
+			basis::field<basis::real_space, vector3<double>> uniform_magnetic(spin_density.basis());
+			uniform_magnetic.fill(vector3 {0.0, 0.0, 0.0});
+			pert_.magnetic_field(time, uniform_magnetic);
+			zeeman_coupling zc_(spin_density.set_size());
+			auto zeeman_ener = 0.0;
+			zc_(spin_density, uniform_magnetic, hamiltonian.scalar_potential_, zeeman_ener);
+			energy.zeeman_energy(zeeman_ener);
 		}
 		
 	}

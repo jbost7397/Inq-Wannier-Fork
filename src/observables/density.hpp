@@ -15,6 +15,7 @@
 #include <operations/transfer.hpp>
 #include <utils/profiling.hpp>
 #include <utils/raw_pointer_cast.hpp>
+#include <observables/magnetization.hpp>
 
 namespace inq {
 namespace observables {
@@ -34,8 +35,9 @@ void calculate_add(const occupations_array_type & occupations, field_set_type & 
 	} else {
 		
 		assert(density.set_size() == 4);
-		assert(std::get<1>(sizes(phi.spinor_array())) == phi.spinor_dim());
-		assert(std::get<2>(sizes(phi.spinor_array())) == phi.local_spinor_set_size());
+
+		assert(get<1>(sizes(phi.spinor_array())) == phi.spinor_dim());
+		assert(get<2>(sizes(phi.spinor_array())) == phi.local_spinor_set_size());
 		
 		gpu::run(phi.basis().part().local_size(),
 						 [nst = phi.local_spinor_set_size(), occ = begin(occupations), ph = begin(phi.spinor_array()), den = begin(density.matrix())] GPU_LAMBDA (auto ipoint){
@@ -58,18 +60,15 @@ void calculate_gradient_add(const occupations_array_type & occupations, field_se
 
 	CALI_CXX_MARK_SCOPE("density::calculate_gradient");
 
-	if(not phi.spinors()){
-
-		gpu::run(phi.basis().part().local_size(),
-						 [nst = phi.set_part().local_size(), occs = begin(occupations),
-							phip = begin(phi.matrix()), gphip = begin(gphi.matrix()), gdensityp = begin(gdensity.linear())] GPU_LAMBDA (auto ip){
-							 for(int ist = 0; ist < nst; ist++) gdensityp[ip] += occs[ist]*real(conj(gphip[ip][ist])*phip[ip][ist] + conj(phip[ip][ist])*gphip[ip][ist]);
-						 });
-		
-	} else {
-		throw std::logic_error("Not implemented");
-	}
-		
+	gpu::run(phi.basis().part().local_size(),
+					 [nst = phi.local_spinor_set_size(), occs = begin(occupations),	phip = begin(phi.spinor_array()), gphip = begin(gphi.spinor_array()), gdensityp = begin(gdensity.linear()), nspinor = phi.spinor_dim()]
+					 GPU_LAMBDA (auto ip){
+						 for(int ispinor = 0; ispinor < nspinor; ispinor++){
+							 for(int ist = 0; ist < nst; ist++) {
+								 gdensityp[ip] += occs[ist]*real(conj(gphip[ip][ispinor][ist])*phip[ip][ispinor][ist] + conj(phip[ip][ispinor][ist])*gphip[ip][ispinor][ist]);
+							 }
+						 }
+					 });
 }
 
 ///////////////////////////////////////////////////////////////
@@ -101,7 +100,8 @@ void normalize(FieldType & density, const double & total_charge){
 
 	CALI_CXX_MARK_FUNCTION;
 	
-	auto qq = operations::integral_sum(density);
+	auto max_index = std::min(2, density.set_size());
+	auto qq = operations::integral_partial_sum(density, max_index);
 	assert(fabs(qq) > 1e-16);
 
 	gpu::run(density.local_set_size(), density.basis().local_size(),
@@ -129,6 +129,39 @@ basis::field<BasisType, ElementType> total(basis::field_set<BasisType, ElementTy
 					 });
 
 	return total_density;
+}
+
+///////////////////////////////////////////////////////////////
+
+template <class FieldType>
+void rotate_total_magnetization(FieldType & density, vector3<double> const & magnet_dir) {
+
+	CALI_CXX_MARK_FUNCTION
+
+	vector3 e_v = magnet_dir/sqrt(norm(magnet_dir));
+
+	if (density.set_size() == 2){
+		gpu::run(density.basis().local_size(),
+			[den = begin(density.matrix()), mv = e_v[2]] GPU_LAMBDA (auto ip){
+				auto n0 = den[ip][0] + den[ip][1];
+				auto m0 = den[ip][0] - den[ip][1];
+				den[ip][0] = 0.5*(n0 + m0*mv);
+				den[ip][1] = 0.5*(n0 - m0*mv);
+			});
+	}
+	else {
+		assert(density.set_size() == 4);
+		gpu::run(density.basis().local_size(),
+				[den = begin(density.matrix()), mv = e_v] GPU_LAMBDA (auto ip){
+					auto mag = observables::local_magnetization(den[ip], 4);
+					auto m0 = sqrt(norm(mag));
+					auto n0 = den[ip][0] + den[ip][1];
+					den[ip][0] = 0.5*(n0 + m0*mv[2]);
+					den[ip][1] = 0.5*(n0 - m0*mv[2]);
+					den[ip][2] = m0*mv[0]/2.0;
+					den[ip][3] = -m0*mv[1]/2.0;
+				});
+	}
 }
 
 }
@@ -223,7 +256,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		
 		states::orbital_set<basis::trivial, complex> aa(bas, nvec, 2, vector3<double, covariant>{0.0, 0.0, 0.0}, 0, cart_comm);
 
-		CHECK(std::get<1>(sizes(aa.spinor_array())) == 2);
+		CHECK(get<1>(sizes(aa.spinor_array())) == 2);
 		
 		gpu::array<double, 1> occ(nvec);
 		
@@ -237,7 +270,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		}
 
 		for(int jj = 0; jj < aa.local_spinor_set_size(); jj++) {
-			auto jjg = aa.spinor_set_part().local_to_global(jj).value();			
+			auto jjg = aa.spinor_set_part().local_to_global(jj).value();      
 			occ[jj] = 1.0/(jjg + 1);
 		}
 
@@ -249,7 +282,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		dd.all_reduce(aa.set_comm());
 
 		for(int ii = 0; ii < dd.basis().part().local_size(); ii++) {
-			auto iig = bas.part().local_to_global(ii).value();			
+			auto iig = bas.part().local_to_global(ii).value();      
 			CHECK(dd.matrix()[ii][0] == Approx(0.5*iig*nvec*(nvec + 1)));
 			CHECK(dd.matrix()[ii][1] == Approx(0.5*iig*nvec*(nvec + 1)));
 			CHECK(dd.matrix()[ii][2] == Approx(0.5*iig*nvec*(nvec + 1)));

@@ -9,7 +9,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-#include <pseudopod/math/sharmonic.hpp>
+#include <sharmonic.h>
 
 #include <gpu/array.hpp>
 #include <math/vector3.hpp>
@@ -46,7 +46,7 @@ public: // for CUDA
 									spline = ps.projector(iproj_l).function(),
 									sph = sphere_.ref(), l, iproj_lm,
 									metric = basis.cell().metric()] GPU_LAMBDA (auto ipoint, auto m) {
-									 mat[iproj_lm + m][ipoint] = spline(sph.distance(ipoint))*pseudo::math::sharmonic(l, m - l, metric.to_cartesian(sph.point_pos(ipoint)));
+									 mat[iproj_lm + m][ipoint] = spline(sph.distance(ipoint))*sharmonic::cartesian_real(l, m - l, metric.to_cartesian(sph.point_pos(ipoint)));
 								 });
 				
 			} else {
@@ -56,7 +56,7 @@ public: // for CUDA
 				gpu::run(sphere_.size(), 2*l + 1,
 								 [mat = begin(matrix_), spline = ps.projector(iproj_l).function(), sph = sphere_.ref(), l, iproj_lm,
 									dg = double_grid.ref(), spac = basis.rspacing(), metric = basis.cell().metric()] GPU_LAMBDA (auto ipoint, auto m) {
-									 mat[iproj_lm + m][ipoint] = dg.value([spline, l, m] GPU_LAMBDA(auto pos) { return spline(pos.length())*pseudo::math::sharmonic(l, m - l, pos);}, spac, metric.to_cartesian(sph.point_pos(ipoint)));
+									 mat[iproj_lm + m][ipoint] = dg.value([spline, l, m] GPU_LAMBDA(auto pos) { return spline(pos.length())*sharmonic::cartesian_real(l, m - l, pos);}, spac, metric.to_cartesian(sph.point_pos(ipoint)));
 								 });
 				
 			}
@@ -90,16 +90,6 @@ public:
 		return nproj_ == 0 or sphere_.size() == 0;
 	}
 
-	template <typename OcType, typename PhiType, typename GPhiType>
-	struct force_term {
-		OcType oc;
-		PhiType phi;
-		GPhiType gphi;
-		constexpr auto operator()(int ist, int ip) const {
-			return -2.0*oc[ist]*real(phi[ip][ist]*conj(gphi[ip][ist]));
-		}
-	};
-	
 	int num_projectors() const {
 		return nproj_;
 	}
@@ -177,4 +167,5 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 	
 }
 #endif
+
 

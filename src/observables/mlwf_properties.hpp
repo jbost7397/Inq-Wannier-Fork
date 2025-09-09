@@ -22,15 +22,38 @@ public:
     mlwf_transformer_ = transformer;
   }
 
+  wannier::tdmlwf_trans get_mlwf_transformer(){
+	  return mlwf_transformer_.value();
+  }
+
   explicit mlwf_properties(const wannier::tdmlwf_trans& mlwf_transformer)
       : mlwf_transformer_(mlwf_transformer) {}
 
   void calculate(std::ofstream& output_file, int time_step, states::orbital_set<basis::real_space, complex>& phi) {
-    mlwf_transformer_->update(phi);
-    mlwf_transformer_->compute_transform();
-    mlwf_transformer_->apply_transform(phi);
+    parallel::communicator comm{boost::mpi3::environment::get_world_instance()};
+    if (phi.set_part().parallel()){
+	     auto mlwf_comm = phi.set_comm();
+	     mlwf_transformer_->update(phi, mlwf_comm);
+    }
+    else{
+	     auto mlwf_comm = phi.basis().comm();
+    	     mlwf_transformer_->update(phi, mlwf_comm);
+    }	     
+    //auto comm = phi.set_comm();
+    //mlwf_transformer_->update(phi, comm);
+    //if (comm.rank() == 0){
+    	if (time_step < 1) {
+	    double set_tol = 1e-7;
+            mlwf_transformer_->compute_transform(set_tol);
+    	}
+    	else {
+	    double set_tol = 5e-5;
+            mlwf_transformer_->compute_transform(set_tol);
+    	}
+    //}
+    mlwf_transformer_->apply_transform(phi, comm);
 
-    if(phi.basis().comm().rank() == 0){
+    if(comm.rank() == 0){
     	output_file << "Time step: " << time_step + 1 << "\n";
     	output_file << "MLWFs:\n";
     	for (int i = 0; i < phi.set_size(); ++i) {

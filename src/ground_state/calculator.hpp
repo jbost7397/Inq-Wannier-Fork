@@ -51,6 +51,7 @@
 namespace inq {
 namespace ground_state {
 
+template <typename Perturbation = perturbations::none>
 class calculator {
 
 public:
@@ -60,23 +61,13 @@ private:
 	systems::ions const & ions_;
 	options::theory inter_;
 	options::ground_state solver_;
-	hamiltonian::self_consistency<> sc_;
+	hamiltonian::self_consistency<Perturbation> sc_;
 	hamiltonian::ks_hamiltonian<double> ham_;
 
 #ifdef ENABLE_CUDA
 public:
 #endif
 
-	template <typename OccType, typename ArrayType>
-	struct state_conv_func {
-		OccType   occ;
-		ArrayType arr;
-		
-		GPU_FUNCTION double operator()(long ip) const {
-			return fabs(occ[ip]*arr[ip]);
-		}
-	};
-	
 	template <typename NormResType>
 	static double state_convergence(systems::electrons & el, NormResType const & normres) {
 		CALI_CXX_MARK_FUNCTION;
@@ -86,8 +77,9 @@ public:
 		for(int iphi = 0; iphi < el.kpin_size(); iphi++){
 			assert(el.occupations()[iphi].size() == normres[iphi].size());
 
-			auto func = state_conv_func<decltype(begin(el.occupations()[iphi])), decltype(begin(normres[iphi]))>{begin(el.occupations()[iphi]), begin(normres[iphi])};
-			state_conv += gpu::run(gpu::reduce(normres[iphi].size()), func);
+			state_conv += gpu::run(gpu::reduce(normres[iphi].size()), 0.0, [occ = begin(el.occupations()[iphi]), arr = begin(normres[iphi])] GPU_LAMBDA (auto ip) {
+				return fabs(occ[ip]*arr[ip]);
+			});
 		}
 		
 		el.kpin_states_comm().all_reduce_n(&state_conv, 1);
@@ -98,11 +90,11 @@ public:
 
 public:
 
-	calculator(systems::ions const & ions, systems::electrons const & electrons, const options::theory & inter = {}, options::ground_state const & solver = {})
+	calculator(systems::ions const & ions, systems::electrons const & electrons, const options::theory & inter = {}, options::ground_state const & solver = {}, Perturbation const & pert = {})
 		:ions_(ions),
 		 inter_(inter),
 		 solver_(solver),
-		 sc_(inter, electrons.states_basis(), electrons.density_basis(), electrons.states().num_density_components()),
+		 sc_(inter, electrons.states_basis(), electrons.density_basis(), electrons.states().num_density_components(), pert),
 		 ham_(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(), ions_, sc_.exx_coefficient(), /* use_ace = */ true)
 	{
 	}
@@ -245,14 +237,10 @@ public:
 		sc_.update_hamiltonian(ham_, res.energy, electrons.spin_density());
 		auto normres = res.energy.calculate(ham_, electrons);
 			
-		if(solver_.calc_forces() and electrons.states().spinor_dim() == 1) {
-			res.forces = observables::forces_stress{ions_, electrons, ham_}.forces;
-		}
-
-		if(solver_.calc_forces() and electrons.states().spinor_dim() == 2) {
-			if(solver_.verbose_output() and console) {
-				console->warn("\nSkipping calculation of the forces, they are not implemented for spinors.");
-			}
+		if(solver_.calc_forces()) {
+			auto fas = observables::forces_stress{ions_, electrons, ham_, res.energy};
+			res.forces = fas.forces;
+			res.stress = fas.stress;
 		}
 		
 		auto ev_out = eigenvalues_output(electrons, normres);		
