@@ -30,7 +30,7 @@ int main(int argc, char ** argv){
 	inq::ground_state::initial_guess(sys, el);
 	
 	inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-8_Ha));
-	real_time::propagate(sys, el, [](auto){}, options::theory{}.pbe(), options::real_time{}.num_steps(100).dt(0.0565_atomictime));
+	real_time::propagate(sys, el, [](auto){}, options::theory{}.pbe(), options::real_time{}.num_steps(10).dt(0.0565_atomictime));
 	
 	return 1;
 }

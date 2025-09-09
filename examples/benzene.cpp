@@ -39,7 +39,7 @@ int main(int argc, char ** argv){
         }
 
         if(not groundstate_only){
-                        real_time::propagate(sys, el, [](auto){}, options::theory{}.pbe(), options::real_time{}.num_steps(10).dt(0.0565_atomictime).tdmlwf());
+                        real_time::propagate(sys, el, [](auto){}, options::theory{}.pbe(), options::real_time{}.num_steps(100).dt(0.0565_atomictime).tdmlwf());
         }
 
         return 1;
