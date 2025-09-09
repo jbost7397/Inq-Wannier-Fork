@@ -39,18 +39,14 @@ public:
 	     auto mlwf_comm = phi.basis().comm();
     	     mlwf_transformer_->update(phi, mlwf_comm);
     }	     
-    //auto comm = phi.set_comm();
-    //mlwf_transformer_->update(phi, comm);
-    //if (comm.rank() == 0){
-    	if (time_step < 1) {
-	    double set_tol = 1e-7;
-            mlwf_transformer_->compute_transform(set_tol);
-    	}
-    	else {
-	    double set_tol = 5e-5;
-            mlwf_transformer_->compute_transform(set_tol);
-    	}
-    //}
+    if (time_step < 1) {
+	double set_tol = 1e-7;
+        mlwf_transformer_->compute_transform(set_tol);
+    }
+    else {
+	double set_tol = 5e-5;
+        mlwf_transformer_->compute_transform(set_tol);
+    }
     mlwf_transformer_->apply_transform(phi, comm);
 
     if(comm.rank() == 0){

@@ -76,7 +76,6 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
     CALI_CXX_MARK_SCOPE("jade");
     {
-
       while (!done) {
         ++nsweep;
         double diag_change = 0.0;

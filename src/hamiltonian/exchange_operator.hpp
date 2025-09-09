@@ -184,8 +184,6 @@ namespace hamiltonian {
 
 				auto olaps_j = mlwf_->get_overlaps_of_j(epsilon_, jj, phi.basis().cell(), rank_offset);
 
-				//std::cout << "j = " << jj << ", olaps_j size  = " << olaps_j.size() << std::endl;
-
 				if(olaps_j.size() > 0){
 					basis::field_set<basis::real_space, complex> rhoij(phi.basis(), olaps_j.size());
 				

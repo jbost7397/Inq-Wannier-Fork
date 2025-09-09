@@ -97,31 +97,6 @@ void normalize(CommType & comm) {
 }//normalize 
 ////////////////////////////////////////////////////////////////////////////////
 template <class CommType>
-gpu::array<complex, 2> prepare_buffer(CommType & comm){
-    CALI_CXX_MARK_SCOPE("wannier::prepare_buf");
-    int n_states = wavefunctions_.set_size();
-    int n_states_local = wavefunctions_.local_set_size();
-    int nx = wavefunctions_.basis().local_sizes()[0];
-    int ny = wavefunctions_.basis().local_sizes()[1];
-    int nz = wavefunctions_.basis().local_sizes()[2];
-    int local_data_elements = nx * ny * nz * n_states_local;
-
-    // Prepare alltoall buffer
-    gpu::array<complex, 2> send_buffer({comm.size(), local_data_elements});
-    gpu::run(n_states_local, comm.size(), [nx, ny, nz, n_states_local, hypercubic = begin(wavefunctions_.hypercubic()), send_buf = begin(send_buffer)] GPU_LAMBDA (auto l_wf, auto cur_rank) {
-	for (int ix = 0; ix < nx; ++ix){
-	    for (int iy = 0; iy < ny; ++iy) {
-	        for (int iz = 0; iz < nz; ++iz) {
-		    int index = ix * ny * nz * n_states_local + iy * nz * n_states_local + iz * n_states_local + l_wf;
-		    send_buf[cur_rank][index] = hypercubic[ix][iy][iz][l_wf];
-		}
-	    }
-	}
-    });
-    return send_buffer;
-}
-////////////////////////////////////////////////////////////////////////////////
-template <class CommType>
 void update(const states::orbital_set<basis::real_space, complex>& wavefunctions, CommType & comm) {
   wavefunctions_ = wavefunctions;
   CALI_CXX_MARK_SCOPE("wannier_update");

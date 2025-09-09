@@ -185,7 +185,7 @@ public:
 	}
 
 	auto epsilon() const {
-		return epsilon_.value_or(0);
+		return epsilon_.value_or(10);
 	}
 
 	auto etrs() {
