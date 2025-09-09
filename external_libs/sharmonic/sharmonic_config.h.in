@@ -1,0 +1,22 @@
+#ifndef SHARMONIC__CONFIG
+#define SHARMONIC__CONFIG
+
+// Copyright (C) 2019-2023 Lawrence Livermore National Security, LLC., Xavier Andrade
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+#define SHARMONIC_PREFIX_DIR "@CMAKE_INSTALL_PREFIX@"
+#define SHARMONIC_SHARE_DIR  "@CMAKE_INSTALL_PREFIX@/share/sharmonic"
+
+#cmakedefine ENABLE_GPU @ENABLE_GPU@
+#cmakedefine ENABLE_CUDA @ENABLE_CUDA@
+#cmakedefine ENABLE_HIP @ENABLE_HIP@
+#cmakedefine HAVE_SPH_LEGENDRE @HAVE_SPH_LEGENDRE@
+#cmakedefine BOOST_FOUND @BOOST_FOUND@
+#ifdef BOOST_FOUND
+#define HAVE_BOOST_SPHERICAL_HARMONIC 1
+#endif
+
+#endif

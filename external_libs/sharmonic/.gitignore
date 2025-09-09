@@ -1,0 +1,10 @@
+*~
+Makefile.in
+Makefile
+*.o
+.deps
+.dirstamp
+INSTALL
+pseudopod_config.h
+src/inq_unit_tests
+blds
