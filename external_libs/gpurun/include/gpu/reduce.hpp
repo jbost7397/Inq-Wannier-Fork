@@ -11,14 +11,18 @@
 
 #include <inq_config.h>
 
-#ifdef ENABLE_CUDA
-#include <cuda.h>
-#endif
-
 #include <cassert>
+
+#ifndef ENABLE_GPU
+#include <numeric>
+#else
+#include <thrust/execution_policy.h>
+#include <thrust/transform_reduce.h>
+#endif
 
 #include <gpu/run.hpp>
 #include <gpu/array.hpp>
+#include <gpu/host.hpp>
 
 namespace gpu {
 
@@ -29,43 +33,9 @@ struct reduce {
 	long size;
 };
 
-
-#ifdef ENABLE_CUDA
-template <class kernel_type, class array_type>
-__global__ void reduce_kernel_r(long size, kernel_type kernel, array_type odata) {
-
-	extern __shared__ char shared_mem[];
-	auto reduction_buffer = (typename array_type::element *) shared_mem;
-	
-	// each thread loads one element from global to shared mem
-	unsigned int tid = threadIdx.x;
-	unsigned int ii = blockIdx.x*blockDim.x + threadIdx.x;
-
-	if(ii < size){
-		reduction_buffer[tid] = kernel(ii);
-	} else {
-		reduction_buffer[tid] = (typename array_type::element) 0.0;
-	}
-
-	__syncthreads();
-
-	// do reduction in shared mem
-	for (unsigned int s = blockDim.x/2; s > 0; s >>= 1){
-		if (tid < s) {
-			reduction_buffer[tid] += reduction_buffer[tid + s];
-		}
-		__syncthreads();
-	}
-	
-	// write result for this block to global mem
-	if (tid == 0) odata[blockIdx.x] = reduction_buffer[0];
-
-}
-#endif
-
-template <typename array_type>
+template <typename ArrayType>
 struct array_access {
-  array_type array;
+  ArrayType array;
 
   GPU_FUNCTION auto operator()(long ii) const {
     return array[ii];
@@ -77,47 +47,25 @@ struct array_access {
   
 };
 
-template <class kernel_type>
-auto run(reduce const & red, kernel_type kernel) -> decltype(kernel(0)) {
+template <typename Type, typename KernelType>
+Type run(reduce const & red, Type const init, KernelType kernel) {
 
 	auto const size = red.size;
-	
-  using type = decltype(kernel(0));
-  
-#ifndef ENABLE_CUDA
+	auto range = boost::multi::extension_t{0l, size};
 
-  type accumulator(0.0);
-  for(long ii = 0; ii < size; ii++){
-    accumulator += kernel(ii);
-  }
-  return accumulator;
-
+#ifndef ENABLE_GPU
+	return std::transform_reduce(range.begin(), range.end(), init, std::plus<>{}, kernel);
 #else
-
-	const int blocksize = 1024;
-
-	unsigned nblock = (size + blocksize - 1)/blocksize;
-	gpu::array<type, 1> result(nblock);
-
-  reduce_kernel_r<<<nblock, blocksize, blocksize*sizeof(type)>>>(size, kernel, begin(result));	
-  check_error(cudaGetLastError());
-	
-  if(nblock == 1) {
-    cudaDeviceSynchronize();
-    return result[0];
-  } else {
-    return run(gpu::reduce(nblock), array_access<decltype(begin(result))>{begin(result)});
-  }
-  
+	return thrust::transform_reduce(thrust::device, range.begin(), range.end(), kernel, init, std::plus<>{});
 #endif
 }
 
-#ifdef ENABLE_CUDA
-template <class kernel_type, class array_type>
-__global__ void reduce_kernel_rr(long sizex, long sizey, kernel_type kernel, array_type odata) {
+#ifdef ENABLE_GPU
+template <typename KernelType, typename ArrayType>
+__global__ void reduce_kernel_rr(long sizex, long sizey, KernelType kernel, ArrayType odata) {
 
 	extern __shared__ char shared_mem[];
-	auto reduction_buffer = (typename array_type::element *) shared_mem;
+	auto reduction_buffer = (typename ArrayType::element *) shared_mem;
 	
 	// each thread loads one element from global to shared mem
 	unsigned int tid = threadIdx.x;
@@ -127,7 +75,7 @@ __global__ void reduce_kernel_rr(long sizex, long sizey, kernel_type kernel, arr
 	if(ix < sizex and iy < sizey){
 		reduction_buffer[tid] = kernel(ix, iy);
 	} else {
-		reduction_buffer[tid] = (typename array_type::element) 0.0;
+		reduction_buffer[tid] = (typename ArrayType::element) 0.0;
 	}
 
 	__syncthreads();
@@ -146,17 +94,15 @@ __global__ void reduce_kernel_rr(long sizex, long sizey, kernel_type kernel, arr
 }
 #endif
 
-template <class kernel_type>
-auto run(reduce const & redx, reduce const & redy, kernel_type kernel) -> decltype(kernel(0, 0)) {
+template <typename Type, typename KernelType>
+Type run(gpu::reduce const & redx, gpu::reduce const & redy, Type const init, KernelType kernel) {
 
 	auto const sizex = redx.size;	
 	auto const sizey = redy.size;	
-	
-  using type = decltype(kernel(0, 0));
   
-#ifndef ENABLE_CUDA
+#ifndef ENABLE_GPU
 
-  type accumulator(0.0);
+  auto accumulator = init;
 	for(long iy = 0; iy < sizey; iy++){
 		for(long ix = 0; ix < sizex; ix++){
 			accumulator += kernel(ix, iy);
@@ -172,27 +118,30 @@ auto run(reduce const & redx, reduce const & redy, kernel_type kernel) -> declty
 	unsigned nblockx = (sizex + bsizex - 1)/bsizex;
 	unsigned nblocky = (sizey + bsizey - 1)/bsizey;
 	
-	gpu::array<type, 2> result({nblockx, nblocky});
+	gpu::array<Type, 2> result({nblockx, nblocky});
 
-  reduce_kernel_rr<<<{nblockx, nblocky}, {bsizex, bsizey}, bsizex*bsizey*sizeof(type)>>>(sizex, sizey, kernel, begin(result));	
-  check_error(cudaGetLastError());
+	struct dim3 dg{nblockx, nblocky};
+	struct dim3 db{bsizex, bsizey};
+
+	reduce_kernel_rr<<<dg, db, bsizex*bsizey*sizeof(Type)>>>(sizex, sizey, kernel, begin(result));
+  check_error(last_error());
 	
   if(nblockx*nblocky == 1) {
-    cudaDeviceSynchronize();
-    return result[0][0];
+    gpu::sync();
+    return init + result[0][0];
   } else {
-    return run(gpu::reduce(nblockx*nblocky), array_access<decltype(begin(result.flatted()))>{begin(result.flatted())});
+    return run(gpu::reduce(nblockx*nblocky), init, array_access<decltype(begin(result.flatted()))>{begin(result.flatted())});
   }
   
 #endif
 }
 
-#ifdef ENABLE_CUDA
-template <class kernel_type, class array_type>
-__global__ void reduce_kernel_rrr(long sizex, long sizey, long sizez, kernel_type kernel, array_type odata) {
+#ifdef ENABLE_GPU
+template <typename KernelType, typename ArrayType>
+__global__ void reduce_kernel_rrr(long sizex, long sizey, long sizez, KernelType kernel, ArrayType odata) {
 
 	extern __shared__ char shared_mem[];
-	auto reduction_buffer = (typename array_type::element *) shared_mem;
+	auto reduction_buffer = (typename ArrayType::element *) shared_mem;
 	
 	// each thread loads one element from global to shared mem
 	unsigned int tid = threadIdx.x;
@@ -203,7 +152,7 @@ __global__ void reduce_kernel_rrr(long sizex, long sizey, long sizez, kernel_typ
 	if(ix < sizex and iy < sizey and iz < sizez){
 		reduction_buffer[tid] = kernel(ix, iy, iz);
 	} else {
-		reduction_buffer[tid] = (typename array_type::element) 0.0;
+		reduction_buffer[tid] = (typename ArrayType::element) 0.0;
 	}
 
 	__syncthreads();
@@ -222,20 +171,18 @@ __global__ void reduce_kernel_rrr(long sizex, long sizey, long sizez, kernel_typ
 }
 #endif
 
-template <typename kernel_type>
-auto run(reduce const & redx, reduce const & redy, reduce const & redz, kernel_type kernel, decltype(kernel(0, 0, 0)) initial_value = {0} ) -> decltype(kernel(0, 0, 0)) {
+template <typename Type, typename KernelType>
+Type run(reduce const & redx, reduce const & redy, reduce const & redz, Type const init, KernelType kernel) {
 
 	auto const sizex = redx.size;	
 	auto const sizey = redy.size;
 	auto const sizez = redz.size;
 	
-  using type = decltype(kernel(0, 0, 0));
-
-	if(sizex == 0 or sizey == 0 or sizez == 0) return initial_value;
+	if(sizex == 0 or sizey == 0 or sizez == 0) return init;
 	
-#ifndef ENABLE_CUDA
+#ifndef ENABLE_GPU
 
-  type accumulator = initial_value;
+  auto accumulator = init;
 	for(long iy = 0; iy < sizey; iy++){
 		for(long ix = 0; ix < sizex; ix++){
 			for(long iz = 0; iz < sizez; iz++){
@@ -247,9 +194,8 @@ auto run(reduce const & redx, reduce const & redy, reduce const & redz, kernel_t
 	
 #else
 
-	int mingridsize, blocksize;
-	check_error(cudaOccupancyMaxPotentialBlockSize(&mingridsize, &blocksize, reduce_kernel_rrr<kernel_type, decltype(begin(std::declval<gpu::array<type, 3>&>()))>));
-
+	auto blocksize = max_blocksize(reduce_kernel_rrr<KernelType, decltype(begin(std::declval<gpu::array<Type, 3>&>()))>);
+	
 	const unsigned bsizex = blocksize;
 	const unsigned bsizey = 1;
 	const unsigned bsizez = 1;
@@ -258,27 +204,30 @@ auto run(reduce const & redx, reduce const & redy, reduce const & redz, kernel_t
 	unsigned nblocky = (sizey + bsizey - 1)/bsizey;
 	unsigned nblockz = (sizez + bsizez - 1)/bsizez;
 
-	gpu::array<type, 3> result({nblockx, nblocky, nblockz});
+	gpu::array<Type, 3> result({nblockx, nblocky, nblockz});
 
-	reduce_kernel_rrr<<<{nblockx, nblocky, nblockz}, {bsizex, bsizey, bsizez}, bsizex*bsizey*bsizez*sizeof(type)>>>(sizex, sizey, sizez, kernel, begin(result));
-	check_error(cudaGetLastError());
+	struct dim3 dg{nblockx, nblocky, nblockz};
+	struct dim3 db{bsizex, bsizey, bsizez};
+
+	reduce_kernel_rrr<<<dg, db, bsizex*bsizey*bsizez*sizeof(Type)>>>(sizex, sizey, sizez, kernel, begin(result));
+	check_error(last_error());
 
   if(nblockx*nblocky*nblockz == 1) {
-    cudaDeviceSynchronize();
-    return initial_value + result[0][0][0];
+    gpu::sync();
+    return init + result[0][0][0];
   } else {
-    return run(gpu::reduce(nblockx*nblocky*nblockz), array_access<decltype(begin(result.flatted().flatted()))>{begin(result.flatted().flatted())});
+    return run(gpu::reduce(nblockx*nblocky*nblockz), init, array_access<decltype(begin(result.flatted().flatted()))>{begin(result.flatted().flatted())});
   }
   
 #endif
 }
 
-#ifdef ENABLE_CUDA
-template <class kernel_type, class array_type>
-__global__ void reduce_kernel_vr(long sizex, long sizey, kernel_type kernel, array_type odata) {
+#ifdef ENABLE_GPU
+template <typename KernelType, typename ArrayType>
+__global__ void reduce_kernel_vr(long sizex, long sizey, KernelType kernel, ArrayType odata) {
 
 	extern __shared__ char shared_mem[];
-	auto reduction_buffer = (typename array_type::element *) shared_mem; // {blockDim.x, blockDim.y}
+	auto reduction_buffer = (typename ArrayType::element *) shared_mem; // {blockDim.x, blockDim.y}
 	
 	// each thread loads one element from global to shared mem
   unsigned int ix = blockIdx.x*blockDim.x + threadIdx.x;
@@ -290,7 +239,7 @@ __global__ void reduce_kernel_vr(long sizex, long sizey, kernel_type kernel, arr
 	if(iy < sizey){
 		reduction_buffer[threadIdx.x + blockDim.x*tid] = kernel(ix, iy);
 	} else {
-		reduction_buffer[threadIdx.x + blockDim.x*tid] = (typename array_type::element) 0.0;
+		reduction_buffer[threadIdx.x + blockDim.x*tid] = (typename ArrayType::element) 0.0;
 	}
 
 	__syncthreads();
@@ -310,16 +259,14 @@ __global__ void reduce_kernel_vr(long sizex, long sizey, kernel_type kernel, arr
 #endif
 
 
-template <class kernel_type>
-auto run(long sizex, reduce const & redy, kernel_type kernel) -> gpu::array<decltype(kernel(0, 0)), 1> {
+template <typename Type, typename KernelType>
+gpu::array<Type, 1> run(long sizex, reduce const & redy, Type const init, KernelType kernel) { 
 
 	auto const sizey = redy.size;	
-	
-  using type = decltype(kernel(0, 0));
 
-#ifndef ENABLE_CUDA
+#ifndef ENABLE_GPU
 
-  gpu::array<type, 1> accumulator(sizex, 0.0);
+  gpu::array<Type, 1> accumulator(sizex, init);
 
   for(long iy = 0; iy < sizey; iy++){
     for(long ix = 0; ix < sizex; ix++){
@@ -331,12 +278,9 @@ auto run(long sizex, reduce const & redy, kernel_type kernel) -> gpu::array<decl
   
 #else
 
-	gpu::array<type, 2> result;
+	gpu::array<Type, 2> result;
 	
-	int mingridsize = 0;
-	int blocksize = 0;
-
-	check_error(cudaOccupancyMaxPotentialBlockSize(&mingridsize, &blocksize, reduce_kernel_vr<kernel_type, decltype(begin(result))>));
+	auto blocksize = max_blocksize(reduce_kernel_vr<KernelType, decltype(begin(result))>);
 	
 	unsigned bsizex = 4; //this seems to be the optimal value
 	if(sizex <= 2) bsizex = sizex;
@@ -352,33 +296,37 @@ auto run(long sizex, reduce const & redy, kernel_type kernel) -> gpu::array<decl
 	struct dim3 dg{nblockx, nblocky};
   struct dim3 db{bsizex, bsizey};
 
-  auto shared_mem_size = blocksize*sizeof(type);
+  auto shared_mem_size = blocksize*sizeof(Type);
 
   assert(shared_mem_size <= 48*1024);
   
   reduce_kernel_vr<<<dg, db, shared_mem_size>>>(sizex, sizey, kernel, begin(result));	
-  check_error(cudaGetLastError());
+  check_error(last_error());
 	
   if(nblocky == 1) {
-    cudaDeviceSynchronize();
+    gpu::sync();
 
 		assert(result[0].size() == sizex);
-		
+
+		gpu::run(result[0].size(), [res = begin(result[0]), init] GPU_LAMBDA (auto ii) {
+			res[ii] += init;
+		});
+			
     return result[0];
   } else {
-    return run(sizex, reduce(nblocky), array_access<decltype(begin(result.transposed()))>{begin(result.transposed())});
+    return run(sizex, reduce(nblocky), init, array_access<decltype(begin(result.transposed()))>{begin(result.transposed())});
   }
   
 #endif
 
 }
 
-#ifdef ENABLE_CUDA
-template <class kernel_type, class array_type>
-__global__ void reduce_kernel_vrr(long sizex, long sizey,long sizez, kernel_type kernel, array_type odata) {
+#ifdef ENABLE_GPU
+template <typename KernelType, typename ArrayType>
+__global__ void reduce_kernel_vrr(long sizex, long sizey,long sizez, KernelType kernel, ArrayType odata) {
 
 	extern __shared__ char shared_mem[];
-	auto reduction_buffer = (typename array_type::element *) shared_mem; // {blockDim.x, blockDim.y}
+	auto reduction_buffer = (typename ArrayType::element *) shared_mem; // {blockDim.x, blockDim.y}
 	
 	// each thread loads one element from global to shared mem
   unsigned int ix = blockIdx.x*blockDim.x + threadIdx.x;
@@ -391,7 +339,7 @@ __global__ void reduce_kernel_vrr(long sizex, long sizey,long sizez, kernel_type
 	if(iy < sizey and iz < sizez){
 		reduction_buffer[threadIdx.x + blockDim.x*tid] = kernel(ix, iy, iz);
 	} else {
-		reduction_buffer[threadIdx.x + blockDim.x*tid] = (typename array_type::element) 0.0;
+		reduction_buffer[threadIdx.x + blockDim.x*tid] = (typename ArrayType::element) 0.0;
 	}
 	__syncthreads();
 
@@ -409,17 +357,15 @@ __global__ void reduce_kernel_vrr(long sizex, long sizey,long sizez, kernel_type
 }
 #endif
 
-template <class kernel_type>
-auto run(long sizex, reduce const & redy, reduce const & redz, kernel_type kernel) -> gpu::array<decltype(kernel(0, 0, 0)), 1> {
+template <typename Type, typename KernelType>
+gpu::array<Type, 1>  run(long sizex, reduce const & redy, reduce const & redz, Type const init, KernelType kernel) {
 
 	auto const sizey = redy.size;
 	auto const sizez = redz.size;	
 	
-  using type = decltype(kernel(0, 0, 0));
+#ifndef ENABLE_GPU
 
-#ifndef ENABLE_CUDA
-
-  gpu::array<type, 1> accumulator(sizex, 0.0);
+  gpu::array<Type, 1> accumulator(sizex, init);
 
 	for(long iz = 0; iz < sizez; iz++){
 		for(long iy = 0; iy < sizey; iy++){
@@ -433,12 +379,9 @@ auto run(long sizex, reduce const & redy, reduce const & redz, kernel_type kerne
   
 #else
 
-	gpu::array<type, 3> result;
+	gpu::array<Type, 3> result;
 	
-	int mingridsize = 0;
-	int blocksize = 0;
-
-	check_error(cudaOccupancyMaxPotentialBlockSize(&mingridsize, &blocksize, reduce_kernel_vrr<kernel_type, decltype(begin(result))>));
+	auto blocksize = max_blocksize(reduce_kernel_vrr<KernelType, decltype(begin(result))>);
 	
 	unsigned bsizex = 4; //this seems to be the optimal value
 	if(sizex <= 2) bsizex = sizex;
@@ -457,22 +400,26 @@ auto run(long sizex, reduce const & redy, reduce const & redz, kernel_type kerne
 	struct dim3 dg{nblockx, nblocky, nblockz};
   struct dim3 db{bsizex, bsizey, bsizez};
 
-  auto shared_mem_size = blocksize*sizeof(type);
+  auto shared_mem_size = blocksize*sizeof(Type);
 
   assert(shared_mem_size <= 48*1024);
   
   reduce_kernel_vrr<<<dg, db, shared_mem_size>>>(sizex, sizey, sizez, kernel, begin(result));	
-  check_error(cudaGetLastError());
+  check_error(last_error());
 	
   if(nblocky*nblockz == 1) {
-    cudaDeviceSynchronize();
+    gpu::sync();
 
 		assert(result[0][0].size() == sizex);
-		
+
+		gpu::run(result[0][0].size(), [res = begin(result[0][0]), init] GPU_LAMBDA (auto ii) {
+			res[ii] += init;
+		});
+				
     return result[0][0];
   } else {
 		auto && reduce_buffer = result.flatted().transposed();
-    return run(sizex, reduce(nblocky*nblockz), array_access<decltype(begin(reduce_buffer))>{begin(reduce_buffer)});
+    return run(sizex, reduce(nblocky*nblockz), init, array_access<decltype(begin(reduce_buffer))>{begin(reduce_buffer)});
   }
   
 #endif
@@ -488,34 +435,17 @@ auto run(long sizex, reduce const & redy, reduce const & redz, kernel_type kerne
 #include <mpi3/environment.hpp>
 #include <catch2/catch_all.hpp>
 
-struct ident {
-  GPU_FUNCTION auto operator()(long ii) const {
-    return double(ii);
-  }
-};
-
-struct prod {
-  GPU_FUNCTION auto operator()(long ix, long iy) const {
-    return double(ix)*double(iy);
-  }
-};
-	
-struct prod3 {
-  GPU_FUNCTION auto operator()(long ix, long iy, long iz) const {
-    return double(ix)*double(iy)*double(iz);
-  }
-};
-
 TEST_CASE(GPURUN_TEST_FILE, GPURUN_TEST_TAG) {
   
 	using namespace Catch::literals;
+	using Catch::Approx;
 
 	SECTION("r"){
 		const long maxsize = 129140163;
 		
 		int rank = 0;
 		for(long nn = 1; nn <= maxsize; nn *= 3){
-			CHECK(gpu::run(gpu::reduce(nn), ident{}) == (nn*(nn - 1.0)/2.0));
+			CHECK(gpu::run(gpu::reduce(nn), -232.8, [] GPU_LAMBDA (auto ii) { return double(ii);} ) == Approx(-232.8 + (nn*(nn - 1.0)/2.0)));
 			rank++;
 		}
 	}
@@ -528,10 +458,10 @@ TEST_CASE(GPURUN_TEST_FILE, GPURUN_TEST_TAG) {
 		for(long nx = 1; nx <= maxsize; nx *= 5){
 			for(long ny = 1; ny <= maxsize; ny *= 5){
 
-				auto res = gpu::run(gpu::reduce(nx), gpu::reduce(ny), prod{});
+				auto res = gpu::run(gpu::reduce(nx), gpu::reduce(ny), 2.23,  [] GPU_LAMBDA (auto ix, auto iy) {return double(ix)*double(iy);});
 				
 				CHECK(typeid(decltype(res)) == typeid(double));
-				CHECK(res == nx*(nx - 1.0)/2.0*ny*(ny - 1.0)/2.0);
+				CHECK(res == Approx(2.23 + nx*(nx - 1.0)/2.0*ny*(ny - 1.0)/2.0));
 				rank++;
 			}
 		}
@@ -547,10 +477,10 @@ TEST_CASE(GPURUN_TEST_FILE, GPURUN_TEST_TAG) {
 			for(long ny = 1; ny <= maxsize; ny *= 5){
 				for(long nz = 1; nz <= maxsize; nz *= 5){
 					
-					auto res = gpu::run(gpu::reduce(nx), gpu::reduce(ny), gpu::reduce(nz), prod3{});
+					auto res = gpu::run(gpu::reduce(nx), gpu::reduce(ny), gpu::reduce(nz), 17.89, [] GPU_LAMBDA (auto ix, auto iy, auto iz) {return double(ix)*double(iy)*double(iz);});
 					
 					CHECK(typeid(decltype(res)) == typeid(double));
-					CHECK(res == nx*(nx - 1.0)/2.0*ny*(ny - 1.0)/2.0*nz*(nz - 1.0)/2.0);
+					CHECK(res == Approx(17.89 + nx*(nx - 1.0)/2.0*ny*(ny - 1.0)/2.0*nz*(nz - 1.0)/2.0));
 					rank++;
 				}
 			}
@@ -566,11 +496,11 @@ TEST_CASE(GPURUN_TEST_FILE, GPURUN_TEST_TAG) {
 		for(long nx = 1; nx <= 10000; nx *= 10){
 			for(long ny = 1; ny <= maxsize; ny *= 5){
 
-				auto res = gpu::run(nx, gpu::reduce(ny), prod{});
+				auto res = gpu::run(nx, gpu::reduce(ny), -7.7, [] GPU_LAMBDA (auto ix, auto iy) {return double(ix)*double(iy);});
 					
 				CHECK(typeid(decltype(res)) == typeid(gpu::array<double, 1>));
 				CHECK(res.size() == nx);
-				for(long ix = 0; ix < nx; ix++) CHECK(res[ix] == double(ix)*ny*(ny - 1.0)/2.0);
+				for(long ix = 0; ix < nx; ix++) CHECK(res[ix] == Approx(-7.7 + double(ix)*ny*(ny - 1.0)/2.0));
 				rank++;
 			}
 		}
@@ -586,12 +516,12 @@ TEST_CASE(GPURUN_TEST_FILE, GPURUN_TEST_TAG) {
 			for(long ny = 1; ny <= maxsize; ny *= 5){
 				for(long nz = 1; nz <= maxsize; nz *= 5){
 					
-					auto res = gpu::run(nx, gpu::reduce(ny), gpu::reduce(nz), prod3{});
+					auto res = gpu::run(nx, gpu::reduce(ny), gpu::reduce(nz), 10.0, [] GPU_LAMBDA (auto ix, auto iy, auto iz) {return double(ix)*double(iy)*double(iz);});
 					
 					CHECK(typeid(decltype(res)) == typeid(gpu::array<double, 1>));
 					
 					CHECK(res.size() == nx);
-					for(long ix = 0; ix < nx; ix++) CHECK(res[ix] == double(ix)*ny*(ny - 1.0)/2.0*nz*(nz - 1.0)/2.0);
+					for(long ix = 0; ix < nx; ix++) CHECK(res[ix] == Approx(10.0 + double(ix)*ny*(ny - 1.0)/2.0*nz*(nz - 1.0)/2.0));
 					rank++;
 				}
 			}
