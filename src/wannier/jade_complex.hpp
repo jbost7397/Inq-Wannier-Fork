@@ -66,7 +66,13 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
     //CS make a 2d for reduction 
     gpu::array<complex,2> a_flat({flat, mloc});
-    gpu::run(n * mloc * mloc, [mloc, mloc_sq, a_int=begin(a), a_flat_int=begin(a_flat)] GPU_LAMBDA (auto idx) {
+
+    //Zero out before use 
+    gpu::run(flat, mloc, [a_tmp=begin(a_flat)] GPU_LAMBDA (auto jj, auto ii) {
+      a_tmp[ii][jj] = complex(0.0,0.0);
+    });
+
+    gpu::run(n * mloc_sq, [mloc, mloc_sq, a_int=begin(a), a_flat_int=begin(a_flat)] GPU_LAMBDA (auto idx) {
       int k = idx / mloc_sq;
       int rest = idx % mloc_sq;
       int ii = rest / mloc;
@@ -87,19 +93,20 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
           gpu::atomic::add(&diag_sum[0], real(a_int[k * mloc + i][i]));
         });
 
+        gpu::array<complex,2> rot_array ({mloc, mloc});
+        gpu::array<complex,2> tmp_mat ({mloc, mloc});
+
         // sweep pairs and rotate 2*np -1 times
         for (int irot = 0; irot < 2*np-1; ++irot) {
 
 	  //CS initalize rot_array within loop so it resets to identity every time 
           //CS mat needed to update a and u within loop 3
-          gpu::array<complex,2> rot_array ({mloc, mloc});
-          gpu::array<complex,2> tmp_mat ({mloc, mloc});
           gpu::run(mloc, mloc, [r=begin(rot_array), tmp=begin(tmp_mat)] GPU_LAMBDA (auto jj, auto ii) {
               r[ii][jj] = (ii == jj) ? complex(1.0,0.0) : complex(0.0,0.0);
               tmp[ii][jj] = complex(0.0,0.0);
           });
 
-	   //CS reduce over mloc 
+	   //CS reduce over mloc //check this one, try old routine if needed
      	  gpu::array<vector3<complex>, 1> apq_flat(flat_np);
           {     CALI_CXX_MARK_SCOPE("jade_loop1");
           apq_flat = gpu::run(flat_np, gpu::reduce(mloc), zero<vector3<complex>>(), 
@@ -111,7 +118,9 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
             if (top < mloc && bot < mloc) {
 	      int top_idx = k * mloc + top;
 	      int bot_idx = k * mloc + bot;
-              return vector3<complex>({conj_cplx(a_int[top_idx][ii]) * u_int[bot][ii], conj_cplx(a_int[top_idx][ii]) * u_int[top][ii], conj_cplx(a_int[bot_idx][ii]) * u_int[bot][ii]});
+              return vector3<complex>({conj_cplx(a_int[top_idx][ii]) * u_int[bot][ii], 			       
+				       conj_cplx(a_int[top_idx][ii]) * u_int[top][ii], 
+				       conj_cplx(a_int[bot_idx][ii]) * u_int[bot][ii]});
 	    } else {
 	      return vector3<complex>({0.0, 0.0, 0.0});
 	    }
@@ -278,6 +287,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
         } //timer
 
 
+		//CS try with gemm 
           {     CALI_CXX_MARK_SCOPE("jade_loop3");
               gpu::run(mloc, nploc, [mloc, a_f=begin(a_flat), bot_int=begin(bot), top_int=begin(top), u_int=begin(u), 
 			tmp_int=begin(tmp_mat), rot_array_int=begin(rot_array)] GPU_LAMBDA (auto ii, auto ipair) {
@@ -322,7 +332,39 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
 		gpu::sync();
 
-                gpu::run(nploc, [nploc, top_int=begin(top), bot_int=begin(bot), bounds_int=begin(bounds)] GPU_LAMBDA (auto i) {
+                gpu::array<int,1> top1(nploc);
+		gpu::array<int,1> bot1(nploc);
+
+                gpu::run(1, [nploc, top_int=begin(top), bot_int=begin(bot), bounds_int=begin(bounds), top_tmp=begin(top1), bot_tmp=begin(bot1)] GPU_LAMBDA (auto idx) {
+                  if (nploc > 0) {
+                    for (int i = 0; i < nploc; ++i) {
+                        top_tmp[i] = top_int[i];
+                        bot_tmp[i] = bot_int[i];
+                    }
+
+                    for (int i = 0; i < nploc - 1; ++i) {
+                       bot_int[i]   = bot_tmp[i+1];
+                       top_int[i+1] = top_tmp[i];
+                    }
+
+                   int last = nploc - 1;
+                   bot_int[last] = bounds_int[0];
+                   top_int[0]    = bounds_int[1];
+
+                   if (nploc > 1) {
+                     int tmp = top_int[0];
+                     top_int[0] = top_int[1];
+                     top_int[1] = tmp;
+                   } else {
+                      int tmp = top_int[0];
+                      top_int[0] = bot_int[0];
+                      bot_int[0] = tmp;
+                   }
+                  }
+                });
+                gpu::sync();
+
+                /*gpu::run(nploc, [nploc, top_int=begin(top), bot_int=begin(bot), bounds_int=begin(bounds)] GPU_LAMBDA (auto i) {
 	          if (i < nploc - 1) {
                     bot_int[i] = bot_int[i+1];
                     top_int[i + 1] = top_int[i];
@@ -340,7 +382,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
                         bot_int[0] = tmp;
                      } 
 	           } 
-                });
+                });*/
 	        gpu::sync();
 	    } //if nploc >0 
           } //scope
