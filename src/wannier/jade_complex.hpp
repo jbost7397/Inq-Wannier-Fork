@@ -67,11 +67,6 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     //CS make a 2d for reduction 
     gpu::array<complex,2> a_flat({flat, mloc});
 
-    //Zero out before use 
-    //gpu::run(flat, mloc, [a_tmp=begin(a_flat)] GPU_LAMBDA (auto jj, auto ii) {
-      //a_tmp[ii][jj] = complex(0.0,0.0);
-    //});
-
     gpu::run(n * mloc_sq, [mloc, mloc_sq, a_int=begin(a), a_flat_int=begin(a_flat)] GPU_LAMBDA (auto idx) {
       int k = idx / mloc_sq;
       int rest = idx % mloc_sq;
@@ -100,13 +95,12 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
         for (int irot = 0; irot < 2*np-1; ++irot) {
 
 	  //CS initalize rot_array within loop so it resets to identity every time 
-          //CS mat needed to update a and u within loop 3
+          //CS tmp_mat needed to update a and u within loop 3
           gpu::run(mloc, mloc, [r=begin(rot_array), tmp=begin(tmp_mat)] GPU_LAMBDA (auto jj, auto ii) {
               r[ii][jj] = (ii == jj) ? complex(1.0,0.0) : complex(0.0,0.0);
               tmp[ii][jj] = complex(0.0,0.0);
           });
 
-	   //CS reduce over mloc //check this one, try old routine if needed
      	  gpu::array<vector3<complex>, 1> apq_flat(flat_np);
           {     CALI_CXX_MARK_SCOPE("jade_loop1");
           apq_flat = gpu::run(flat_np, gpu::reduce(mloc), zero<vector3<complex>>(), 
@@ -287,7 +281,6 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
         } //timer
 
 
-		//CS try with gemm 
           {     CALI_CXX_MARK_SCOPE("jade_loop3");
               gpu::run(mloc, nploc, [mloc, a_f=begin(a_flat), bot_int=begin(bot), top_int=begin(top), u_int=begin(u), 
 			tmp_int=begin(tmp_mat), rot_array_int=begin(rot_array)] GPU_LAMBDA (auto ii, auto ipair) {
@@ -383,11 +376,9 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     });
 
     //Compute diagonal elements
-    {     CALI_CXX_MARK_SCOPE("jade_final_loop");
     gpu::run(n, mloc, nloc, [mloc, a_int=begin(a_flat), u_int=begin(u), adiag_int=begin(adiag)] GPU_LAMBDA (auto kk, auto ii, auto jj) {
       gpu::atomic::add(&adiag_int[kk][ii], conj_cplx(a_int[kk * mloc + ii][jj]) * u_int[ii][jj]);
     });
-    }
 
 } //jade_complex
 } // namespace wannier
