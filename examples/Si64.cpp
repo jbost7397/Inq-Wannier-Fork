@@ -41,9 +41,9 @@ int main(int argc, char ** argv){
 	systems::electrons el(ions, options::electrons{}.cutoff(15.0_Ry), input::kpoints::grid({1, 1, 1}, true));
 	
         inq::ground_state::initial_guess(ions, el);
-        inq::ground_state::calculate(ions, el, inq::options::theory{}.pbe0(), inq::options::ground_state{}.energy_tolerance(1e-8_Ha)); 
+        inq::ground_state::calculate(ions, el, inq::options::theory{}.hse(), inq::options::ground_state{}.energy_tolerance(1e-8_Ha)); 
 
-        real_time::propagate(ions, el, [](auto){}, options::theory{}.pbe0(), options::real_time{}.num_steps(100).dt(0.0565_atomictime).tdmlwf());
+        real_time::propagate(ions, el, [](auto){}, options::theory{}.hse(), options::real_time{}.num_steps(100).dt(0.0565_atomictime).tdmlwf());
 
         return 1;
 }

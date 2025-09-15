@@ -15,7 +15,7 @@ int main(int argc, char ** argv){
         bool groundstate_only = false;
 
 	auto & env = inq::input::environment::global();
-        auto ions = systems::ions::parse(config::path::unit_tests_data() + "benzne.xyz", systems::cell::cubic(30.0_b).periodic());
+        auto ions = systems::ions::parse(config::path::unit_tests_data() + "benzene.xyz", systems::cell::cubic(30.0_b).periodic());
         ions.species_list().pseudopotentials() = pseudo::set_id::sg15();
 	inq::systems::electrons el(env.par().states().domains(1), ions, options::electrons{}.cutoff(30.0_Ry));
 
