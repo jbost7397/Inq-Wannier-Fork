@@ -14,7 +14,7 @@ int main(int argc, char ** argv){
 	using namespace inq::magnitude;
 
         auto & env = inq::input::environment::global();
-        auto ions = systems::ions::parse(config::path::unit_tests_data() + "benzne.xyz", systems::cell::cubic(30.0_b).periodic());
+        auto ions = systems::ions::parse(config::path::unit_tests_data() + "benzene.xyz", systems::cell::cubic(30.0_b).periodic());
         ions.species_list().pseudopotentials() = pseudo::set_id::sg15();
 	inq::systems::electrons el(ions, options::electrons{}.cutoff(30.0_Ry));
 	inq::ground_state::initial_guess(ions, el);

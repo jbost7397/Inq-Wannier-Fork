@@ -446,8 +446,8 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 
   	parallel::communicator comm{boost::mpi3::environment::get_world_instance()};
 	inq::systems::ions sys(inq::systems::cell::cubic(20.0_b).periodic());
-        sys.insert(ionic::species("He").pseudo_file(inq::config::path::pseudo() + "He_ONCV_PBE-1.2.upf.gz"), {-7.0_b, -7.0_b, -7.0_b});
-        sys.insert(ionic::species("He").pseudo_file(inq::config::path::pseudo() + "He_ONCV_PBE-1.2.upf.gz"), {8.0_b, 8.0_b, 8.0_b});
+        sys.insert(ionic::species("He"), {-7.0_b, -7.0_b, -7.0_b});
+        sys.insert(ionic::species("He"), {8.0_b, 8.0_b, 8.0_b});
 	inq::systems::electrons el(sys, options::electrons{}.cutoff(30.0_Ry));
 	inq::ground_state::initial_guess(sys, el);
 
