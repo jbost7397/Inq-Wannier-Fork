@@ -27,6 +27,11 @@
 
 namespace inq {
 namespace hamiltonian {
+
+namespace set_exchange {
+	inline double global_exchange_frac = -1.0; //CS default of -1.0 will triger libxc to use it's default value 
+}
+
 	class xc_functional {
 
 		public:
@@ -84,7 +89,31 @@ namespace hamiltonian {
 			return family() != XC_FAMILY_LDA;
 		}
 
-		auto exx_coefficients() const { 
+		auto exx_coefficients() const {
+                        double omega = 0.0, alpha = 0.0, beta = 0.0;
+			//Global hybrid 
+                        if(xc_hyb_type(libxc_func_ptr()) == XC_HYB_HYBRID) {
+			  //if unset use libxc value
+			  if(set_exchange::global_exchange_frac < 0.0) {
+                                alpha = xc_hyb_exx_coef(libxc_func_ptr());
+                                beta = 0.0;
+                                omega = 0.0;
+			  //if EXX value set by user, both INQ and libxc use that 
+                          } else {
+				alpha = set_exchange::global_exchange_frac;
+                                beta = 0.0;
+                                omega = 0.0;
+			  }
+		          xc_func_set_ext_params(const_cast<xc_func_type*>(libxc_func_ptr()), &alpha);		  
+			}
+			//Range-seperated hybrid
+			else if(xc_hyb_type(libxc_func_ptr()) == XC_HYB_CAM) {
+                                xc_hyb_cam_coef(libxc_func_ptr(), &omega, &alpha, &beta);
+                        }
+                        return vector3<double>(alpha, beta + alpha, omega); //CS this should match qbach format for RSH
+                }
+
+/*		auto exx_coefficients() const { 
 			double omega = 0.0, alpha = 0.0, beta = 0.0;
 			if(xc_hyb_type(libxc_func_ptr()) == XC_HYB_HYBRID) {
 				alpha = xc_hyb_exx_coef(libxc_func_ptr());
@@ -93,19 +122,6 @@ namespace hamiltonian {
 			}
 			else if(xc_hyb_type(libxc_func_ptr()) == XC_HYB_CAM) {
 				xc_hyb_cam_coef(libxc_func_ptr(), &omega, &alpha, &beta);
-			}
-			return vector3<double>(alpha, beta + alpha, omega); //CS this should match qbach format for RSH
-		}
-
-/*		auto exx_coefficient() const {
-			if(xc_hyb_type(libxc_func_ptr()) == XC_HYB_HYBRID) return xc_hyb_exx_coef(libxc_func_ptr());
-			return 0.0;
-		}
-
-		auto cam_coefficients() const {
-			double omega = 0.0, alpha = 0.0, beta = 0.0;
-			if(xc_hyb_type(libxc_func_ptr()) == XC_HYB_CAM) {
-		 	  xc_hyb_cam_coef(libxc_func_ptr(), &omega, &alpha, &beta);
 			}
 			return vector3<double>(alpha, beta + alpha, omega); //CS this should match qbach format for RSH
 		}
@@ -262,6 +278,11 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
                 CHECK(copy3.exx_coefficients()[2] == 0.11_a);
 	}
 	
+        SECTION("DD_HYBRIDS"){
+	        inq::hamiltonian::set_exchange::global_exchange_frac = 0.5;
+                CHECK(pbeh.exx_coefficients()[0] == 0.5_a);
+		CHECK(b3lyp.exx_coefficients()[0] == 0.5_a);
+        }
 }
 #endif
 

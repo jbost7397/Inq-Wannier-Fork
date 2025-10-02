@@ -18,9 +18,10 @@ int main(int argc, char ** argv){
         sys.insert(ionic::species("He").pseudo_file(inq::config::path::pseudo() + "He_ONCV_PBE-1.2.upf.gz"), {18.0_b, 18.0_b, 18.0_b});
 	inq::systems::electrons el(sys, options::electrons{}.cutoff(30.0_Ry));
 	inq::ground_state::initial_guess(sys, el);
-	
-	inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha));
-	real_time::propagate(sys, el, [](auto){}, options::theory{}.pbe(), options::real_time{}.num_steps(100).dt(0.0565_atomictime).tdmlwf());
+
+	inq::hamiltonian::set_exchange::global_exchange_frac = 0.5; 
+	inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe0(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha));
+	real_time::propagate(sys, el, [](auto){}, options::theory{}.pbe0(), options::real_time{}.num_steps(100).dt(0.0565_atomictime).tdmlwf());
 	
 	return 1;
 	
