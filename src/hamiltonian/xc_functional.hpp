@@ -32,6 +32,10 @@ namespace set_exchange {
 	inline double global_exchange_frac = -1.0; //CS default of -1.0 will triger libxc to use it's default value 
 }
 
+namespace set_rsh {
+	inline vector3<double> rsh_parameters {-1.0, 0.0, 0.0}; 
+}
+
 	class xc_functional {
 
 		public:
@@ -96,20 +100,31 @@ namespace set_exchange {
 			  //if unset use libxc value
 			  if(set_exchange::global_exchange_frac < 0.0) {
                                 alpha = xc_hyb_exx_coef(libxc_func_ptr());
-                                beta = 0.0;
-                                omega = 0.0;
 			  //if EXX value set by user, both INQ and libxc use that 
                           } else {
 				alpha = set_exchange::global_exchange_frac;
-                                beta = 0.0;
-                                omega = 0.0;
-			  }
-		          xc_func_set_ext_params(const_cast<xc_func_type*>(libxc_func_ptr()), &alpha);		  
+				xc_func_set_ext_params(const_cast<xc_func_type*>(libxc_func_ptr()), &alpha);
+			  }           
+      			  beta = 0.0;
+                          omega = 0.0;
+		          //xc_func_set_ext_params(const_cast<xc_func_type*>(libxc_func_ptr()), &alpha);
 			}
+
 			//Range-seperated hybrid
 			else if(xc_hyb_type(libxc_func_ptr()) == XC_HYB_CAM) {
+			  if(set_rsh::rsh_parameters[0] < 0.0) {
                                 xc_hyb_cam_coef(libxc_func_ptr(), &omega, &alpha, &beta);
+			  } else {
+			        alpha = set_rsh::rsh_parameters[0];
+		                beta  = set_rsh::rsh_parameters[1];
+                                omega = set_rsh::rsh_parameters[2];
+				beta = beta-alpha; 
+				xc_func_set_ext_params_name(const_cast<xc_func_type*>(libxc_func_ptr()), "alpha", alpha);
+                                xc_func_set_ext_params_name(const_cast<xc_func_type*>(libxc_func_ptr()), "beta", beta);
+                                xc_func_set_ext_params_name(const_cast<xc_func_type*>(libxc_func_ptr()), "omega", omega);
+			  } 
                         }
+			std::cout << alpha << " " << beta << " " << omega << std::endl;
                         return vector3<double>(alpha, beta + alpha, omega); //CS this should match qbach format for RSH
                 }
 
@@ -282,6 +297,14 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 	        inq::hamiltonian::set_exchange::global_exchange_frac = 0.5;
                 CHECK(pbeh.exx_coefficients()[0] == 0.5_a);
 		CHECK(b3lyp.exx_coefficients()[0] == 0.5_a);
+        }
+
+        SECTION("RSH"){
+                inq::hamiltonian::set_rsh::rsh_parameters = {0.65, 0.19, 0.33};
+		inq::hamiltonian::xc_functional rsh(XC_HYB_GGA_XC_LC_WPBEH_WHS, 1);
+                CHECK(rsh.exx_coefficients()[0] == 0.65_a);
+                CHECK(rsh.exx_coefficients()[1] == 0.19_a);
+                CHECK(rsh.exx_coefficients()[2] == 0.33_a);
         }
 }
 #endif

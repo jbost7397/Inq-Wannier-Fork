@@ -116,6 +116,14 @@ public:
                 inter.correlation_ = XC_NONE;
                 return inter;
         }
+
+	auto rsh() const {
+		theory inter = *this;
+		inter.hartree_potential_ = true;
+		inter.exchange_ = XC_HYB_GGA_XC_LC_WPBEH_WHS; //Need to choose something that will result in RSH
+                inter.correlation_ = XC_NONE;
+                return inter;
+        }
 		
 	auto exchange_coefficient() const {
 		if(exchange() == XC_HARTREE_FOCK) return 1.0;
@@ -269,9 +277,13 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
   SECTION("Hybrid"){
 
     auto inter = options::theory{}.camb3lyp();
-		CHECK(inter.exchange() == XC_HYB_GGA_XC_CAM_B3LYP);
-	
+		CHECK(inter.exchange() == XC_HYB_GGA_XC_CAM_B3LYP);	
 	}
+
+  SECTION("RSH"){
+    auto inter  = options::theory{}.rsh();
+                CHECK(inter.exchange() == XC_HYB_GGA_XC_LC_WPBEH_WHS);
+        }
 
   SECTION("Hartee-Fock"){
 
