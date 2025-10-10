@@ -120,7 +120,7 @@ public:
 	auto rsh() const {
 		theory inter = *this;
 		inter.hartree_potential_ = true;
-		inter.exchange_ = XC_HYB_GGA_XC_LC_WPBEH_WHS; //Need to choose something that will result in RSH
+		inter.exchange_ = XC_HYB_GGA_XC_CAM_PBEH; //CS think this will work for RSH
                 inter.correlation_ = XC_NONE;
                 return inter;
         }
@@ -282,7 +282,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 
   SECTION("RSH"){
     auto inter  = options::theory{}.rsh();
-                CHECK(inter.exchange() == XC_HYB_GGA_XC_LC_WPBEH_WHS);
+                CHECK(inter.exchange() == XC_HYB_GGA_XC_CAM_PBEH);
         }
 
   SECTION("Hartee-Fock"){

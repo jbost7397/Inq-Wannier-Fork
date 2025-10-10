@@ -19,9 +19,10 @@ int main(int argc, char ** argv){
 	inq::systems::electrons el(sys, options::electrons{}.cutoff(30.0_Ry));
 	inq::ground_state::initial_guess(sys, el);
 
-	inq::hamiltonian::set_exchange::global_exchange_frac = 0.5; 
-	inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe0(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha));
-	real_time::propagate(sys, el, [](auto){}, options::theory{}.pbe0(), options::real_time{}.num_steps(100).dt(0.0565_atomictime).tdmlwf());
+	//inq::hamiltonian::set_exchange::global_exchange_frac = 0.0; 
+	inq::hamiltonian::set_rsh::rsh_parameters = {1.0, 0.0, 0.4};
+	inq::ground_state::calculate(sys, el, inq::options::theory{}.rsh(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha));
+	real_time::propagate(sys, el, [](auto){}, options::theory{}.rsh(), options::real_time{}.num_steps(100).dt(0.0565_atomictime).tdmlwf());
 	
 	return 1;
 	
