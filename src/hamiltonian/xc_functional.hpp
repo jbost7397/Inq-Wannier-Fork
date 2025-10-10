@@ -110,7 +110,7 @@ namespace set_rsh {
                           xc_hyb_cam_coef(libxc_func_ptr(), &omega, &alpha, &beta);
 			  if(const_cast<xc_func_type*>(libxc_func_ptr())->info->number == XC_HYB_GGA_XC_CAM_PBEH) {
 			    alpha = set_rsh::rsh_parameters[0];
-			    beta = set_rsh::rsh_parameters[1];
+			    beta = set_rsh::rsh_parameters[1]; //For now, input beta in libxc format 
 			    //beta = set_rsh::rsh_parameters[1] - set_rsh::rsh_parameters[0]; //for libxc
 			    omega = set_rsh::rsh_parameters[2];
 
@@ -120,7 +120,7 @@ namespace set_rsh {
 			  } 
                         }
 			std::cout << alpha << " " << beta << " " << omega << std::endl; //this is what libxc sees 
-                        return vector3<double>(alpha, beta + alpha, omega); //beta in INQ/Qbach format (what user inputs)
+                        return vector3<double>(alpha, beta + alpha, omega); //beta in INQ/Qbach format 
                 }
 
 		std::string name() const {
