@@ -33,7 +33,7 @@ namespace set_exchange {
 }
 
 namespace set_rsh {
-	inline vector3<double> rsh_parameters {0.0, 0.25, 0.11}; 
+	inline vector3<double> rsh_parameters {0.0, 0.25, 0.11}; //default HSE 
 }
 
 	class xc_functional {
@@ -108,7 +108,7 @@ namespace set_rsh {
 			//Range-seperated hybrid
 			else if (xc_hyb_type(libxc_func_ptr()) == XC_HYB_CAM) {
                           xc_hyb_cam_coef(libxc_func_ptr(), &omega, &alpha, &beta);
-			  if(const_cast<xc_func_type*>(libxc_func_ptr())->info->number == XC_HYB_GGA_XC_CAM_PBEH) {
+			  if(const_cast<xc_func_type*>(libxc_func_ptr())->info->number == XC_HYB_GGA_XC_CAM_PBEH) { //will default to HSE if nothing defined in input
 			    alpha = set_rsh::rsh_parameters[0];
 			    beta = set_rsh::rsh_parameters[1]; //For now, input beta in libxc format 
 			    //beta = set_rsh::rsh_parameters[1] - set_rsh::rsh_parameters[0]; //for libxc
@@ -282,7 +282,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
         }
 
         SECTION("RSH"){
-                inq::hamiltonian::set_rsh::rsh_parameters = {0.65, 0.19, 0.33};
+                inq::hamiltonian::set_rsh::rsh_parameters = {0.65, -0.46, 0.33};
 		inq::hamiltonian::xc_functional rsh(XC_HYB_GGA_XC_CAM_PBEH, 1);
                 CHECK(rsh.exx_coefficients()[0] == 0.65_a);
                 CHECK(rsh.exx_coefficients()[1] == 0.19_a);
