@@ -418,7 +418,7 @@ auto dipole(const systems::cell & cell) {
   // total electronic dipole
   vector3<double> sum{0.0,0.0,0.0};
   for ( int i = 0; i < wavefunctions_.set_size(); i++ )
-    sum -= 2.0 * center(i,cell);  //CS need to pass state occupations (assume fully occupied for now) How?
+    sum -= -2.0 * center(i,cell);  //CS need to pass state occupations (assume fully occupied for now) How?
   return sum;
 }
 ////////////////////////////////////////////////////////////////////////////////

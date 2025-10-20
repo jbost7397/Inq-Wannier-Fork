@@ -54,6 +54,8 @@ public:
        		auto spread = mlwf_transformer_->spread(i, phi.basis().cell());
        		output_file << "  WF " << i + 1 << ": " << center[0] << "     " << center[1] << "     " << center[2] << "     Spread: " << spread << std::endl;
     	}
+        auto dipole = mlwf_transformer_->dipole(phi.basis().cell());
+        output_file << "electronic dipole: " << dipole[0] << "  " << dipole[1] << "  " << dipole[2] << "  " << std::endl;
     }
   }
 
