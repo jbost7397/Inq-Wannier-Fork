@@ -193,10 +193,11 @@ public:
 	}
 
 	////////////////////////////////////////////////////////////////////////////////////////////
-	
-	auto exx_coefficient(){
-		if(xc_.exchange().true_functional()) return xc_.exchange().exx_coefficient();
-		return theory_.exchange_coefficient();
+
+	auto exx_coefficients(){
+		if(xc_.exchange().true_functional()) return xc_.exchange().exx_coefficients();
+		double alpha = theory_.exchange_coefficient();
+		return vector3<double>(alpha, alpha, 0);
 	}
 
 	////////////////////////////////////////////////////////////////////////////////////////////

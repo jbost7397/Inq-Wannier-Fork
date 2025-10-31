@@ -91,8 +91,8 @@ public:
 	////////////////////////////////////////////////////////////////////////////////////////////
 		
 	ks_hamiltonian(const basis::real_space & basis, ionic::brillouin const & bzone, states::ks_states const & states, atomic_potential const & pot, systems::ions const & ions,
-								 const double exchange_coefficient, bool use_ace = false):
-		exchange_(basis.cell(), bzone, exchange_coefficient, use_ace),
+								 const vector3<double> & exchange_coefficients, bool use_ace = false):
+		exchange_(basis.cell(), bzone, exchange_coefficients, use_ace),
 		vxc_(basis, states.num_density_components()),
 		scalar_potential_(basis, states.num_density_components()),
 		uniform_vector_potential_({0.0, 0.0, 0.0}),
@@ -105,7 +105,7 @@ public:
 	////////////////////////////////////////////////////////////////////////////////////////////
 		
 	ks_hamiltonian(const basis::real_space & basis, ionic::brillouin const & bzone, states::ks_states const & states, atomic_potential const & pot, systems::ions const & ions,
-								 const double exchange_coefficient, wannier::tdmlwf_trans mlwf, bool use_ace = false, bool use_cutoff = false, double const epsilon = 0.0):
+								 const vector3<double> & exchange_coefficient, wannier::tdmlwf_trans mlwf, bool use_ace = false, bool use_cutoff = false, double const epsilon = 0.0):
 		exchange_(basis.cell(), bzone, exchange_coefficient, mlwf, use_ace, use_cutoff, epsilon),
 		vxc_(basis, states.num_density_components()),
 		scalar_potential_(basis, states.num_density_components()),
@@ -302,7 +302,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG){
 
 	auto bzone = ionic::brillouin(ions, input::kpoints::gamma());
 	
-	hamiltonian::ks_hamiltonian<double> ham(rs, bzone, st, pot, ions, 0.0);
+	hamiltonian::ks_hamiltonian<double> ham(rs, bzone, st, pot, ions, {0.0, 0.0, 0.0});
 
 	SECTION("Constant function"){
 		

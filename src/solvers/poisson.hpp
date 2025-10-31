@@ -27,15 +27,53 @@ class poisson {
 public:
 
 	poisson() = delete;
-	
+
 	struct poisson_kernel_3d {
+
 		GPU_FUNCTION auto operator()(vector3<double, cartesian> gg, double const zeroterm) const {
 			auto g2 = norm(gg);
 			if(g2 < 1e-6) return zeroterm;
 			return -1.0/g2;
 		}
+
 	};
 
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+	//CS
+        struct poisson_kernel_3d_hybrid {
+	  vector3<double> exchange_coefficients_;
+
+		GPU_FUNCTION auto operator()(vector3<double, cartesian> gg, double const zeroterm) const {
+			auto g2 = norm(gg);
+			const double alpha = exchange_coefficients_[0];
+			const double beta = exchange_coefficients_[1];
+			const double omega = exchange_coefficients_[2];
+			if (alpha == beta && omega == 0.0) { 	
+			  //CS global hybrid case
+			  if(g2 < 1e-6) return alpha * zeroterm;
+                          return -alpha/g2;
+			} else if (alpha == 0.0 && omega > 0.0) {  
+			  //For HSE or other XC with only SR Exact exchange
+			  //Adapted from Schlipf et al.    Phys. Rev. B 84, 125142 (2011)
+			  const double fac = 0.25 / (omega * omega);
+                          const double x = g2 * fac;
+			  //keep only 2nd and 3rd term from Taylor expansion at zero, 
+			  //first term will drop anyways when alpha=0 thus no zeroterm here 
+			  if (g2 < 1e-6) return -fac * beta * (1.0 - 0.5 * x); 
+			  //sign convention to match kernel application
+                          else return -beta/g2 + beta * exp(-x) / g2; 
+			} else { 
+			  //General RSH case			
+			  const double fac = 0.25 / (omega * omega); 
+			  const double x = g2 * fac;  
+			  //general case, use zeroterm to approximate 1/g2 as in global case for small g. 
+			  //also keep 2nd and third terms if taylor expansion here
+			  if (g2 < 1e-6) return alpha * zeroterm - fac * beta * (1.0 - 0.5 * x);
+			  else return ( -beta - (alpha - beta) * exp(-x)) / g2;
+			}
+		}
+	};
+	//CS
 	///////////////////////////////////////////////////////////////////////////////////////////////////
 
 	struct poisson_kernel_2d {
@@ -108,8 +146,19 @@ private:
 		poisson_apply_kernel(poisson_kernel_3d{}, potential_fs, gshift, zeroterm);
 		density = operations::transform::to_real(std::move(potential_fs),  /*normalize = */ false);
 	}
-	
-	///////////////////////////////////////////////////////////////////////////////////////////////////	
+
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
+	//CS
+        static void poisson_solve_in_place_3d_hybrid(basis::field_set<basis::real_space, complex> & density, vector3<double> const & gshift, double const zeroterm, vector3<double> const exchange_coefficients_) {
+
+                CALI_CXX_MARK_FUNCTION;
+
+                auto potential_fs = operations::transform::to_fourier(std::move(density));
+                poisson_apply_kernel(poisson_kernel_3d_hybrid{exchange_coefficients_}, potential_fs, gshift, zeroterm);
+                density = operations::transform::to_real(std::move(potential_fs),  /*normalize = */ false);
+        }
+	//CS
+        ///////////////////////////////////////////////////////////////////////////////////////////////////
 	
 	static basis::field<basis::real_space, complex> poisson_solve_2d(basis::field<basis::real_space, complex> const & density) {
 
@@ -197,14 +246,19 @@ public:
 	///////////////////////////////////////////////////////////////////////////////////////////////////
 
 	template <typename Space = cartesian>
-	static void in_place(basis::field_set<basis::real_space, complex> & density, vector3<double, Space> const & gshift = {0.0, 0.0, 0.0}, double const zeroterm = 0.0) {
+	static void in_place(basis::field_set<basis::real_space, complex> & density, vector3<double, Space> const & gshift = {0.0, 0.0, 0.0}, double const zeroterm = 0.0, vector3<double> const & exchange_coefficients_ = {0.0, 0.0, 0.0}) {
 
 		CALI_CXX_MARK_SCOPE("poisson(complex)");
 
 		auto gshift_cart = density.basis().cell().metric().to_cartesian(gshift);
-		
+
 		if(density.basis().cell().periodicity() == 3){
-			poisson_solve_in_place_3d(density, gshift_cart, zeroterm);
+			if (exchange_coefficients_ == vector3<double>{0.0, 0.0, 0.0}) {
+				poisson_solve_in_place_3d(density, gshift_cart, zeroterm);
+		  	} else {
+        			poisson_solve_in_place_3d_hybrid(density, gshift_cart, zeroterm, exchange_coefficients_);
+		  	}
+
 		} else if(density.basis().cell().periodicity() == 2){
 			return poisson_solve_in_place_2d(density, gshift_cart, zeroterm);
 		} else {

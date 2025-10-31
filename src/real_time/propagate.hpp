@@ -81,7 +81,7 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
         		electrons.states(),
         		electrons.atomic_pot(),
         		ions,
-        		sc.exx_coefficient(),
+        		sc.exx_coefficients(),
         		mlwf_props.get_mlwf_transformer(),
         		/* use_ace = */ opts.propagator() == options::real_time::electron_propagator::CRANK_NICOLSON,
         		opts.enforce_cutoff_value(),
@@ -95,7 +95,7 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
         		electrons.states(),
         		electrons.atomic_pot(),
         		ions,
-        		sc.exx_coefficient(),
+        		sc.exx_coefficients(),
         		/* use_ace = */ opts.propagator() == options::real_time::electron_propagator::CRANK_NICOLSON
     			);
 		}
