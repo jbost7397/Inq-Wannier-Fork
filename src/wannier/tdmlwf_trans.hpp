@@ -316,68 +316,65 @@ bool overlap(T1 epsilon, T2 i, T2 j, const systems::cell & cell_) const {
   double y = cell_[1][1]*cell_[1][1] + cell_[1][2]*cell_[1][2] + cell_[1][2]*cell_[1][2];
   double z = cell_[2][2]*cell_[2][2] + cell_[2][1]*cell_[2][1] + cell_[2][2]*cell_[2][2];
   double len = sqrt(x+y+z);
-  auto dist = wannier_distance(i, j, cell_);
-  if (dist <= epsilon || dist >= (len - epsilon) )
+  if (wannier_distance(i,j, cell_) <= epsilon || wannier_distance(i,j, cell_) >= (len - epsilon) )
       return true;  //need sqrt(a0^2 + a1^2 + a2^2) for cell diagonal distance. Diagonal dist - epsilon for pbc
   // return false if the states don't overlap
   return false;
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
-auto get_overlaps_of_j(T epsilon, int j, const systems::cell & cell_, int rank_offset) const {
-        CALI_CXX_MARK_SCOPE("wannier_update::overlaps_of_j");
-  	const int n_states = wavefunctions_.local_set_size();
+auto get_overlaps_of_j(T epsilon, int j, const systems::cell & cell_) const {
+  	const int n_states = wavefunctions_.set_size();
 	gpu::array<int, 1> olap_j(n_states);
 	int count = 0;
-	auto i_offset = 0;
-  	auto j_offset = 0;
-	if(wavefunctions_.set_part().parallel()){
-		i_offset = wavefunctions_.set_comm().rank() * n_states;
-		j_offset = rank_offset * n_states;
-	}
 	for(int i = 0; i < n_states; i++){
-		gpu::sync();
-		if(overlap(epsilon, i + i_offset, j + j_offset, cell_)){
-			olap_j[count] = i;
-			count++;
+		if(overlap(epsilon, i, j, cell_)){
+			olap_j[count++] = i;
 		}
 	}
 	olap_j.reextent(count);
 	return olap_j;
 }
 
+
 ////////////////////////////////////////////////////////////////////////////////
-template <typename T, class CommType>
-double total_overlaps(T epsilon, CommType & comm, const systems::cell & cell_) {
+template <typename T>
+double total_overlaps(T epsilon, const systems::cell & cell_) {
 
   int n = wavefunctions_.set_size();
   gpu::array<int,1> sum({1}, 0);
+  gpu::run(n, n, [epsilon, cell_, sum_int=begin(sum)] GPU_LAMBDA (auto i, auto j) {
+    if (overlap(epsilon, i, j, cell_)) {
+      gpu::atomic::add(&sum_int[0], 1);
+    }
+  });
+  gpu::sync(); //CS probably don't need
+
   return static_cast<double>(sum[0]) / (n * n);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-template <typename T, class CommType>
-double pair_fraction(T epsilon, CommType & comm, const systems::cell & cell) const {
-  CALI_CXX_MARK_SCOPE("wannier_update::pair_frac");
+template <typename T>
+double pair_fraction(T epsilon, const systems::cell & cell_) {
   // pair_fraction: return fraction of pairs having non-zero overlap
   // count pairs (i,j) having non-zero overlap for i != j only
   int n = wavefunctions_.set_size();
   gpu::array<int,1> sum({1}, 0);
-  for(int i = 0; i < n; i++){
-	  for(int j = 0; j < n; j++){
-		  if(j > i) {
-			  if (overlap(epsilon, i, j, comm, cell)) {
-				sum[0] += 1;
-			  }
-		  }
-  	  }
-  }
+
+  gpu::run(n, n, [epsilon, cell_, sum_int=begin(sum)] GPU_LAMBDA (auto i, auto j) {
+    if (j > i) { //CS avoid duplicates
+        if (overlap(epsilon, i, j, cell_)) {
+            gpu::atomic::add(&sum_int[0], 1);
+        }
+    }
+  });
+  gpu::sync(); //CS probably don't need
 
   // add overlap with self: (i,i)
   int total = sum[0] + n;
   return static_cast<double>(total)/((n*(n+1))/2);
 }
+
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 double spread2(T i, T j, const systems::cell & cell) {
