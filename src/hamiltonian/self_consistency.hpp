@@ -93,8 +93,8 @@ public:
 		assert(core_density_.basis() == spin_density.basis());
 
 		auto total_density = observables::density::total(spin_density);
-			
-		energy.external(operations::integral_product(total_density, vion_));
+
+		assert(total_density.basis() == vion_.basis());
 
 		//IONIC POTENTIAL
 		auto vscalar = vion_;
@@ -111,6 +111,8 @@ public:
 		}
 
 		pert_.potential(time, vscalar);
+
+		energy.external(operations::integral_product(total_density, vscalar));
 		
 		// Hartree
 		if(theory_.hartree_potential()){

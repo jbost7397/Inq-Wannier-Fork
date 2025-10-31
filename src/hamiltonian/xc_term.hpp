@@ -189,7 +189,7 @@ public:
 		
 		if(functional.family() == XC_FAMILY_LDA){
 			xc_lda_exc_vxc(functional.libxc_func_ptr(), density.basis().local_size(), raw_pointer_cast(density.matrix().data_elements()),
-										 raw_pointer_cast(edens.linear().data_elements()), raw_pointer_cast(vfunctional.matrix().data_elements()));
+										 edens.data(), raw_pointer_cast(vfunctional.matrix().data_elements()));
 			gpu::sync();
 			
 		} else if(functional.family() == XC_FAMILY_GGA){
@@ -207,7 +207,7 @@ public:
 							 });
 
 			xc_gga_exc_vxc(functional.libxc_func_ptr(), density.basis().local_size(), raw_pointer_cast(density.matrix().data_elements()), raw_pointer_cast(sig.matrix().data_elements()),
-										 raw_pointer_cast(edens.linear().data_elements()), raw_pointer_cast(vfunctional.matrix().data_elements()), raw_pointer_cast(vsig.matrix().data_elements()));
+										 edens.data(), raw_pointer_cast(vfunctional.matrix().data_elements()), raw_pointer_cast(vsig.matrix().data_elements()));
 			gpu::sync();
 
 			basis::field_set<basis::real_space, vector3<double, covariant>> term(vfunctional.skeleton());
@@ -351,6 +351,25 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG){
 	
 	basis::real_space bas(systems::cell::orthorhombic(lx*1.0_b, ly*1.0_b, lz*1.0_b), /*spacing =*/ 0.40557787, comm);
 
+	CHECK(bas.sizes()[0] == 25);
+	CHECK(bas.sizes()[1] == 35);
+	CHECK(bas.sizes()[2] == 12);
+	
+	//some variables for testing explicit values in a point
+	auto contains1 = bas.cubic_part(0).contains(20) and bas.cubic_part(1).contains(8) and bas.cubic_part(2).contains(4);
+	auto p1 = vector3{
+		bas.cubic_part(0).global_to_local(parallel::global_index(20)),
+		bas.cubic_part(1).global_to_local(parallel::global_index(8)),
+		bas.cubic_part(2).global_to_local(parallel::global_index(4))
+	};
+
+	auto contains2 = bas.cubic_part(0).contains(1) and bas.cubic_part(1).contains(27) and bas.cubic_part(2).contains(3);
+	auto p2 = vector3{
+		bas.cubic_part(0).global_to_local(parallel::global_index(1)),
+		bas.cubic_part(1).global_to_local(parallel::global_index(27)),
+		bas.cubic_part(2).global_to_local(parallel::global_index(3))
+	};
+	
 	basis::field_set<basis::real_space, double> density_unp(bas, 1);  
 	basis::field_set<basis::real_space, double> density_pol(bas, 2);
 	
@@ -382,11 +401,18 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG){
 	auto grad_unp = std::optional{operations::gradient(density_unp)};
 	auto grad_pol = std::optional{operations::gradient(density_pol)};
 
-	if(bas.part().contains(5439)) {
-		auto index = bas.part().global_to_local(parallel::global_index(5439));
-		CHECK(density_unp.matrix()[index][0] == 0.0024885602_a);
-		CHECK(density_pol.matrix()[index][0] == 0.0009452194_a);
-		CHECK(density_pol.matrix()[index][1] == 0.0015433408_a);
+	if(contains1) {
+		CHECK(density_unp.hypercubic()[p1[0]][p1[1]][p1[2]][0] ==  0.0232053167_a);
+		
+		CHECK(density_pol.hypercubic()[p1[0]][p1[1]][p1[2]][0] ==  0.0194068103_a);
+		CHECK(density_pol.hypercubic()[p1[0]][p1[1]][p1[2]][1] ==  0.0037985065_a);
+	}
+
+	if(contains2) {
+		CHECK(density_unp.hypercubic()[p2[0]][p2[1]][p2[2]][0] ==  0.1264954137_a);
+		
+		CHECK(density_pol.hypercubic()[p2[0]][p2[1]][p2[2]][0] ==  0.1121251439_a);
+		CHECK(density_pol.hypercubic()[p2[0]][p2[1]][p2[2]][1] ==  0.0143702698_a);
 	}
 
 	basis::field_set<basis::real_space, double> vfunc_unp(bas, 1);  
@@ -404,20 +430,20 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG){
 		hamiltonian::xc_term::evaluate_functional(func_pol, density_pol, grad_pol, efunc_pol, vfunc_pol);
 
 		CHECK(efunc_unp == -14.0558385758_a);
-		CHECK(efunc_pol == -15.1704508993_a);
+		CHECK(efunc_pol == -15.1680272137_a);
 
-		if(bas.part().contains(5439)) {
-			auto index = bas.part().global_to_local(parallel::global_index(5439));
-			CHECK(vfunc_unp.matrix()[index][0] == -0.1334462916_a);
-			CHECK(vfunc_pol.matrix()[index][0] == -0.1217618773_a);
-			CHECK(vfunc_pol.matrix()[index][1] == -0.1433797225_a);
+		if(contains1) {
+			CHECK(vfunc_unp.hypercubic()[p1[0]][p1[1]][p1[2]][0] == -0.2808792311_a);
+			
+			CHECK(vfunc_pol.hypercubic()[p1[0]][p1[1]][p1[2]][0] == -0.3334150345_a);
+			CHECK(vfunc_pol.hypercubic()[p1[0]][p1[1]][p1[2]][1] == -0.193584872_a);
 		}
 
-		if(bas.part().contains(4444)) {
-			auto index = bas.part().global_to_local(parallel::global_index(4444));
-			CHECK(vfunc_unp.matrix()[index][0] == -0.3276348215_a);
-			CHECK(vfunc_pol.matrix()[index][0] == -0.3784052378_a);
-			CHECK(vfunc_pol.matrix()[index][1] == -0.2527984139_a);
+		if(contains2) {
+			CHECK(vfunc_unp.hypercubic()[p2[0]][p2[1]][p2[2]][0] == -0.494328201_a);
+			
+			CHECK(vfunc_pol.hypercubic()[p2[0]][p2[1]][p2[2]][0] == -0.5982758379_a);
+			CHECK(vfunc_pol.hypercubic()[p2[0]][p2[1]][p2[2]][1] == -0.3016398853_a);
 		}
 
 	}
@@ -434,20 +460,20 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG){
 		hamiltonian::xc_term::evaluate_functional(func_pol, density_pol, grad_pol, efunc_pol, vfunc_pol);
 
 		CHECK(efunc_unp == -1.8220292936_a);
-		CHECK(efunc_pol == -1.5664843681_a);
-
-		if(bas.part().contains(5439)) {
-			auto index = bas.part().global_to_local(parallel::global_index(5439));
-			CHECK(vfunc_unp.matrix()[index][0] == 0.0005467193_a);
-			CHECK(vfunc_pol.matrix()[index][0] == 0.0005956583_a);
-			CHECK(vfunc_pol.matrix()[index][1] == 0.0005978958_a);
+		CHECK(efunc_pol == -1.5670264162_a);
+		
+		if(contains1) {
+			CHECK(vfunc_unp.hypercubic()[p1[0]][p1[1]][p1[2]][0] == -0.0485682509_a);
+			
+			CHECK(vfunc_pol.hypercubic()[p1[0]][p1[1]][p1[2]][0] == -0.0356047498_a);
+			CHECK(vfunc_pol.hypercubic()[p1[0]][p1[1]][p1[2]][1] == -0.0430996024_a);
 		}
 
-		if(bas.part().contains(4444)) {
-			auto index = bas.part().global_to_local(parallel::global_index(4444));
-			CHECK(vfunc_unp.matrix()[index][0] == -0.0798456253_a);
-			CHECK(vfunc_pol.matrix()[index][0] == -0.0667968142_a);
-			CHECK(vfunc_pol.matrix()[index][1] == -0.0830118308_a);
+		if(contains2) {
+			CHECK(vfunc_unp.hypercubic()[p2[0]][p2[1]][p2[2]][0] == -0.0430639893_a);
+			
+			CHECK(vfunc_pol.hypercubic()[p2[0]][p2[1]][p2[2]][0] == -0.0216393428_a);
+			CHECK(vfunc_pol.hypercubic()[p2[0]][p2[1]][p2[2]][1] == -0.1008833788_a);
 		}
 
 	}
@@ -464,22 +490,21 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG){
 		hamiltonian::xc_term::evaluate_functional(func_pol, density_pol, grad_pol, efunc_pol, vfunc_pol);
 
 		CHECK(efunc_unp == -13.2435562623_a);
-		CHECK(efunc_pol == -13.8397387159_a);
-
-		if(bas.part().contains(5439)) {
-			auto index = bas.part().global_to_local(parallel::global_index(5439));
-			CHECK(vfunc_unp.matrix()[index][0] == -0.6495909727_a);
-			CHECK(vfunc_pol.matrix()[index][0] == -0.6398010386_a);
-			CHECK(vfunc_pol.matrix()[index][1] == -0.6142058762_a);
+		CHECK(efunc_pol == -13.838126858_a);
+		
+		if(contains1) {
+			CHECK(vfunc_unp.hypercubic()[p1[0]][p1[1]][p1[2]][0] ==  0.0182716851_a);
+			
+			CHECK(vfunc_pol.hypercubic()[p1[0]][p1[1]][p1[2]][0] == -0.1772863551_a);
+			CHECK(vfunc_pol.hypercubic()[p1[0]][p1[1]][p1[2]][1] ==  0.1830076554_a);
 		}
 
-		if(bas.part().contains(4444)) {
-			auto index = bas.part().global_to_local(parallel::global_index(4444));
-			CHECK(vfunc_unp.matrix()[index][0] == -0.2879332051_a);
-			CHECK(vfunc_pol.matrix()[index][0] == -0.3195127242_a);
-			CHECK(vfunc_pol.matrix()[index][1] == -0.2368583776_a);
+		if(contains2) {
+			CHECK(vfunc_unp.hypercubic()[p2[0]][p2[1]][p2[2]][0] == -0.4348251846_a);
+			
+			CHECK(vfunc_pol.hypercubic()[p2[0]][p2[1]][p2[2]][0] == -0.5046576968_a);
+			CHECK(vfunc_pol.hypercubic()[p2[0]][p2[1]][p2[2]][1] == -0.352403833_a);
 		}
-
 	}
 
 	SECTION("xc_term object") {
@@ -557,5 +582,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG){
 		CHECK(nvxc2 == target);
 		CHECK(exc2 == target2);
 	}
+	
+
 }
 #endif

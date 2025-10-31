@@ -105,9 +105,9 @@ namespace basis {
 									 parallel::global_index ii1(ii[1]);
 									 parallel::global_index ii2(ii[2]);
 									 
-									 int ixl = point_op.cubic_part()[0].global_to_local(ii0);
-									 int iyl = point_op.cubic_part()[1].global_to_local(ii1);
-									 int izl = point_op.cubic_part()[2].global_to_local(ii2);
+									 int ixl = point_op.cubic_part(0).global_to_local(ii0);
+									 int iyl = point_op.cubic_part(1).global_to_local(ii1);
+									 int izl = point_op.cubic_part(2).global_to_local(ii2);
 									 
 									 if(ixl < 0 or ixl >= local_sizes[0]) return;
 									 if(iyl < 0 or iyl >= local_sizes[1]) return;
@@ -388,10 +388,10 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		auto size = sphere.size();
 		comm.all_reduce_in_place_n(&size, 1, std::plus<>{});
 
-		CHECK(size == 13758);
+		CHECK(size == 15963);
 		
 		auto theo_vol = 4.0/3.0*M_PI*pow(radius, 3);
-		CHECK(size*rs.volume_element()/theo_vol == 0.9978228533_a);
+		CHECK(size*rs.volume_element()/theo_vol == 1.0013282291_a);
 
 	}
 }
