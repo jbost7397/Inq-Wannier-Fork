@@ -26,7 +26,7 @@ void initial_guess(const systems::ions & ions, systems::electrons & electrons, s
 	for(auto & phi : electrons.kpin()) {
 		operations::randomize(phi, iphi + electrons.kpin_part().start());
 		if(electrons.atomic_pot().has_overlap()){
-			hamiltonian::ks_hamiltonian<double> ham(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(), ions, 0.0, /* use_ace = */ true);
+			hamiltonian::ks_hamiltonian<double> ham(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(), ions, {0.0, 0.0, 0.0}, /* use_ace = */ true);
 			auto overlap_operator = [&ham](auto const & phi ){
 				return ham.overlap(phi);
 			};
