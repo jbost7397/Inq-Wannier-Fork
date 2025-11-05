@@ -95,7 +95,7 @@ public:
 		 inter_(inter),
 		 solver_(solver),
 		 sc_(inter, electrons.states_basis(), electrons.density_basis(), electrons.states().num_density_components(), pert),
-		 ham_(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(), ions_, sc_.exx_coefficient(), /* use_ace = */ true)
+		 ham_(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(), ions_, sc_.exx_coefficients(), /* use_ace = */ true)
 	{
 	}
 

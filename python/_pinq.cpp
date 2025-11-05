@@ -142,7 +142,7 @@ public:
 		auto vion = operations::add(ionic_long_range, ionic_short_range);
 		
 		auto ham = hamiltonian::ks_hamiltonian<double>(electrons_->states_basis(), electrons_->brillouin_zone(), electrons_->states(), electrons_->atomic_pot(),
-																									 ions, /*exx_coefficient = */ {0.0, 0.0, 0.0} /* use_ace = */ true); //CS
+																									 ions, /*exx_coefficient = */ {0.0, 0.0, 0.0}, /* use_ace = */ true); //CS
 
     auto pot = potential.unchecked();
 		
