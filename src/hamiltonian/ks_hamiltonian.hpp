@@ -23,6 +23,7 @@
 #include <operations/gradient.hpp>
 #include <states/ks_states.hpp>
 #include <states/orbital_set.hpp>
+#include <wannier/tdmlwf_trans.hpp>
 
 #include <utils/profiling.hpp>
 
@@ -90,8 +91,8 @@ public:
 	////////////////////////////////////////////////////////////////////////////////////////////
 		
 	ks_hamiltonian(const basis::real_space & basis, ionic::brillouin const & bzone, states::ks_states const & states, atomic_potential const & pot, systems::ions const & ions,
-								 const double exchange_coefficient, bool use_ace = false):
-		exchange_(basis.cell(), bzone, exchange_coefficient, use_ace),
+								 const double exchange_coefficient, bool use_ace = false, std::optional<wannier::tdmlwf_trans> mlwf = std::nullopt, double const epsilon = 0.0):
+		exchange_(basis.cell(), bzone, exchange_coefficient, use_ace, mlwf, epsilon),
 		vxc_(basis, states.num_density_components()),
 		scalar_potential_(basis, states.num_density_components()),
 		uniform_vector_potential_({0.0, 0.0, 0.0}),

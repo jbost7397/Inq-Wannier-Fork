@@ -13,6 +13,7 @@
 #include <operations/overlap_diagonal.hpp>
 #include <observables/dipole.hpp>
 #include <observables/forces_stress.hpp>
+#include <observables/mlwf_properties.hpp>
 #include <options/real_time.hpp>
 #include <perturbations/none.hpp>
 #include <ionic/propagator.hpp>
@@ -21,6 +22,7 @@
 #include <real_time/etrs.hpp>
 #include <real_time/viewables.hpp>
 #include <utils/profiling.hpp>
+#include <wannier/tdmlwf_trans.hpp>
 
 #include <chrono>
 
@@ -34,13 +36,13 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 	assert(start_step >= 0);
 
 		CALI_CXX_MARK_FUNCTION;
-		
+
 		auto console = electrons.logger();
 
 		ionic::propagator::runtime ion_propagator{opts.ion_dynamics_value()};
 
 		if(start_step > 0) assert(ion_propagator.static_ions()); //restart doesn't work with moving ions for now
-		
+
 		const double dt = opts.dt();
 		const int numsteps = opts.num_steps();
 
@@ -55,18 +57,27 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 
 	if(start_step == 0) {
 		for(auto & phi : electrons.kpin()) pert.zero_step(phi);
-	}
 		
+	}
+		observables::mlwf_properties mlwf_props;
+		if (opts.wf_diag_value() == options::real_time::wavefunction_diag::TDMLWF && start_step == 0) { //JLB
+			mlwf_props.set_mlwf_transformer(wannier::tdmlwf_trans(electrons.kpin()[0]));
+    			std::ofstream output_file("mlwf_results.dat", std::ios_base::app);
+			mlwf_props.calculate(output_file, -1, electrons.kpin()[0], opts.mlwf_freq());
+       			output_file.close();
+		}
+
 		electrons.spin_density() = observables::density::calculate(electrons);
 
 		hamiltonian::self_consistency sc(inter, electrons.states_basis(), electrons.density_basis(), electrons.states().num_density_components(), pert);
 		hamiltonian::ks_hamiltonian<complex> ham(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(),
-																						 ions, sc.exx_coefficient(), /* use_ace = */ opts.propagator() == options::real_time::electron_propagator::CRANK_NICOLSON);
+																						 ions, sc.exx_coefficient(), /* use_ace = */ opts.propagator() == options::real_time::electron_propagator::CRANK_NICOLSON, mlwf_props.get_mlwf_transformer(), opts.epsilon());
+
 		hamiltonian::energy energy;
 
 		sc.update_ionic_fields(electrons.states_comm(), ions, electrons.atomic_pot());
 	sc.update_hamiltonian(ham, energy, electrons.spin_density(), /* time = */ start_step*dt);
-		
+
 		ham.exchange().update(electrons);
 
 		energy.calculate(ham, electrons);
@@ -77,8 +88,12 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 
 		auto current = vector3<double, covariant>{0.0, 0.0, 0.0};
 		if(sc.has_induced_vector_potential()) current = observables::current(ions, electrons, ham);
-		
+
 	if(start_step == 0) func(real_time::viewables{false, start_step, start_step*dt, ions, electrons, energy, forces, ham, pert});
+	if (opts.wf_diag_value() == options::real_time::wavefunction_diag::TDMLWF) { //JLB
+		auto transformer = wannier::tdmlwf_trans(electrons.kpin()[0]); //might have done this previously if starting from GS, so maybe this is a waste but probably doesn't matter too much
+	        mlwf_props.set_mlwf_transformer(transformer);
+	}
 
 		if(console) console->trace("starting real-time propagation");
 	if(console) console->info("step {:9d} :  t =  {:9.3f}  e = {:.12f}", start_step, start_step*dt, energy.total());
@@ -96,10 +111,18 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 				break;
 			}
 
+			if (opts.wf_diag_value() == options::real_time::wavefunction_diag::TDMLWF) { //JLB
+				{
+    					std::ofstream output_file("mlwf_results.dat", std::ios_base::app);
+			        	mlwf_props.calculate(output_file, istep, electrons.kpin()[0], opts.mlwf_freq());
+       					output_file.close();
+				}
+			}
+
 			energy.calculate(ham, electrons);
-			
+
 		if(ion_propagator.needs_force()) forces = observables::forces_stress{ions, electrons, ham, energy}.forces;
-	
+
 			//propagate ionic velocities to t + dt
 			ion_propagator.propagate_velocities(dt, ions, forces);
 
@@ -107,12 +130,12 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 				current = observables::current(ions, electrons, ham);
 				sc.propagate_induced_vector_potential_derivative(dt, current);
 			}
-			
+
 		func(real_time::viewables{istep == numsteps - 1, istep + 1, (istep + 1.0)*dt, ions, electrons, energy, forces, ham, pert});
-			
+
 			auto new_time = std::chrono::high_resolution_clock::now();
 			std::chrono::duration<double> elapsed_seconds = new_time - iter_start_time;
-			
+
 			if(console) console->info("step {:9d} :  t =  {:9.3f}  e = {:.12f}  wtime = {:9.3f}", istep + 1, (istep + 1)*dt, energy.total(), elapsed_seconds.count());
 
 			iter_start_time = new_time;
