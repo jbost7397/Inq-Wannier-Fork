@@ -91,22 +91,8 @@ public:
 	////////////////////////////////////////////////////////////////////////////////////////////
 		
 	ks_hamiltonian(const basis::real_space & basis, ionic::brillouin const & bzone, states::ks_states const & states, atomic_potential const & pot, systems::ions const & ions,
-								 const vector3<double> & exchange_coefficients, bool use_ace = false):
-		exchange_(basis.cell(), bzone, exchange_coefficients, use_ace),
-		vxc_(basis, states.num_density_components()),
-		scalar_potential_(basis, states.num_density_components()),
-		uniform_vector_potential_({0.0, 0.0, 0.0}),
-		states_(states)
-	{
-		scalar_potential_.fill(0.0);
-		update_projectors(basis, pot, ions);
-	}
-
-	////////////////////////////////////////////////////////////////////////////////////////////
-		
-	ks_hamiltonian(const basis::real_space & basis, ionic::brillouin const & bzone, states::ks_states const & states, atomic_potential const & pot, systems::ions const & ions,
-								 const vector3<double> & exchange_coefficient, wannier::tdmlwf_trans mlwf, bool use_ace = false, bool use_cutoff = false, double const epsilon = 0.0):
-		exchange_(basis.cell(), bzone, exchange_coefficient, mlwf, use_ace, use_cutoff, epsilon),
+								 const double exchange_coefficients, bool use_ace = false, std::optional<wannier::tdmlwf_trans> mlwf = std::nullopt, double const epsilon = 0.0):
+		exchange_(basis.cell(), bzone, exchange_coefficients, use_ace, mlwf, epsilon),
 		vxc_(basis, states.num_density_components()),
 		scalar_potential_(basis, states.num_density_components()),
 		uniform_vector_potential_({0.0, 0.0, 0.0}),

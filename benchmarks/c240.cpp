@@ -18,15 +18,20 @@ int main(int argc, char ** argv){
 	int pardomains = 1;
 	bool groundstate_only = false;
 
+	auto functional = options::theory{}.pbe();
+
 	{
 		int opt;
-		while ((opt = getopt(argc, argv, "p:?gs:")) != EOF){
+		while ((opt = getopt(argc, argv, "p:?gs:y")) != EOF){
 			switch(opt){
 			case 'p':
 				pardomains = atoi(optarg);
 				break;
 			case 'g':
 				groundstate_only = true;
+				break;
+			case 'y':
+				functional = options::theory{}.pbe0();
 				break;
 			case '?':
 				std::cerr << "usage is " << std::endl;
@@ -55,7 +60,7 @@ int main(int argc, char ** argv){
 	}
 	
 	if(not groundstate_only){
-		real_time::propagate(ions, electrons, [](auto){}, options::theory{}.pbe(), options::real_time{}.num_steps(100).dt(0.0565_atomictime));
+		real_time::propagate(ions, electrons, [](auto){}, functional, options::real_time{}.num_steps(100).dt(0.0565_atomictime));
 	}
 	
 }

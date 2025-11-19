@@ -143,10 +143,10 @@ private:
 	std::optional<double> dt_;
 	std::optional<int> num_steps_;
 	std::optional<double> epsilon_;
-	std::optional<bool> enforce_cutoff_;
 	std::optional<electron_propagator> prop_;
 	std::optional<ion_dynamics> ion_dynamics_;
 	std::optional<wavefunction_diag> wf_diag_;
+	std::optional<int> mlwf_freq_;
 	observables_type obs_;
 	
 public:
@@ -172,7 +172,7 @@ public:
 		solver.num_steps_ = ceil(pt.in_atomic_units()/dt());
 		return solver;
 	}
-				
+
 	auto num_steps() const {
 		return num_steps_.value_or(100);
 	}
@@ -184,7 +184,7 @@ public:
 	}
 
 	auto epsilon() const {
-		return epsilon_.value_or(15);
+		return epsilon_.value_or(0);
 	}
 
 	auto etrs() {
@@ -231,25 +231,20 @@ public:
         	return solver;
     	}
 
-    	auto tdmlwf() {
+    	auto tdmlwf(int frequency = 1) {
         	real_time solver = *this;
         	solver.wf_diag_ = wavefunction_diag::TDMLWF;
+		solver.mlwf_freq_ = frequency;
         	return solver;
     	}
 
-   	 auto wf_diag_value() const {
+	auto mlwf_freq() const {
+		return mlwf_freq_.value_or(1);
+	}
+
+   	auto wf_diag_value() const {
         	return wf_diag_.value_or(wavefunction_diag::T);
     	}
-
-	 auto enforce_cutoff(bool value) const {
-	 	real_time solver = *this;
-    		solver.enforce_cutoff_ = true;
-    		return solver;
-	}
-
-	auto enforce_cutoff_value() const {
-		return enforce_cutoff_.value_or(false);  
-	}
 
 	auto observables_dipole() {
 		real_time solver = *this;;
@@ -282,6 +277,7 @@ public:
 		utils::save_optional (comm, dirname + "/propagator",     prop_,          error_message);
 		utils::save_optional (comm, dirname + "/ion_dynamics",   ion_dynamics_,  error_message);
 		utils::save_optional (comm, dirname + "/wf_diag",        wf_diag_,       error_message);
+		utils::save_optional (comm, dirname + "/mlwf_freq",      mlwf_freq_,     error_message);
 		utils::save_container(comm, dirname + "/observables",    obs_,           error_message);
 		
 	}

@@ -63,62 +63,35 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 		if (opts.wf_diag_value() == options::real_time::wavefunction_diag::TDMLWF && start_step == 0) { //JLB
 			mlwf_props.set_mlwf_transformer(wannier::tdmlwf_trans(electrons.kpin()[0]));
     			std::ofstream output_file("mlwf_results.dat", std::ios_base::app);
-			mlwf_props.calculate(output_file, -1, electrons.kpin()[0]);
+			mlwf_props.calculate(output_file, -1, electrons.kpin()[0], opts.mlwf_freq());
        			output_file.close();
 		}
 
 		electrons.spin_density() = observables::density::calculate(electrons);
 
 		hamiltonian::self_consistency sc(inter, electrons.states_basis(), electrons.density_basis(), electrons.states().num_density_components(), pert);
-
-		std::unique_ptr<hamiltonian::ks_hamiltonian<complex>> ham;
-
-		if (opts.enforce_cutoff_value()) {
-		// Initialize the Hamiltonian with the MLWF
-			ham = std::make_unique<hamiltonian::ks_hamiltonian<complex>>(
-        		electrons.states_basis(),
-        		electrons.brillouin_zone(),
-        		electrons.states(),
-        		electrons.atomic_pot(),
-        		ions,
-        		sc.exx_coefficients(),
-        		mlwf_props.get_mlwf_transformer(),
-        		/* use_ace = */ opts.propagator() == options::real_time::electron_propagator::CRANK_NICOLSON,
-        		opts.enforce_cutoff_value(),
-        		opts.epsilon()
-    			);
-		} else {
-			// Initialize the Hamiltonian without the MLWF
-			ham = std::make_unique<hamiltonian::ks_hamiltonian<complex>>(
-		        electrons.states_basis(),
-		        electrons.brillouin_zone(),
-        		electrons.states(),
-        		electrons.atomic_pot(),
-        		ions,
-        		sc.exx_coefficients(),
-        		/* use_ace = */ opts.propagator() == options::real_time::electron_propagator::CRANK_NICOLSON
-    			);
-		}
+		hamiltonian::ks_hamiltonian<complex> ham(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(),
+																						 ions, sc.exx_coefficients(), /* use_ace = */ opts.propagator() == options::real_time::electron_propagator::CRANK_NICOLSON, mlwf_props.get_mlwf_transformer(), opts.epsilon());
 
 		hamiltonian::energy energy;
 
 		sc.update_ionic_fields(electrons.states_comm(), ions, electrons.atomic_pot());
-	sc.update_hamiltonian(*ham, energy, electrons.spin_density(), /* time = */ start_step*dt);
+	sc.update_hamiltonian(ham, energy, electrons.spin_density(), /* time = */ start_step*dt);
 
-		ham->exchange().update(electrons);
+		ham.exchange().update(electrons);
 
-		energy.calculate(*ham, electrons);
+		energy.calculate(ham, electrons);
 		energy.ion(ionic::interaction_energy(ions.cell(), ions, electrons.atomic_pot()));
 
-	auto forces = decltype(observables::forces_stress{ions, electrons, *ham, energy}.forces){};
-	if(ion_propagator.needs_force()) forces = observables::forces_stress{ions, electrons, *ham, energy}.forces;
+	auto forces = decltype(observables::forces_stress{ions, electrons, ham, energy}.forces){};
+	if(ion_propagator.needs_force()) forces = observables::forces_stress{ions, electrons, ham, energy}.forces;
 
 		auto current = vector3<double, covariant>{0.0, 0.0, 0.0};
-		if(sc.has_induced_vector_potential()) current = observables::current(ions, electrons, *ham);
+		if(sc.has_induced_vector_potential()) current = observables::current(ions, electrons, ham);
 
-	if(start_step == 0) func(real_time::viewables{false, start_step, start_step*dt, ions, electrons, energy, forces, *ham, pert});
+	if(start_step == 0) func(real_time::viewables{false, start_step, start_step*dt, ions, electrons, energy, forces, ham, pert});
 	if (opts.wf_diag_value() == options::real_time::wavefunction_diag::TDMLWF) { //JLB
-		auto transformer = wannier::tdmlwf_trans(electrons.kpin()[0]); //might have done this previously if starting from GS, so maybe this is a waste but probably doesn't matter too much...
+		auto transformer = wannier::tdmlwf_trans(electrons.kpin()[0]); //might have done this previously if starting from GS, so maybe this is a waste but probably doesn't matter too much
 	        mlwf_props.set_mlwf_transformer(transformer);
 	}
 
@@ -131,34 +104,34 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 
 			switch(opts.propagator()){
 			case options::real_time::electron_propagator::ETRS :
-				etrs(istep*dt, dt, ions, electrons, ion_propagator, forces, current, *ham, sc, energy);
+				etrs(istep*dt, dt, ions, electrons, ion_propagator, forces, current, ham, sc, energy);
 				break;
 			case options::real_time::electron_propagator::CRANK_NICOLSON :
-				crank_nicolson(istep*dt, dt, ions, electrons, ion_propagator, forces, *ham, sc, energy);
+				crank_nicolson(istep*dt, dt, ions, electrons, ion_propagator, forces, ham, sc, energy);
 				break;
 			}
 
 			if (opts.wf_diag_value() == options::real_time::wavefunction_diag::TDMLWF) { //JLB
 				{
     					std::ofstream output_file("mlwf_results.dat", std::ios_base::app);
-			        	mlwf_props.calculate(output_file, istep, electrons.kpin()[0]);
+			        	mlwf_props.calculate(output_file, istep, electrons.kpin()[0], opts.mlwf_freq());
        					output_file.close();
 				}
 			}
 
-			energy.calculate(*ham, electrons);
+			energy.calculate(ham, electrons);
 
-		if(ion_propagator.needs_force()) forces = observables::forces_stress{ions, electrons, *ham, energy}.forces;
+		if(ion_propagator.needs_force()) forces = observables::forces_stress{ions, electrons, ham, energy}.forces;
 
 			//propagate ionic velocities to t + dt
 			ion_propagator.propagate_velocities(dt, ions, forces);
 
 			if(sc.has_induced_vector_potential()) {
-				current = observables::current(ions, electrons, *ham);
+				current = observables::current(ions, electrons, ham);
 				sc.propagate_induced_vector_potential_derivative(dt, current);
 			}
 
-		func(real_time::viewables{istep == numsteps - 1, istep + 1, (istep + 1.0)*dt, ions, electrons, energy, forces, *ham, pert});
+		func(real_time::viewables{istep == numsteps - 1, istep + 1, (istep + 1.0)*dt, ions, electrons, energy, forces, ham, pert});
 
 			auto new_time = std::chrono::high_resolution_clock::now();
 			std::chrono::duration<double> elapsed_seconds = new_time - iter_start_time;
