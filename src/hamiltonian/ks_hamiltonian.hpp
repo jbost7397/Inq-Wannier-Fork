@@ -91,7 +91,7 @@ public:
 	////////////////////////////////////////////////////////////////////////////////////////////
 		
 	ks_hamiltonian(const basis::real_space & basis, ionic::brillouin const & bzone, states::ks_states const & states, atomic_potential const & pot, systems::ions const & ions,
-								 const double exchange_coefficients, bool use_ace = false, std::optional<wannier::tdmlwf_trans> mlwf = std::nullopt, double const epsilon = 0.0):
+								 const vector3<double> & exchange_coefficients, bool use_ace = false, std::optional<wannier::tdmlwf_trans> mlwf = std::nullopt, double const epsilon = 0.0):
 		exchange_(basis.cell(), bzone, exchange_coefficients, use_ace, mlwf, epsilon),
 		vxc_(basis, states.num_density_components()),
 		scalar_potential_(basis, states.num_density_components()),

@@ -136,7 +136,7 @@ int main(int argc, char ** argv){
         }
 
 	auto kick = perturbations::kick(ions.cell(), {0.001, 0.0, 0.0});
-	hamiltonian::ks_hamiltonian<double> ham(el.states_basis(), el.brillouin_zone(), el.states(), el.atomic_pot(), ions, 0.0, /* use_ace = */ true);
+	hamiltonian::ks_hamiltonian<double> ham(el.states_basis(), el.brillouin_zone(), el.states(), el.atomic_pot(), ions, {0.0, 0.0, 0.0}, /* use_ace = */ true);
 
 	gpu::array<double, 1> time(niter);
 	//gpu::array<double, 1> Jx_array(niter);
