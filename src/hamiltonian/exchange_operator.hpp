@@ -168,7 +168,6 @@ namespace hamiltonian {
 
 		//////////////////////////////////////////////////////////////////////////////////
 
-<<<<<<< HEAD
 		template <class HFType, class HFOccType, class KptType, class IdxType, class PhiType, class ExxphiType>
 		void block_exchange_cut(double factor, HFType const & hf, HFOccType const & hfocc, KptType const & kpt, IdxType const & idx, PhiType const & phi, ExxphiType & exxphi, int offset) const {
 

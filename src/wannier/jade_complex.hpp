@@ -369,7 +369,7 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
      } //while 
     } //scope
 
-    //eigenvalue array
+    //diag value array
     adiag.reextent({n, mloc}); 
     gpu::run(n, mloc, [adiag_int=begin(adiag)] GPU_LAMBDA (auto k, auto i) {
       adiag_int[k][i] = complex(0.0, 0.0);
