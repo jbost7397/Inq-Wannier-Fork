@@ -33,7 +33,7 @@ namespace hamiltonian {
 		gpu::array<double, 1> occupations_;
 		gpu::array<vector3<double, covariant>, 1> kpoints_;
 		gpu::array<int, 1> kpoint_indices_;
-		std::optional<basis::field_set<basis::real_space, complex, parallel::arbitrary_partition>> orbitals_;
+		mutable std::optional<basis::field_set<basis::real_space, complex, parallel::arbitrary_partition>> orbitals_;
 		std::vector<states::orbital_set<basis::real_space, complex>> ace_orbitals_;
 		vector3<double> exchange_coefficients_;
 		bool use_ace_;
@@ -168,6 +168,7 @@ namespace hamiltonian {
 
 		//////////////////////////////////////////////////////////////////////////////////
 
+<<<<<<< HEAD
 		template <class HFType, class HFOccType, class KptType, class IdxType, class PhiType, class ExxphiType>
 		void block_exchange_cut(double factor, HFType const & hf, HFOccType const & hfocc, KptType const & kpt, IdxType const & idx, PhiType const & phi, ExxphiType & exxphi, int offset) const {
 
@@ -224,11 +225,11 @@ namespace hamiltonian {
 				auto occ_it = parallel::array_iterator(orbitals_->set_part(), orbitals_->set_comm(), occupations_);
 				auto kpt_it = parallel::array_iterator(orbitals_->set_part(), orbitals_->set_comm(), kpoints_);
 				auto idx_it = parallel::array_iterator(orbitals_->set_part(), orbitals_->set_comm(), kpoint_indices_);
-				auto hfo_it = parallel::block_array_iterator(orbitals_->basis().local_size(), orbitals_->set_part(), orbitals_->set_comm(), orbitals_->matrix());
-				auto offset_counter = 0;
-				for(; hfo_it != hfo_it.end(); ++hfo_it){
-					if(epsilon_ > 0.0) block_exchange_cut(factor, *hfo_it, *occ_it, *kpt_it, *idx_it, phi, exxphi, offset_counter);
-					else block_exchange(factor, *hfo_it, *occ_it, *kpt_it, *idx_it, phi, exxphi);
+                                auto offset_counter = 0;
+				for(auto ipart = 0; ipart < orbitals_->set_comm().size(); ipart++) {
+					if(epsilon_ > 0.0) block_exchange_cut(factor, orbitals_->matrix(), *occ_it, *kpt_it, *idx_it, phi, exxphi, offset_counter);
+                                        else block_exchange(factor, orbitals_->matrix(), *occ_it, *kpt_it, *idx_it, phi, exxphi);
+                                        orbitals_->shift_states();
 					++occ_it;
 					++kpt_it;
 					++idx_it;
