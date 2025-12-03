@@ -205,7 +205,7 @@ public:
 		return calc_forces_.value_or(false);
 	}
 
-	auto no_hf_update() {
+	auto no_hf_update() {   //use .no_hf_update() in chain to converge GGA contribution first. default now is to include exx from start  
 		ground_state solver = *this;;
 		solver.update_hf_ = false;	
 		return solver;
