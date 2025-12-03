@@ -548,7 +548,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG){
 		ions.insert(ionic::species("C").pseudo_file(config::path::unit_tests_data() + "C_PAW.xml"), {0.0_b, 0.0_b, -10.0_b});
 		systems::electrons electrons(ions, input::kpoints::gamma(), options::electrons{}.cutoff(300.0_Ha).extra_states(0));
 
-		hamiltonian::ks_hamiltonian<double> ham(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(), ions, 0.0);
+		hamiltonian::ks_hamiltonian<double> ham(electrons.states_basis(), electrons.brillouin_zone(), electrons.states(), electrons.atomic_pot(), ions, {0.0, 0.0, 0.0});
 
 		auto overlap_operator = [&ham](auto const & phi ){
 			return ham.overlap(phi);

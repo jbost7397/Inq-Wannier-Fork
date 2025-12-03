@@ -131,7 +131,7 @@ public:
 		
 		double old_exe = ham_.exchange().update(electrons);
 		double exe_diff = fabs(old_exe);
-		auto update_hf = false;
+		auto update_hf = true;
 		
 		electrons.full_comm().barrier();
 		auto iter_start_time = std::chrono::high_resolution_clock::now();
