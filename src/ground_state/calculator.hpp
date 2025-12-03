@@ -131,7 +131,7 @@ public:
 		
 		double old_exe = ham_.exchange().update(electrons);
 		double exe_diff = fabs(old_exe);
-		auto update_hf = true;
+		//auto update_hf = true;
 		
 		electrons.full_comm().barrier();
 		auto iter_start_time = std::chrono::high_resolution_clock::now();
@@ -152,7 +152,8 @@ public:
 				electrons.update_occupations(electrons.eigenvalues());
 			}
 			
-			if(update_hf){
+			//if(update_hf){
+			if(solver_.update_hf()) {
 				auto exe = ham_.exchange().update(electrons);
 				exe_diff = fabs(exe - old_exe);
 				old_exe = exe;
@@ -219,7 +220,7 @@ public:
 						converged = true;
 						break;
 					}
-					if(conv_count > 2) update_hf = true;
+					if(conv_count > 2) solver_.set_update_hf(true); //if(conv_count > 2) update_hf = true;
 				} else {
 					conv_count = 0; 
 				}

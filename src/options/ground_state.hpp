@@ -99,6 +99,7 @@ private:
 	std::optional<bool> subspace_diag_;
 	std::optional<int> max_steps_;
 	std::optional<bool> calc_forces_;
+	std::optional<bool> update_hf_;
 	
 public:
 
@@ -204,6 +205,20 @@ public:
 		return calc_forces_.value_or(false);
 	}
 
+	auto no_hf_update() {
+		ground_state solver = *this;;
+		solver.update_hf_ = false;	
+		return solver;
+	}
+
+	auto update_hf() const {
+		return update_hf_.value_or(true);
+	}
+
+	void set_update_hf(bool value) { //set to true always once convergence is reached
+		update_hf_ = value;
+	}
+
 	void save(parallel::communicator & comm, std::string const & dirname) const {
 		auto error_message = "INQ error: Cannot save the options::ground_state to directory '" + dirname + "'.";
 
@@ -216,6 +231,7 @@ public:
 		utils::save_optional(comm, dirname + "/subspace_diag",    subspace_diag_, error_message);
 		utils::save_optional(comm, dirname + "/max_steps",        max_steps_,     error_message);
 		utils::save_optional(comm, dirname + "/calc_forces",      calc_forces_,   error_message);
+		utils::save_optional(comm, dirname + "/update_hf", 	  update_hf_, 	  error_message);
 	}
 	
 	static auto load(std::string const & dirname) {
@@ -229,6 +245,7 @@ public:
 		utils::load_optional(dirname + "/subspace_diag",    opts.subspace_diag_);
 		utils::load_optional(dirname + "/max_steps",        opts.max_steps_);
 		utils::load_optional(dirname + "/calc_forces",      opts.calc_forces_);
+		utils::load_optional(dirname + "/update_hf", 	    opts.update_hf_);
 		
 		return opts;
 	}
