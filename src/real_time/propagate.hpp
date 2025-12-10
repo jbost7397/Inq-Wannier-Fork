@@ -20,11 +20,18 @@
 #include <systems/electrons.hpp>
 #include <real_time/crank_nicolson.hpp>
 #include <real_time/etrs.hpp>
+#include <real_time/imetrs.hpp>
 #include <real_time/viewables.hpp>
 #include <utils/profiling.hpp>
 #include <wannier/tdmlwf_trans.hpp>
-
+#include <operations/overlap.hpp>
+#include <matrix/diagonalize.hpp>
 #include <chrono>
+#include <operations/overlap.hpp>
+
+#include <sstream>
+#include <iomanip>
+#include <fstream>
 
 namespace inq {
 namespace real_time {
@@ -99,6 +106,9 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 	if(console) console->info("step {:9d} :  t =  {:9.3f}  e = {:.12f}", start_step, start_step*dt, energy.total());
 
 		auto iter_start_time = std::chrono::high_resolution_clock::now();
+		double last_e = energy.total();
+                int small_dE_count = 0;
+                int last_completed_step = start_step;
 	for(int istep = start_step; istep < numsteps; istep++){
 			CALI_CXX_MARK_SCOPE("time_step");
 
@@ -109,6 +119,9 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 			case options::real_time::electron_propagator::CRANK_NICOLSON :
 				crank_nicolson(istep*dt, dt, ions, electrons, ion_propagator, forces, ham, sc, energy);
 				break;
+                        case options::real_time::electron_propagator::ImETRS :
+                                im_etrs(istep*dt, dt, ions, electrons, ion_propagator, forces, current, ham, sc, energy);
+                                break;
 			}
 
 			if (opts.wf_diag_value() == options::real_time::wavefunction_diag::TDMLWF) { //JLB
@@ -120,7 +133,35 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 			}
 
 			energy.calculate(ham, electrons);
+			//VS: if statement to stop imetrs after threshold
+			if (opts.propagator() == options::real_time::electron_propagator::ImETRS &&
+			    opts.imetrs_thresh_enabled()) {
 
+      				  double const e  = energy.total();
+				  double const dE = std::abs(e - last_e);
+		                  last_e = e;
+
+      				  if (dE < opts.imetrs_thresh_tol_value()) {
+             				   small_dE_count++;
+    			          } else {
+               				   small_dE_count = 0;
+                                  }
+
+		                  if (small_dE_count >= opts.imetrs_thresh_patience_value()) {
+			                last_completed_step = istep + 1;
+
+      			                if (console) console->info(
+     			                   "ImETRS stopping early: |ΔE| < {:.3e} Ha for {} steps (last |ΔE|={:.3e} Ha)",
+                      			    opts.imetrs_thresh_tol_value(),
+                 		            opts.imetrs_thresh_patience_value(),
+                     			    dE
+                );
+
+                // ensure callback sees a final frame marked finished=true
+                func(real_time::viewables{true, istep + 1, (istep + 1.0)*dt, ions, electrons, energy, forces, ham, pert});
+                break;
+        }
+}
 		if(ion_propagator.needs_force()) forces = observables::forces_stress{ions, electrons, ham, energy}.forces;
 
 			//propagate ionic velocities to t + dt
@@ -135,12 +176,38 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 
 			auto new_time = std::chrono::high_resolution_clock::now();
 			std::chrono::duration<double> elapsed_seconds = new_time - iter_start_time;
-
+                        last_completed_step = istep + 1;
 			if(console) console->info("step {:9d} :  t =  {:9.3f}  e = {:.12f}  wtime = {:9.3f}", istep + 1, (istep + 1)*dt, energy.total(), elapsed_seconds.count());
 
 			iter_start_time = new_time;
 		}
 
+// Final Ritz/subspace eigenvalues (only for ImETRS, only if enabled)
+if (opts.propagator() == options::real_time::electron_propagator::ImETRS &&
+    opts.final_subspace_diag_value()) {
+
+        if (console) console->info("ImETRS: final subspace diagonalization (Ritz eigenvalues)");
+
+        double const tfinal = last_completed_step * dt; //VS: changed from double const tfinal = numsteps * dt incase imetrs finishes before num steps
+
+        for (int ik = 0; ik < electrons.kpin_size(); ++ik) {
+                auto & phi = electrons.kpin()[ik];
+
+auto Hsub = operations::overlap(phi, ham(phi)); // distributed
+auto evals = matrix::diagonalize(Hsub);
+operations::rotate(Hsub, phi);
+                   if (console) { 
+                        std::ostringstream oss;
+                        oss.setf(std::ios::scientific);
+                        oss << std::setprecision(10);
+                        oss << "ImETRS eigs (t=" << tfinal << ", ik=" << ik << "):";
+                        for (int ist = 0; ist < evals.size(); ++ist) {
+                                oss << " " << evals[ist];
+                        }
+                        console->info("{}", oss.str());
+                }
+        }
+}
 		if(console) console->trace("real-time propagation ended normally");
 	}
 }

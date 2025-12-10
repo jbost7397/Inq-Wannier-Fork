@@ -23,12 +23,13 @@ class real_time {
 
 public:
 
-	enum class electron_propagator { ETRS, CRANK_NICOLSON };
+	enum class electron_propagator { ETRS, CRANK_NICOLSON , ImETRS };
 	
 	template<class OStream>
 	friend OStream & operator<<(OStream & out, electron_propagator const & self){
 		if(self == electron_propagator::ETRS)              out << "etrs";
 		if(self == electron_propagator::CRANK_NICOLSON)    out << "crank-nicolson";
+		if(self == electron_propagator::ImETRS)              out << "im_etrs";
 		return out;
 	}
 
@@ -40,6 +41,8 @@ public:
 			self = electron_propagator::ETRS;
 		} else if(readval == "crank-nicolson"){
 			self = electron_propagator::CRANK_NICOLSON;
+		} else if(readval == "im_etrs"){
+                        self = electron_propagator::ImETRS;
 		} else {
 			throw std::runtime_error("INQ error: Invalid propagation algorithm");
 		}
@@ -148,6 +151,10 @@ private:
 	std::optional<wavefunction_diag> wf_diag_;
 	std::optional<int> mlwf_freq_;
 	observables_type obs_;
+        std::optional<bool> final_subspace_diag_; //VS: needed for final imaginary etrs diagonalization
+        std::optional<double> stop_dE_; //VS: threshold energy for ImETRS
+	std::optional<int>    stop_patience_; //VS: num of consecutive steps at  threshhold before stopping
+
 	
 public:
 	
@@ -198,7 +205,40 @@ public:
 		solver.prop_ = electron_propagator::CRANK_NICOLSON;
 		return solver;
 	}
-	
+        auto im_etrs() {
+                real_time solver = *this;;
+                solver.prop_ = electron_propagator::ImETRS;
+                return solver;
+        }
+	auto final_subspace_diag(bool on = true) const {
+                real_time solver = *this;;
+                solver.final_subspace_diag_ = on;
+                return solver;
+        }
+
+        auto final_subspace_diag_value() const {
+                return final_subspace_diag_.value_or(false);
+        }
+// final diagonalization for Im_etrs
+        auto imetrs_thresh(quantity<magnitude::energy> tol, int patience = 5) const {
+                real_time solver = *this;
+                solver.stop_dE_ = tol.in_atomic_units();
+                solver.stop_patience_ = patience;
+                return solver;
+         }
+ 
+        auto imetrs_thresh_enabled() const {
+                return stop_dE_.has_value();
+        }
+
+        auto imetrs_thresh_tol_value() const {
+                return stop_dE_.value_or(0.0);
+        }
+
+        auto imetrs_thresh_patience_value() const {
+                return stop_patience_.value_or(1);
+        }
+
 	auto propagator() const {
 		return prop_.value_or(electron_propagator::ETRS);
 	}
@@ -279,7 +319,9 @@ public:
 		utils::save_optional (comm, dirname + "/wf_diag",        wf_diag_,       error_message);
 		utils::save_optional (comm, dirname + "/mlwf_freq",      mlwf_freq_,     error_message);
 		utils::save_container(comm, dirname + "/observables",    obs_,           error_message);
-		
+		utils::save_optional (comm, dirname + "/final_subspace_diag", final_subspace_diag_, error_message);
+                utils::save_optional (comm, dirname + "/stop_dE",        stop_dE_,        error_message);
+                utils::save_optional (comm, dirname + "/stop_patience",  stop_patience_,  error_message);
 	}
 
 	static auto load(std::string const & dirname) {
@@ -291,7 +333,9 @@ public:
 		utils::load_optional(dirname + "/ion_dynamics",   opts.ion_dynamics_);
 		utils::load_optional(dirname + "/wf_diag",   	  opts.wf_diag_);
 		utils::load_container(dirname + "/observables",   opts.obs_);
-		
+		utils::load_optional(dirname + "/final_subspace_diag", opts.final_subspace_diag_);
+                utils::load_optional(dirname + "/stop_dE",       opts.stop_dE_);
+                utils::load_optional(dirname + "/stop_patience", opts.stop_patience_);
 		return opts;
 	}
 		
