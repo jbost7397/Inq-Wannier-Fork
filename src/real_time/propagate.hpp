@@ -20,6 +20,7 @@
 #include <systems/electrons.hpp>
 #include <real_time/crank_nicolson.hpp>
 #include <real_time/etrs.hpp>
+#include <real_time/im_etrs.hpp>
 #include <real_time/viewables.hpp>
 #include <utils/profiling.hpp>
 #include <wannier/tdmlwf_trans.hpp>
@@ -99,6 +100,11 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 	if(console) console->info("step {:9d} :  t =  {:9.3f}  e = {:.12f}", start_step, start_step*dt, energy.total());
 
 		auto iter_start_time = std::chrono::high_resolution_clock::now();
+
+                double last_etot = energy.total(); //VS
+                int conv_count = 0;
+                int last_step = start_step;
+
 	for(int istep = start_step; istep < numsteps; istep++){
 			CALI_CXX_MARK_SCOPE("time_step");
 
@@ -108,6 +114,9 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 				break;
 			case options::real_time::electron_propagator::CRANK_NICOLSON :
 				crank_nicolson(istep*dt, dt, ions, electrons, ion_propagator, forces, ham, sc, energy);
+				break;
+			case options::real_time::electron_propagator::IM_ETRS :
+				im_etrs(istep*dt, dt, ions, electrons, ion_propagator, forces, current, ham, sc, energy);
 				break;
 			}
 
@@ -120,6 +129,45 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 			}
 
 			energy.calculate(ham, electrons);
+
+		if (opts.propagator() == options::real_time::electron_propagator::IM_ETRS && opts.im_etrs_thresh()) {
+
+			double etot = energy.total();
+		        if (fabs(etot - last_etot) < opts.im_etrs_etol()) {
+				conv_count++;
+			} else {
+				conv_count = 0;
+			}
+
+		        if (conv_count == opts.im_etrs_covg_steps()) {
+				last_step = istep + 1;
+
+				if (console) console->info("Change in energy less than {:.8f} for {:2d} steps", opts.im_etrs_etol(), opts.im_etrs_covg_steps());
+      			        if (console) console->info("IM_ETRS converged at step {:5d} with a total energy of {:.8f}", last_step, etot);
+
+	        	        func(real_time::viewables{true, last_step, (istep + 1.0)*dt, ions, electrons, energy, forces, ham, pert});
+
+				for (int ik = 0; ik < electrons.kpin_size(); ++ik) {
+					auto & phi = electrons.kpin()[ik];
+         	       	 		auto Hsub = operations::overlap(phi, ham(phi));
+			                auto evals = matrix::diagonalize(Hsub);
+			                operations::rotate(Hsub, phi);
+					auto kpt = electrons.brillouin_zone().kpoint(ik) / (2.0 * M_PI);
+					if (console) {
+					    	if (electrons.brillouin_zone().size() > 1) {						 
+            					   console->info("k-point {:4d}  ({: .6f}, {: .6f}, {: .6f})", ik + 1, kpt[0], kpt[1], kpt[2]);
+						} 
+        					for (int st = 0; st < evals.size(); ++st) {
+					            double e_Ha = real(evals[st]);
+					            double e_eV = e_Ha * 27.211383;
+					            console->info("    st = {:4d}  evalue = {:18.12f} Ha ({:18.12f} eV)", st + 1, e_Ha, e_eV);
+						}
+					}	
+			        }
+        	        	break;
+        		}
+			last_etot = etot; 
+		}			
 
 		if(ion_propagator.needs_force()) forces = observables::forces_stress{ions, electrons, ham, energy}.forces;
 
@@ -135,8 +183,30 @@ void propagate(systems::ions & ions, systems::electrons & electrons, ProcessFunc
 
 			auto new_time = std::chrono::high_resolution_clock::now();
 			std::chrono::duration<double> elapsed_seconds = new_time - iter_start_time;
+			last_step++;
 
+			
 			if(console) console->info("step {:9d} :  t =  {:9.3f}  e = {:.12f}  wtime = {:9.3f}", istep + 1, (istep + 1)*dt, energy.total(), elapsed_seconds.count());
+
+                        if (opts.propagator() == options::real_time::electron_propagator::IM_ETRS && istep == numsteps - 1) {
+                                for (int ik = 0; ik < electrons.kpin_size(); ++ik) {
+                                        auto & phi = electrons.kpin()[ik];
+                                        auto Hsub = operations::overlap(phi, ham(phi));
+                                        auto evals = matrix::diagonalize(Hsub);
+                                        operations::rotate(Hsub, phi);
+                                        auto kpt = electrons.brillouin_zone().kpoint(ik) / (2.0 * M_PI);
+                                        if (console) {
+                                                if (electrons.brillouin_zone().size() > 1) {
+                                                   console->info("k-point {:4d}  ({: .6f}, {: .6f}, {: .6f})", ik + 1, kpt[0], kpt[1], kpt[2]);
+                                                }
+                                                for (int st = 0; st < evals.size(); ++st) {
+                                                    double e_Ha = real(evals[st]);
+                                                    double e_eV = e_Ha * 27.211383;
+                                                    console->info("    st = {:4d}  evalue = {:18.12f} Ha ({:18.12f} eV)", st + 1, e_Ha, e_eV);
+                                                }
+                                        }
+                                }
+                        }
 
 			iter_start_time = new_time;
 		}

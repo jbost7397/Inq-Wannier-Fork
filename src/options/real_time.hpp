@@ -23,12 +23,13 @@ class real_time {
 
 public:
 
-	enum class electron_propagator { ETRS, CRANK_NICOLSON };
+	enum class electron_propagator { ETRS, CRANK_NICOLSON, IM_ETRS };
 	
 	template<class OStream>
 	friend OStream & operator<<(OStream & out, electron_propagator const & self){
 		if(self == electron_propagator::ETRS)              out << "etrs";
 		if(self == electron_propagator::CRANK_NICOLSON)    out << "crank-nicolson";
+		if(self == electron_propagator::IM_ETRS)	   out << "im-etrs";
 		return out;
 	}
 
@@ -40,6 +41,8 @@ public:
 			self = electron_propagator::ETRS;
 		} else if(readval == "crank-nicolson"){
 			self = electron_propagator::CRANK_NICOLSON;
+		} else if(readval == "im-etrs"){
+			self = electron_propagator::IM_ETRS;
 		} else {
 			throw std::runtime_error("INQ error: Invalid propagation algorithm");
 		}
@@ -147,6 +150,8 @@ private:
 	std::optional<ion_dynamics> ion_dynamics_;
 	std::optional<wavefunction_diag> wf_diag_;
 	std::optional<int> mlwf_freq_;
+	std::optional<double> im_etrs_tol_;
+	std::optional<int> im_etrs_steps_;
 	observables_type obs_;
 	
 public:
@@ -191,6 +196,12 @@ public:
 		real_time solver = *this;;
 		solver.prop_ = electron_propagator::ETRS;
 		return solver;
+	}
+
+	auto im_etrs() {
+		real_time solver = *this;;
+		solver.prop_ = electron_propagator::IM_ETRS;
+		return solver;	
 	}
 
 	auto crank_nicolson() const {
@@ -246,6 +257,25 @@ public:
         	return wf_diag_.value_or(wavefunction_diag::T);
     	}
 
+	auto im_etrs_thresh(quantity<magnitude::energy> tol, int steps) const {
+                real_time solver = *this;
+                solver.im_etrs_tol_ = tol.in_atomic_units();
+                solver.im_etrs_steps_ = steps;
+                return solver;
+         } 
+
+	auto im_etrs_thresh() const {
+		return im_etrs_tol_.has_value();
+	}
+	
+	auto im_etrs_etol() const {
+		return im_etrs_tol_.value_or(1e-6);
+	}	
+
+	auto im_etrs_covg_steps() const {
+		return im_etrs_steps_.value_or(5);
+	}
+
 	auto observables_dipole() {
 		real_time solver = *this;;
 		solver.obs_.insert(observables::dipole);
@@ -278,6 +308,8 @@ public:
 		utils::save_optional (comm, dirname + "/ion_dynamics",   ion_dynamics_,  error_message);
 		utils::save_optional (comm, dirname + "/wf_diag",        wf_diag_,       error_message);
 		utils::save_optional (comm, dirname + "/mlwf_freq",      mlwf_freq_,     error_message);
+		utils::save_optional (comm, dirname + "/im_etrs_tol", 	 im_etrs_tol_,   error_message);
+                utils::save_optional (comm, dirname + "/im_etrs_steps",  im_etrs_steps_, error_message);
 		utils::save_container(comm, dirname + "/observables",    obs_,           error_message);
 		
 	}
@@ -290,6 +322,8 @@ public:
 		utils::load_optional(dirname + "/propagator",     opts.prop_);
 		utils::load_optional(dirname + "/ion_dynamics",   opts.ion_dynamics_);
 		utils::load_optional(dirname + "/wf_diag",   	  opts.wf_diag_);
+                utils::load_optional(dirname + "/im_etrs_tol",    opts.im_etrs_tol_);
+                utils::load_optional(dirname + "/im_etrs_steps",    opts.im_etrs_steps_);
 		utils::load_container(dirname + "/observables",   opts.obs_);
 		
 		return opts;
