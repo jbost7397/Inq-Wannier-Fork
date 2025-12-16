@@ -205,14 +205,14 @@ public:
 		return calc_forces_.value_or(false);
 	}
 
-	auto no_hf_update() {   //use .no_hf_update() in chain to converge GGA contribution first. default now is to include exx from start  
+	auto hf_update() {   //use .hf_update() in chain to include exx from start  
 		ground_state solver = *this;;
-		solver.update_hf_ = false;	
+		solver.update_hf_ = true;	
 		return solver;
 	}
 
 	auto update_hf() const {
-		return update_hf_.value_or(true);
+		return update_hf_.value_or(false);
 	}
 
 	void set_update_hf(bool value) { //set to true always once convergence is reached
