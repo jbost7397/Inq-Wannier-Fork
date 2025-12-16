@@ -38,6 +38,7 @@
 #include <ground_state/eigenvalue_output.hpp>
 #include <ground_state/results.hpp>
 #include <ground_state/subspace_diagonalization.hpp>
+#include <wannier/tdmlwf_trans.hpp>
 
 #include<tinyformat/tinyformat.h>
 
@@ -151,7 +152,13 @@ public:
 				}
 				electrons.update_occupations(electrons.eigenvalues());
 			}
-			
+		
+			/*if (solver_.wf_diag_value() == options::ground_state::wavefunction_diag::MLWF && solver_.update_hf()) { //CS should run only with cutoff method
+			        wannier::tdmlwf_trans mlwf_transformer(electrons.kpin()[0]);
+				mlwf_transformer.update(electrons.kpin()[0], electrons.full_comm());
+			        mlwf_transformer.compute_transform(1e-8);
+                	}*/
+				
 			//if(update_hf){
 			if(solver_.update_hf()) {
 				auto exe = ham_.exchange().update(electrons);
@@ -254,7 +261,27 @@ public:
 		for(int idir = 0; idir < ions_.cell().periodicity(); idir++) res.dipole[idir] = 0.0;
 
 		res.magnetization = observables::total_magnetization(electrons.spin_density());
-		
+
+                if (solver_.wf_diag_value() == options::ground_state::wavefunction_diag::MLWF) { //CS use to get Wannier ground state 
+                	wannier::tdmlwf_trans mlwf_transformer(electrons.kpin()[0]);
+                        mlwf_transformer.update(electrons.kpin()[0], electrons.full_comm());
+                        mlwf_transformer.compute_transform(1e-8);
+		        if (console && electrons.full_comm().rank() == 0) {
+
+ 			       auto & phi = electrons.kpin()[0];
+			       console->info("MLWF centers and spreads:");
+    	   		       for (int i = 0; i < phi.set_size(); ++i) {
+			            auto center = mlwf_transformer.center(i, phi.basis().cell());
+			            auto spread = mlwf_transformer.spread(i, phi.basis().cell());
+            			    console->info("  WF {:4d}: {:14.8f} {:14.8f} {:14.8f}   Spread: {:14.8f}",
+		                    i + 1, center[0], center[1], center[2], spread);
+        		       }
+
+		              auto dipole = mlwf_transformer.dipole(phi.basis().cell());
+			      console->info("Electronic dipole (MLWF): {:14.8f} {:14.8f} {:14.8f}",dipole[0], dipole[1], dipole[2]);
+    			}
+		}		
+
 		if(solver_.verbose_output() and console) console->trace("ground-state calculation ended normally");
 		return res;
 	}
