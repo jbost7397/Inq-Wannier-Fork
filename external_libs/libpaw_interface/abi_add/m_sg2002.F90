@@ -1,0 +1,2296 @@
+!!****m* ABINIT/m_sg2002
+!! NAME
+!!  m_sg2002
+!!
+!! FUNCTION
+!!
+!! COPYRIGHT
+!!  Copyright (C) 2002-2007 Stefan Goedecker, CEA Grenoble
+!!  Copyright (C) 2014-2022 ABINIT group (XG)
+!!  This file is distributed under the terms of the
+!!  GNU General Public License, see ~abinit/COPYING
+!!  or http://www.gnu.org/copyleft/gpl.txt .
+!!
+!! NOTES
+!!
+!! SOURCE
+
+#include "libpaw.h"
+
+module m_sg2002
+
+ USE_DEFS
+ USE_MSG_HANDLING
+ USE_MPI_WRAPPERS
+ USE_MEMORY_PROFILING
+
+! use m_time,         only : timab
+! use m_fstrings,     only : itoa
+! use m_fftcore,      only : sphere_fft1, fill, scramble, switchreal, switch, mpiswitch,&
+!&                           unfill, unscramble, unswitchreal, unswitch, unmpiswitch,&
+!&                           fill_cent, switch_cent, switchreal_cent, mpiswitch_cent, multpot, addrho,&
+!&                           unfill_cent, unswitchreal_cent, unswitch_cent, unmpiswitch_cent, unscramble,&
+!&                           mpifft_fg2dbox, mpifft_dbox2fr, mpifft_fr2dbox, mpifft_dbox2fg
+
+ use defs_fftdata
+ use m_fftcore,      only : fill, scramble, switchreal, switch, mpiswitch,&
+&                           unfill, unscramble, unswitchreal, unswitch, unmpiswitch,&
+&                           mpifft_fg2dbox, mpifft_dbox2fr, mpifft_fr2dbox, mpifft_dbox2fg
+
+ implicit none
+
+ private
+
+ ! Public API:
+ public :: sg2002_mpifourdp    ! MPI-FFT of densities and potentials.
+
+! Low-level tools.
+! These procedure shouls be accessed via a wrapper that selected the library via fftalg
+ public :: sg2002_back           ! G --> R for densities and potentials
+ public :: sg2002_forw           ! R --> G for densities and potentials
+
+contains
+!!***
+
+!!****f* m_sg2002/sg2002_back
+!! NAME
+!!  sg2002_back
+!!
+!! FUNCTION
+!!   CALCULATES THE DISCRETE FOURIER TRANSFORM  in parallel using MPI/OpenMP
+!!
+!!   ZR(I1,I2,I3)= \sum_(j1,j2,j3) EXP(isign*i*2*pi*(j1*i1/n1+j2*i2/n2+j3*i3/n3)) ZF(j1,j3,j2)
+!!
+!! Adopt standard convention that isign=1 for backward transform
+!!
+!! INPUTS:
+!!    cplex=1 for real --> complex, 2 for complex --> complex
+!!    ZF: input array in G-space (note the switch of i2 and i3)
+!!
+!!         real(F(i1,i3,i2,idat))=ZF(1,i1,i3,i2,idat)
+!!         imag(F(i1,i3,i2,idat))=ZF(2,i1,i3,i2,idat)
+!!
+!!         i1=1,n1 , i2=1,n2 , i3=1,n3 , idat=1,ndat
+!! OUTPUTS:
+!!    ZR: output array in R space.
+!!
+!!         ZR(1,i1,i2,i3,idat)=real(R(i1,i2,i3,idat))
+!!         ZR(2,i1,i2,i3,idat)=imag(R(i1,i2,i3,idat))
+!!
+!!         i1=1,n1 , i2=1,n2 , i3=1,n3 , idat=1,ndat
+!!
+!!    nproc_fft: number of processors used as returned by MPI_COMM_SIZE
+!!    me_fft: [0:nproc_fft-1] number of processor as returned by MPI_COMM_RANK
+!!    n1,n2,n3: logical dimension of the transform. As transform lengths
+!!              most products of the prime factors 2,3,5 are allowed.
+!!              The detailed table with allowed transform lengths can
+!!              be found in subroutine CTRIG
+!!    nd1,nd2,nd3: Dimension of ZF and ZR
+!!    nd2proc=((nd2-1)/nproc_fft)+1 maximal number of 2nd dim slices
+!!    nd3proc=((nd3-1)/nproc_fft)+1 maximal number of 3rd dim slices
+!!
+!! NOTES:
+!!   The maximum number of processors that can reasonably be used is max(n2,n3)
+!!   It is very important to find the optimal
+!!   value of NCACHE. NCACHE determines the size of the work array ZW, that
+!!   has to fit into cache. It has therefore to be chosen to equal roughly
+!!    half the size of the physical cache in units of real*8 numbers.
+!!   The optimal value of ncache can easily be determined by numerical
+!!   experimentation. A too large value of ncache leads to a dramatic
+!!   and sudden decrease of performance, a too small value to a to a
+!!   slow and less dramatic decrease of performance. If NCACHE is set
+!!   to a value so small, that not even a single one dimensional transform
+!!   can be done in the workarray zw, the program stops with an error message.
+!!
+!! SOURCE
+
+subroutine sg2002_back(cplex,ndat,n1,n2,n3,nd1,nd2,nd3,nd1eff,nd2proc,nd3proc,option,zf,zr,comm_fft)
+
+ implicit none
+
+!Arguments ------------------------------------
+! real space input
+ integer,intent(in) :: cplex,ndat,n1,n2,n3,nd1,nd2,nd3,nd1eff,nd2proc,nd3proc,option,comm_fft
+ real(dp),intent(in) :: zf(2,nd1,nd3,nd2proc,ndat)
+ real(dp),intent(out) :: zr(2,nd1eff,nd2,nd3proc,ndat)
+
+!Local variables-------------------------------
+!scalars
+ integer :: i,j,i1,ic1,ic2,ic3,idat,ierr,includelast,inzee,j2,j2st,j3,jeff,jp2st,lot,lzt
+ integer :: ma,mb,n1dfft,n1eff,n2eff,n1zt,ncache,nnd3,nproc_fft,me_fft
+ character(len=500) :: msg
+!arrays
+ real(dp), allocatable :: zt(:,:,:)  ! work arrays for transpositions
+ real(dp), allocatable :: zmpi1(:,:,:,:),zmpi2(:,:,:,:) ! work arrays for MPI
+ real(dp), allocatable :: zw(:,:,:) ! cache work array
+ real(dp) :: tsec(2)
+! FFT work arrays
+ real(dp), allocatable, dimension(:,:) :: trig1,trig2,trig3
+ integer, allocatable, dimension(:) :: after1,now1,before1,after2,now2,before2,after3,now3,before3
+
+! *************************************************************************
+
+ nproc_fft = xpaw_mpi_comm_size(comm_fft); me_fft = xpaw_mpi_comm_rank(comm_fft)
+
+ ! find cache size that gives optimal performance on machine
+ ncache=4*max(n1,n2,n3,1024)
+
+ if (ncache/(4*max(n1,n2,n3))<1) then
+   write(msg,'(5a)') &
+&    'ncache has to be enlarged to be able to hold at',ch10, &
+&    'least one 1-d FFT of each size even though this will',ch10,&
+&    'reduce the performance for shorter transform lengths'
+   LIBPAW_ERROR(msg)
+ end if
+
+! check input
+ if (nd1<n1 .or. nd2<n2 .or. nd3<n3) then
+   LIBPAW_ERROR("nd1<n1 .or. nd2<n2 .or. nd3<n3")
+ end if
+
+ ! Effective n1 and n2 (complex-to-complex or real-to-complex)
+ n1eff=n1; n2eff=n2; n1zt=n1
+ if (cplex==1) then
+   n1eff=(n1+1)/2 ; n2eff=n2/2+1 ; n1zt=2*(n1/2+1)
+ end if
+
+ lzt=n2eff
+ if (mod(n2eff,2) == 0) lzt=lzt+1
+ if (mod(n2eff,4) == 0) lzt=lzt+1
+
+! maximal number of big box 3rd dim slices for all procs
+ nnd3=nd3proc*nproc_fft
+
+ LIBPAW_ALLOCATE(trig1,(2,n1))
+ LIBPAW_ALLOCATE(after1,(mdata))
+ LIBPAW_ALLOCATE(now1,(mdata))
+ LIBPAW_ALLOCATE(before1,(mdata))
+ LIBPAW_ALLOCATE(trig2,(2,n2))
+ LIBPAW_ALLOCATE(after2,(mdata))
+ LIBPAW_ALLOCATE(now2,(mdata))
+ LIBPAW_ALLOCATE(before2,(mdata))
+ LIBPAW_ALLOCATE(trig3,(2,n3))
+ LIBPAW_ALLOCATE(after3,(mdata))
+ LIBPAW_ALLOCATE(now3,(mdata))
+ LIBPAW_ALLOCATE(before3,(mdata))
+ LIBPAW_ALLOCATE(zw,(2,ncache/4,2))
+ LIBPAW_ALLOCATE(zt,(2,lzt,n1zt))
+ LIBPAW_ALLOCATE(zmpi2,(2,n1,nd2proc,nnd3))
+ if (nproc_fft>1)  then
+   LIBPAW_ALLOCATE(zmpi1,(2,n1,nd2proc,nnd3))
+ end if
+
+ call ctrig(n3,trig3,after3,before3,now3,1,ic3)
+ call ctrig(n1,trig1,after1,before1,now1,1,ic1)
+ call ctrig(n2,trig2,after2,before2,now2,1,ic2)
+
+!DEBUG
+! write(std_out,'(a,3i4)' )'sg2002_back,zf n1,n2,n3',n1,n2,n3
+! write(std_out,'(a,3i4)' )'nd1,nd2,nd3proc',nd1,nd2,nd3proc
+! write(std_out,'(a,3i4)' )'m1,m2,m3',m1,m2,m3
+! write(std_out,'(a,3i4)' )'max1,max2,max3',max1,max2,max3
+! write(std_out,'(a,3i4)' )'md1,md2proc,md3',md1,md2proc,md3
+! write(std_out,'(a,3i4)' )'n1eff,m2eff,m1zt',n1eff,m2eff,m1zt
+!ENDDEBUG
+
+ do idat=1,ndat
+   ! transform along z axis
+   ! input: I1,I3,J2,(Jp2)
+   lot=ncache/(4*n3)
+
+   do j2=1,nd2proc
+     if (me_fft*nd2proc+j2 <= n2eff) then
+
+       do i1=1,n1,lot
+         ma=i1
+         mb=min(i1+(lot-1),n1)
+         n1dfft=mb-ma+1
+
+         ! input: G1,G3,G2,(Gp2)
+         call fill(nd1,nd3,lot,n1dfft,n3,zf(1,i1,1,j2,idat),zw(1,1,1))
+
+         inzee=1
+         do i=1,ic3
+           call fftstp(lot,n1dfft,n3,lot,n3,zw(1,1,inzee),zw(1,1,3-inzee), &
+&                      trig3,after3(i),now3(i),before3(i),1)
+           inzee=3-inzee
+         end do
+
+         ! input:  G1,R3,G2,(Gp2)
+         ! output: G1,G2,R3,(Gp2)
+         call scramble(i1,j2,lot,n1dfft,n1,n3,nd2proc,nd3,zw(1,1,inzee),zmpi2)
+       end do
+     end if
+   end do
+
+   ! Interprocessor data transposition
+   ! input:  G1,G2,R3,Rp3,(Gp2)
+   ! output: G1,G2,G3,Gp2,(Rp3)
+   if (nproc_fft>1) then
+     !call timab(543,1,tsec)
+     call xpaw_mpi_alltoall(zmpi2,2*n1*nd2proc*nd3proc, &
+&                       zmpi1,2*n1*nd2proc*nd3proc,comm_fft,ierr)
+     !call timab(543,2,tsec)
+   end if
+
+   do j3=1,nd3proc
+     if (me_fft*nd3proc+j3 <= n3) then
+       Jp2st=1
+       J2st=1
+
+       ! transform along x axis
+       lot=ncache/(4*n1)
+
+       do j=1,n2eff,lot
+         ma=j
+         mb=min(j+(lot-1),n2eff)
+         n1dfft=mb-ma+1
+
+         ! input:  G1,G2,R3,Gp2,(Rp3)
+         ! output: G2,G1,R3,Jp2,(Rp3)
+         if (nproc_fft == 1) then
+           call mpiswitch(j3,n1dfft,Jp2st,J2st,lot,n1,nd2proc,nd3proc,nproc_fft,option,zmpi2,zw(1,1,1))
+         else
+           call mpiswitch(j3,n1dfft,Jp2st,J2st,lot,n1,nd2proc,nd3proc,nproc_fft,option,zmpi1,zw(1,1,1))
+         end if
+
+         ! input:  G2,G1,R3,(Rp3)
+         ! output: G2,R1,R3,(Rp3)
+         inzee=1
+         do i=1,ic1-1
+           call fftstp(lot,n1dfft,n1,lot,n1,zw(1,1,inzee),zw(1,1,3-inzee), &
+&                       trig1,after1(i),now1(i),before1(i),1)
+           inzee=3-inzee
+         end do
+
+         i=ic1
+         call fftstp(lot,n1dfft,n1,lzt,n1zt,zw(1,1,inzee),zt(1,j,1), &
+&                    trig1,after1(i),now1(i),before1(i),1)
+       end do
+
+       ! transform along y axis
+       lot=ncache/(4*n2)
+
+       do j=1,n1eff,lot
+         ma=j
+         mb=min(j+(lot-1),n1eff)
+         n1dfft=mb-ma+1
+         includelast=1
+
+         if (cplex==1) then
+          jeff=2*j-1
+          includelast=1
+          if (mb==n1eff .and. n1eff*2/=n1) includelast=0
+         end if
+
+         ! input:  G2,R1,R3,(Rp3)
+         ! output: R1,G2,R3,(Rp3)
+         if (cplex==2) then
+           call switch(n1dfft,n2,lot,n1,lzt,zt(1,1,j),zw(1,1,1))
+         else
+           call switchreal(includelast,n1dfft,n2,n2eff,lot,n1zt,lzt,zt(1,1,jeff),zw(1,1,1))
+         end if
+
+         inzee=1
+         do i=1,ic2-1
+           call fftstp(lot,n1dfft,n2,lot,n2,zw(1,1,inzee),zw(1,1,3-inzee), &
+&                       trig2,after2(i),now2(i),before2(i),1)
+           inzee=3-inzee
+         end do
+
+         i=ic2
+         call fftstp(lot,n1dfft,n2,nd1eff,nd2,zw(1,1,inzee),zr(1,j,1,j3,idat), &
+&                    trig2,after2(i),now2(i),before2(i),1)
+
+       end do
+       ! output: R1,R2,R3,(Rp3)
+
+     end if
+   end do
+ end do ! idat
+
+ LIBPAW_DEALLOCATE(trig1)
+ LIBPAW_DEALLOCATE(after1)
+ LIBPAW_DEALLOCATE(now1)
+ LIBPAW_DEALLOCATE(before1)
+ LIBPAW_DEALLOCATE(trig2)
+ LIBPAW_DEALLOCATE(after2)
+ LIBPAW_DEALLOCATE(now2)
+ LIBPAW_DEALLOCATE(before2)
+ LIBPAW_DEALLOCATE(trig3)
+ LIBPAW_DEALLOCATE(after3)
+ LIBPAW_DEALLOCATE(now3)
+ LIBPAW_DEALLOCATE(before3)
+ LIBPAW_DEALLOCATE(zmpi2)
+ LIBPAW_DEALLOCATE(zw)
+ LIBPAW_DEALLOCATE(zt)
+ if (nproc_fft>1)  then
+   LIBPAW_DEALLOCATE(zmpi1)
+ end if
+
+end subroutine sg2002_back
+!!***
+
+!----------------------------------------------------------------------
+
+!!****f* m_sg2002/sg2002_forw
+!! NAME
+!!  sg2002_forw
+!!
+!! FUNCTION
+!!   Adopt standard convention that isign=-1 for forward transform
+!!   CALCULATES THE DISCRETE FOURIERTRANSFORM ZF(I1,I3,I2)=
+!!   S_(j1,j2,j3) EXP(isign*i*2*pi*(j1*i1/n1+j2*i2/n2+j3*i3/n3)) ZR(j1,j2,j3)
+!!   in parallel using MPI/OpenMP and BLAS library calls.
+!!
+!! INPUTS
+!!    ZR: input array
+!!         ZR(1,i1,i2,i3,idat)=real(R(i1,i2,i3,idat))
+!!         ZR(2,i1,i2,i3,idat)=imag(R(i1,i2,i3,idat))
+!!         i1=1,n1 , i2=1,n2 , i3=1,n3 , idat=1,ndat
+!! OUTPUTS
+!!    ZF: output array (note the switch of i2 and i3)
+!!         real(F(i1,i3,i2,idat))=ZF(1,i1,i3,i2,idat)
+!!         imag(F(i1,i3,i2,idat))=ZF(2,i1,i3,i2,idat)
+!!         i1=1,n1 , i2=1,n2 , i3=1,n3 , idat=1,ndat
+!!    nproc_fft: number of processors used as returned by MPI_COMM_SIZE
+!!    me_fft: [0:nproc_fft-1] number of processor as returned by MPI_COMM_RANK
+!!     n1,n2,n3: logical dimension of the transform. As transform lengths
+!!               most products of the prime factors 2,3,5 are allowed.
+!!              The detailed table with allowed transform lengths can
+!!              be found in subroutine CTRIG
+!!     nd1,nd2,nd3: Dimension of ZR and ZF
+!!    nd2proc=((nd2-1)/nproc_fft)+1 maximal number of 2nd dim slices
+!!    nd3proc=((nd3-1)/nproc_fft)+1 maximal number of 3rd dim slices
+!!
+!! NOTES
+!!  SHOULD describe nd1eff
+!!  SHOULD put cplex and nd1eff in OMP declarations
+!!  SHOULD describe the change of value of nd2prod
+!!
+!!  The maximum number of processors that can reasonably be used is max(n2,n3)
+!!
+!!  It is very important to find the optimal
+!!  value of NCACHE. NCACHE determines the size of the work array ZW, that
+!!  has to fit into cache. It has therefore to be chosen to equal roughly
+!!   half the size of the physical cache in units of real*8 numbers.
+!!  The optimal value of ncache can easily be determined by numerical
+!!  experimentation. A too large value of ncache leads to a dramatic
+!!  and sudden decrease of performance, a too small value to a to a
+!!  slow and less dramatic decrease of performance. If NCACHE is set
+!!  to a value so small, that not even a single one dimensional transform
+!!  can be done in the workarray zw, the program stops with an error message.
+!!
+!! SOURCE
+
+subroutine sg2002_forw(cplex,ndat,n1,n2,n3,nd1,nd2,nd3,nd1eff,nd2proc,nd3proc,option,zr,zf,comm_fft)
+
+ implicit none
+
+!Arguments ------------------------------------
+!scalars
+ integer,intent(in) :: cplex,comm_fft
+ integer,intent(in) :: ndat,n1,n2,n3,nd1,nd2,nd3,nd1eff,nd2proc,nd3proc,option
+!arrays
+ real(dp),intent(in) :: zr(2,nd1eff,nd2,nd3proc,ndat)
+ real(dp),intent(out) :: zf(2,nd1,nd3,nd2proc,ndat)
+
+!Local variables-------------------------------
+!scalars
+ integer :: i,j,i1,ic1,ic2,ic3,idat,ierr,inzee,j2,j2st,j3,jp2st,lot,lzt
+ integer :: ma,mb,n1dfft,n1eff,n2eff,n1zt,ncache,nnd3,nproc_fft,me_fft
+ character(len=500) :: msg
+!arrays
+ real(dp), allocatable :: zt(:,:,:) ! work arrays for transpositions
+ real(dp), allocatable :: zmpi1(:,:,:,:),zmpi2(:,:,:,:) ! work arrays for MPI
+ real(dp), allocatable :: zw(:,:,:) ! cache work array
+ real(dp) :: tsec(2)
+! FFT work arrays
+ real(dp), allocatable, dimension(:,:) :: trig1,trig2,trig3
+ integer, allocatable, dimension(:) :: after1,now1,before1,after2,now2,before2,after3,now3,before3
+
+! *************************************************************************
+
+ nproc_fft = xpaw_mpi_comm_size(comm_fft); me_fft = xpaw_mpi_comm_rank(comm_fft)
+
+ ! find cache size that gives optimal performance on machine
+ ncache=4*max(n1,n2,n3,1024)
+ if (ncache/(4*max(n1,n2,n3))<1) then
+   write(msg,'(5a)')&
+&     'ncache has to be enlarged to be able to hold at',ch10, &
+&     'least one 1-d FFT of each size even though this will',ch10,&
+&     'reduce the performance for shorter transform lengths'
+   LIBPAW_ERROR(msg)
+ end if
+
+ ! check input
+ if (nd1<n1 .or. nd2<n2 .or. nd3<n3) then
+   LIBPAW_ERROR("nd1<n1 .or. nd2<n2 .or. nd3<n3")
+ end if
+
+!Effective n1 and n2 (complex-to-complex or real-to-complex)
+ n1eff=n1; n2eff=n2; n1zt=n1
+ if (cplex==1) then
+   n1eff=(n1+1)/2; n2eff=n2/2+1; n1zt=2*(n1/2+1)
+ end if
+
+ lzt=n2eff
+ if (mod(n2eff,2) == 0) lzt=lzt+1
+ if (mod(n2eff,4) == 0) lzt=lzt+1
+
+ ! maximal number of big box 3rd dim slices for all procs
+ nnd3=nd3proc*nproc_fft
+
+ LIBPAW_ALLOCATE(trig1,(2,n1))
+ LIBPAW_ALLOCATE(after1,(mdata))
+ LIBPAW_ALLOCATE(now1,(mdata))
+ LIBPAW_ALLOCATE(before1,(mdata))
+ LIBPAW_ALLOCATE(trig2,(2,n2))
+ LIBPAW_ALLOCATE(after2,(mdata))
+ LIBPAW_ALLOCATE(now2,(mdata))
+ LIBPAW_ALLOCATE(before2,(mdata))
+ LIBPAW_ALLOCATE(trig3,(2,n3))
+ LIBPAW_ALLOCATE(after3,(mdata))
+ LIBPAW_ALLOCATE(now3,(mdata))
+ LIBPAW_ALLOCATE(before3,(mdata))
+ LIBPAW_ALLOCATE(zw,(2,ncache/4,2))
+ LIBPAW_ALLOCATE(zt,(2,lzt,n1zt))
+ LIBPAW_ALLOCATE(zmpi2,(2,n1,nd2proc,nnd3))
+ if (nproc_fft>1)  then
+   LIBPAW_ALLOCATE(zmpi1,(2,n1,nd2proc,nnd3))
+ end if
+
+ call ctrig(n2,trig2,after2,before2,now2,-1,ic2)
+ call ctrig(n1,trig1,after1,before1,now1,-1,ic1)
+ call ctrig(n3,trig3,after3,before3,now3,-1,ic3)
+
+ do idat=1,ndat
+   do j3=1,nd3proc
+     if (me_fft*(nd3proc)+j3 <= n3) then
+       Jp2st=1; J2st=1
+
+       ! transform along y axis
+       ! input: R1,R2,R3,(Rp3)
+       lot=ncache/(4*n2)
+
+       do j=1,n1eff,lot
+         ma=j
+         mb=min(j+(lot-1),n1eff)
+         n1dfft=mb-ma+1
+         i=1
+         call fftstp(nd1eff,n1dfft,nd2,lot,n2,zr(1,j,1,j3,idat),zw(1,1,1), &
+&                    trig2,after2(i),now2(i),before2(i),-1)
+
+         inzee=1
+         do i=2,ic2
+           call fftstp(lot,n1dfft,n2,lot,n2,zw(1,1,inzee),zw(1,1,3-inzee), &
+&                       trig2,after2(i),now2(i),before2(i),-1)
+            inzee=3-inzee
+         end do
+
+         !  input: R1,G2,R3,(Rp3)
+         ! output: G2,R1,R3,(Rp3)
+         if(cplex==2)then
+           call unswitch(n1dfft,n2,lot,n1zt,lzt,zw(1,1,inzee),zt(1,1,j))
+         else
+           call unswitchreal(n1dfft,n2,n2eff,lot,n1zt,lzt,zw(1,1,inzee),zt(1,1,2*j-1))
+         end if
+       end do
+
+       ! transform along x axis
+       ! input: G2,R1,R3,(Rp3)
+       lot=ncache/(4*n1)
+
+       do j=1,n2eff,lot
+         ma=j
+         mb=min(j+(lot-1),n2eff)
+         n1dfft=mb-ma+1
+
+         i=1
+         call fftstp(lzt,n1dfft,n1zt,lot,n1,zt(1,j,1),zw(1,1,1), &
+&                    trig1,after1(i),now1(i),before1(i),-1)
+
+         inzee=1
+         do i=2,ic1
+           call fftstp(lot,n1dfft,n1,lot,n1,zw(1,1,inzee),zw(1,1,3-inzee), &
+&                     trig1,after1(i),now1(i),before1(i),-1)
+           inzee=3-inzee
+         end do
+         ! output: G2,G1,R3,(Rp3)
+
+         ! input:  G2,G1,R3,Gp2,(Rp3)
+         ! output: G1,G2,R3,Gp2,(Rp3)
+         ! write(std_out,*) 'J2st,Jp2st',J2st,Jp2st
+         if (nproc_fft == 1) then
+           call unmpiswitch(j3,n1dfft,Jp2st,J2st,lot,n1,nd2proc,nd3proc,nproc_fft,option,zw(1,1,inzee),zmpi2)
+         else
+           call unmpiswitch(j3,n1dfft,Jp2st,J2st,lot,n1,nd2proc,nd3proc,nproc_fft,option,zw(1,1,inzee),zmpi1)
+         end if
+       end do
+
+     end if
+   end do ! j3
+
+   ! Interprocessor data transposition
+   ! input:  G1,G2,R3,Gp2,(Rp3)
+   ! output: G1,G2,R3,Rp3,(Gp2)
+   if (nproc_fft>1) then
+     !call timab(544,1,tsec)
+     call xpaw_mpi_alltoall(zmpi1,2*n1*nd2proc*nd3proc, &
+&                       zmpi2,2*n1*nd2proc*nd3proc,comm_fft,ierr)
+     !call timab(544,2,tsec)
+   end if
+
+   ! transform along z axis
+   ! input: G1,G2,R3,(Gp2)
+   lot=ncache/(4*n3)
+
+   do j2=1,nd2proc
+     if (me_fft*(nd2proc)+j2 <= n2eff) then
+       do i1=1,n1,lot
+         ma=i1
+         mb=min(i1+(lot-1),n1)
+         n1dfft=mb-ma+1
+
+         ! input:  G1,G2,R3,(Gp2)
+         ! output: G1,R3,G2,(Gp2)
+         call unscramble(i1,j2,lot,n1dfft,n1,n3,nd2proc,nd3,zmpi2,zw(1,1,1))
+
+         inzee=1
+         do i=1,ic3
+           call fftstp(lot,n1dfft,n3,lot,n3,zw(1,1,inzee),zw(1,1,3-inzee), &
+&            trig3,after3(i),now3(i),before3(i),-1)
+           inzee=3-inzee
+         end do
+
+         call unfill(nd1,nd3,lot,n1dfft,n3,zw(1,1,inzee),zf(1,i1,1,j2,idat))
+         ! output: G1,G3,G2,(Gp2)
+       end do
+     end if
+   end do
+
+ end do ! idat
+
+ LIBPAW_DEALLOCATE(trig1)
+ LIBPAW_DEALLOCATE(after1)
+ LIBPAW_DEALLOCATE(now1)
+ LIBPAW_DEALLOCATE(before1)
+ LIBPAW_DEALLOCATE(trig2)
+ LIBPAW_DEALLOCATE(after2)
+ LIBPAW_DEALLOCATE(now2)
+ LIBPAW_DEALLOCATE(before2)
+ LIBPAW_DEALLOCATE(trig3)
+ LIBPAW_DEALLOCATE(after3)
+ LIBPAW_DEALLOCATE(now3)
+ LIBPAW_DEALLOCATE(before3)
+ LIBPAW_DEALLOCATE(zmpi2)
+ LIBPAW_DEALLOCATE(zw)
+ LIBPAW_DEALLOCATE(zt)
+ if (nproc_fft>1)  then
+   LIBPAW_DEALLOCATE(zmpi1)
+ end if
+
+end subroutine sg2002_forw
+!!***
+
+!----------------------------------------------------------------------
+
+!!****f* m_sg2002/sg2002_mpifourdp
+!! NAME
+!! sg2002_mpifourdp
+!!
+!! FUNCTION
+!! Conduct Fourier transform of REAL or COMPLEX function f(r)=fofr defined on
+!! fft grid in real space, to create complex f(G)=fofg defined on full fft grid
+!! in reciprocal space, in full storage mode, or the reverse operation.
+!! For the reverse operation, the final data is divided by nfftot.
+!! REAL case when cplex=1, COMPLEX case when cplex=2
+!! Usually used for density and potentials.
+!!
+!! INPUTS
+!! cplex=1 if fofr is real, 2 if fofr is complex
+!! nfft=(effective) number of FFT grid points (for this processor)
+!! ngfft(18)=contain all needed information about 3D FFT, see ~abinit/doc/variables/vargs.htm#ngfft
+!! ndat=Numbre of FFT transforms
+!! isign=sign of Fourier transform exponent: current convention uses
+!!    +1 for transforming from G to r
+!!    -1 for transforming from r to G.
+!! fftn2_distrib(2),ffti2_local(2)
+!! fftn3_distrib(3),ffti3_local(3)
+!! comm_fft=MPI communicator
+!!
+!! SIDE EFFECTS
+!! Input/Output
+!! fofg(2,nfft)=f(G), complex.
+!! fofr(cplex*nfft)=input function f(r) (real or complex)
+!!
+!! TODO
+!!  Write simplified API for sequential version.
+!!
+!! SOURCE
+
+subroutine sg2002_mpifourdp(cplex,nfft,ngfft,ndat,isign,&
+&  fftn2_distrib,ffti2_local,fftn3_distrib,ffti3_local,fofg,fofr,comm_fft)
+
+ implicit none
+
+!Arguments ------------------------------------
+!scalars
+ integer,intent(in) :: cplex,isign,nfft,ndat,comm_fft
+!arrays
+ integer,intent(in) :: ngfft(3)
+ integer,intent(in) :: fftn2_distrib(ngfft(2)),ffti2_local(ngfft(2))
+ integer,intent(in) :: fftn3_distrib(ngfft(3)),ffti3_local(ngfft(3))
+ real(dp),intent(inout) :: fofg(2,nfft*ndat),fofr(cplex*nfft*ndat)
+
+!Local variables-------------------------------
+!scalars
+ integer :: n1,n2,n3,n4,n5,n6,nd2proc,nd3proc,nproc_fft,me_fft
+!arrays
+ real(dp),allocatable :: workf(:,:,:,:,:),workr(:,:,:,:,:)
+
+! *************************************************************************
+
+ ! Note the only c2c is supported in parallel.
+ n1=ngfft(1); n2=ngfft(2); n3=ngfft(3)
+ 
+ n4=2*(n1/2)+1; n5=2*(n2/2)+1; n6=n3
+ me_fft = xpaw_mpi_comm_rank(comm_fft)
+ nproc_fft = xpaw_mpi_comm_size(comm_fft)
+
+ !n4=ngfft(4); n5=ngfft(5); n6=ngfft(6)
+ !me_fft=ngfft(11); nproc_fft=ngfft(10)
+
+ nd2proc=((n2-1)/nproc_fft) +1
+ nd3proc=((n6-1)/nproc_fft) +1
+ LIBPAW_ALLOCATE(workr,(2,n4,n5,nd3proc,ndat))
+ LIBPAW_ALLOCATE(workf,(2,n4,n6,nd2proc,ndat))
+
+ ! Complex to Complex
+ select case (isign)
+ case (1)
+   ! G --> R
+   call mpifft_fg2dbox(nfft,ndat,fofg,n1,n2,n3,n4,nd2proc,n6,fftn2_distrib,ffti2_local,me_fft,workf)
+
+   call sg2002_back(2,ndat,n1,n2,n3,n4,n5,n6,n4,nd2proc,nd3proc,2,workf,workr,comm_fft)
+
+   call mpifft_dbox2fr(n1,n2,n3,n4,n5,nd3proc,ndat,fftn3_distrib,ffti3_local,me_fft,workr,cplex,nfft,fofr)
+
+ case (-1)
+   ! R --> G
+   call mpifft_fr2dbox(cplex,nfft,ndat,fofr,n1,n2,n3,n4,n5,nd3proc,fftn3_distrib,ffti3_local,me_fft,workr)
+
+   call sg2002_forw(2,ndat,n1,n2,n3,n4,n5,n6,n4,nd2proc,nd3proc,2,workr,workf,comm_fft)
+
+   ! Transfer FFT output to the original fft box.
+   call mpifft_dbox2fg(n1,n2,n3,n4,nd2proc,n6,ndat,fftn2_distrib,ffti2_local,me_fft,workf,nfft,fofg)
+
+ case default
+   ABI_BUG("Wrong isign")
+ end select
+
+ LIBPAW_DEALLOCATE(workr)
+ LIBPAW_DEALLOCATE(workf)
+
+end subroutine sg2002_mpifourdp
+!!***
+
+!----------------------------------------------------------------------
+
+!!****f* m_sg2002/ctrig
+!! NAME
+!!  ctrig
+!!
+!! FUNCTION
+!!
+!! INPUTS
+!!
+!! OUTPUT
+!!
+!! SOURCE
+
+subroutine ctrig(n,trig,after,before,now,isign,ic)
+
+ implicit none
+
+!Arguments ------------------------------------
+ integer,intent(in) :: n,isign
+ integer,intent(inout) :: ic
+ integer,intent(inout) :: after(mdata),before(mdata),now(mdata)
+ real(dp),intent(inout) :: trig(2,n)
+
+!Local variables-------------------------------
+!scalars
+ integer :: i,itt,j,nh
+ real(dp) :: angle,trigc,trigs
+
+! *************************************************************************
+
+ do i=1,ndata
+   if (n.eq.ifftdata(1,i)) then
+     ic=0
+     do j=1,(mdata-1)
+       itt=ifftdata(1+j,i)
+       if (itt.gt.1) then
+         ic=ic+1
+         now(j)=ifftdata(1+j,i)
+       else
+         goto 1000
+       end if
+     end do
+     goto 1000
+   end if
+ end do
+
+ write(std_out,*) 'VALUE OF',n,'NOT ALLOWED FOR FFT, ALLOWED VALUES ARE:'
+37 format(15(i5))
+ write(std_out,37) (ifftdata(1,i),i=1,ndata)
+ LIBPAW_ERROR("Aborting now")
+
+1000 continue
+ after(1)=1
+ before(ic)=1
+ do i=2,ic
+   after(i)=after(i-1)*now(i-1)
+   before(ic-i+1)=before(ic-i+2)*now(ic-i+2)
+ end do
+
+ angle=isign*two_pi/n
+ if (mod(n,2).eq.0) then
+   nh=n/2
+   trig(1,1)=one
+   trig(2,1)=zero
+   trig(1,nh+1)=-one
+   trig(2,nh+1)=zero
+   do i=1,nh-1
+     trigc=cos(i*angle)
+     trigs=sin(i*angle)
+     trig(1,i+1)=trigc
+     trig(2,i+1)=trigs
+     trig(1,n-i+1)=trigc
+     trig(2,n-i+1)=-trigs
+   end do
+ else
+   nh=(n-1)/2
+   trig(1,1)=one
+   trig(2,1)=zero
+   do i=1,nh
+     trigc=cos(i*angle)
+     trigs=sin(i*angle)
+     trig(1,i+1)=trigc
+     trig(2,i+1)=trigs
+     trig(1,n-i+1)=trigc
+     trig(2,n-i+1)=-trigs
+   end do
+ end if
+
+end subroutine ctrig
+!!***
+
+!!****f* m_sg2002/fftstp
+!! NAME
+!!  fftstp
+!!
+!! FUNCTION
+!!
+!! INPUTS
+!!   mm
+!!   n1dfft
+!!   m
+!!   nn
+!!   n
+!!   zin
+!!   trig
+!!   after
+!!   now
+!!   before
+!!   isign
+!!
+!! OUTPUT
+!!   zout
+!!
+!! SOURCE
+
+subroutine fftstp(mm,n1dfft,m,nn,n,zin,zout,trig,after,now,before,isign)
+
+ implicit none
+
+!Arguments ------------------------------------
+ integer,intent(in) :: after,before,mm,n1dfft,m,nn,n,now,isign
+ real(dp),intent(in) :: trig(2,n),zin(2,mm,m)
+ real(dp),intent(inout) :: zout(2,nn,n)
+
+!Local variables-------------------------------
+ integer :: atn,atb,ia,ias,ib,itrig,itt,j,nin1,nin2,nin3,nin4,nin5,nin6,nin7,nin8
+ integer :: nout1,nout2,nout3,nout4,nout5,nout6,nout7,nout8
+ real(dp) :: am,ap,bm,bp,ci3,ci4,ci5,ci6,ci7,ci8,cm,cos2,cos4,cp,cr2,cr3,cr4,cr5,cr6,cr7,cr8
+ real(dp) :: dm,bb,ci2,dpp,r,r2,r25,r3,r34,r4,r5,r6,r7,r8,rt2i,s,r1,s1,s2,s3,s25,s34,s4,s5,s6,s7,s8
+ real(dp) :: sin2,ui1,ui2,ui3,ur1,ur2,ur3,sin4,vi1,vi2,vi3,vr1,vr2,vr3
+
+! *************************************************************************
+        atn=after*now
+        atb=after*before
+
+!         sqrt(.5d0)
+        rt2i=half_sqrt2
+        if (now.eq.2) then
+        ia=1
+        nin1=ia-after
+        nout1=ia-atn
+        do ib=1,before
+          nin1=nin1+after
+          nin2=nin1+atb
+          nout1=nout1+atn
+          nout2=nout1+after
+            do j=1,n1dfft
+            r1=zin(1,j,nin1)
+            s1=zin(2,j,nin1)
+            r2=zin(1,j,nin2)
+            s2=zin(2,j,nin2)
+            zout(1,j,nout1)= r2 + r1
+            zout(2,j,nout1)= s2 + s1
+            zout(1,j,nout2)= r1 - r2
+            zout(2,j,nout2)= s1 - s2
+          enddo
+        enddo
+        do 2000,ia=2,after
+        ias=ia-1
+        if (2*ias.eq.after) then
+                if (isign.eq.1) then
+                        nin1=ia-after
+                        nout1=ia-atn
+                        do ib=1,before
+                          nin1=nin1+after
+                          nin2=nin1+atb
+                          nout1=nout1+atn
+                          nout2=nout1+after
+                          do j=1,n1dfft
+                            r1=zin(1,j,nin1)
+                            s1=zin(2,j,nin1)
+                            r2=zin(2,j,nin2)
+                            s2=zin(1,j,nin2)
+                            zout(1,j,nout1)= r1 - r2
+                            zout(2,j,nout1)= s2 + s1
+                            zout(1,j,nout2)= r2 + r1
+                            zout(2,j,nout2)= s1 - s2
+                          enddo
+                        enddo
+                else
+                        nin1=ia-after
+                        nout1=ia-atn
+                        do ib=1,before
+                          nin1=nin1+after
+                          nin2=nin1+atb
+                          nout1=nout1+atn
+                          nout2=nout1+after
+                            do j=1,n1dfft
+                            r1=zin(1,j,nin1)
+                            s1=zin(2,j,nin1)
+                            r2=zin(2,j,nin2)
+                            s2=zin(1,j,nin2)
+                            zout(1,j,nout1)= r2 + r1
+                            zout(2,j,nout1)= s1 - s2
+                            zout(1,j,nout2)= r1 - r2
+                            zout(2,j,nout2)= s2 + s1
+                          enddo
+                        enddo
+                end if
+        else if (4*ias.eq.after) then
+                if (isign.eq.1) then
+                        nin1=ia-after
+                        nout1=ia-atn
+                        do ib=1,before
+                        nin1=nin1+after
+                        nin2=nin1+atb
+                        nout1=nout1+atn
+                        nout2=nout1+after
+                        do j=1,n1dfft
+                        r1=zin(1,j,nin1)
+                        s1=zin(2,j,nin1)
+                        r=zin(1,j,nin2)
+                        s=zin(2,j,nin2)
+                        r2=(r - s)*rt2i
+                        s2=(r + s)*rt2i
+                        zout(1,j,nout1)= r2 + r1
+                        zout(2,j,nout1)= s2 + s1
+                        zout(1,j,nout2)= r1 - r2
+                        zout(2,j,nout2)= s1 - s2
+                        enddo
+                        enddo
+                else
+                        nin1=ia-after
+                        nout1=ia-atn
+                        do ib=1,before
+                        nin1=nin1+after
+                        nin2=nin1+atb
+                        nout1=nout1+atn
+                        nout2=nout1+after
+                        do j=1,n1dfft
+                        r1=zin(1,j,nin1)
+                        s1=zin(2,j,nin1)
+                        r=zin(1,j,nin2)
+                        s=zin(2,j,nin2)
+                        r2=(r + s)*rt2i
+                        s2=(s - r)*rt2i
+                        zout(1,j,nout1)= r2 + r1
+                        zout(2,j,nout1)= s2 + s1
+                        zout(1,j,nout2)= r1 - r2
+                        zout(2,j,nout2)= s1 - s2
+                        enddo
+                        enddo
+                end if
+        else if (4*ias.eq.3*after) then
+                if (isign.eq.1) then
+                        nin1=ia-after
+                        nout1=ia-atn
+                        do ib=1,before
+                        nin1=nin1+after
+                        nin2=nin1+atb
+                        nout1=nout1+atn
+                        nout2=nout1+after
+                        do j=1,n1dfft
+                        r1=zin(1,j,nin1)
+                        s1=zin(2,j,nin1)
+                        r=zin(1,j,nin2)
+                        s=zin(2,j,nin2)
+                        r2=(r + s)*rt2i
+                        s2=(r - s)*rt2i
+                        zout(1,j,nout1)= r1 - r2
+                        zout(2,j,nout1)= s2 + s1
+                        zout(1,j,nout2)= r2 + r1
+                        zout(2,j,nout2)= s1 - s2
+                        enddo
+                        enddo
+                else
+                        nin1=ia-after
+                        nout1=ia-atn
+                        do ib=1,before
+                        nin1=nin1+after
+                        nin2=nin1+atb
+                        nout1=nout1+atn
+                        nout2=nout1+after
+                        do j=1,n1dfft
+                        r1=zin(1,j,nin1)
+                        s1=zin(2,j,nin1)
+                        r=zin(1,j,nin2)
+                        s=zin(2,j,nin2)
+                        r2=(s - r)*rt2i
+                        s2=(r + s)*rt2i
+                        zout(1,j,nout1)= r2 + r1
+                        zout(2,j,nout1)= s1 - s2
+                        zout(1,j,nout2)= r1 - r2
+                        zout(2,j,nout2)= s2 + s1
+                        enddo
+                        enddo
+                end if
+        else
+                itrig=ias*before+1
+                cr2=trig(1,itrig)
+                ci2=trig(2,itrig)
+                nin1=ia-after
+                nout1=ia-atn
+                do ib=1,before
+                nin1=nin1+after
+                nin2=nin1+atb
+                nout1=nout1+atn
+                nout2=nout1+after
+                do j=1,n1dfft
+                r1=zin(1,j,nin1)
+                s1=zin(2,j,nin1)
+                r=zin(1,j,nin2)
+                s=zin(2,j,nin2)
+                r2=r*cr2 - s*ci2
+                s2=r*ci2 + s*cr2
+                zout(1,j,nout1)= r2 + r1
+                zout(2,j,nout1)= s2 + s1
+                zout(1,j,nout2)= r1 - r2
+                zout(2,j,nout2)= s1 - s2
+                enddo
+                enddo
+        end if
+2000        continue
+        else if (now.eq.4) then
+        if (isign.eq.1) then
+                ia=1
+                nin1=ia-after
+                nout1=ia-atn
+                do ib=1,before
+                nin1=nin1+after
+                nin2=nin1+atb
+                nin3=nin2+atb
+                nin4=nin3+atb
+                nout1=nout1+atn
+                nout2=nout1+after
+                nout3=nout2+after
+                nout4=nout3+after
+                do j=1,n1dfft
+                r1=zin(1,j,nin1)
+                s1=zin(2,j,nin1)
+                r2=zin(1,j,nin2)
+                s2=zin(2,j,nin2)
+                r3=zin(1,j,nin3)
+                s3=zin(2,j,nin3)
+                r4=zin(1,j,nin4)
+                s4=zin(2,j,nin4)
+                r=r1 + r3
+                s=r2 + r4
+                zout(1,j,nout1) = r + s
+                zout(1,j,nout3) = r - s
+                r=r1 - r3
+                s=s2 - s4
+                zout(1,j,nout2) = r - s
+                zout(1,j,nout4) = r + s
+                r=s1 + s3
+                s=s2 + s4
+                zout(2,j,nout1) = r + s
+                zout(2,j,nout3) = r - s
+                r=s1 - s3
+                s=r2 - r4
+                zout(2,j,nout2) = r + s
+                zout(2,j,nout4) = r - s
+                enddo
+                enddo
+                do 4000,ia=2,after
+                ias=ia-1
+                if (2*ias.eq.after) then
+                        nin1=ia-after
+                        nout1=ia-atn
+                        do ib=1,before
+                        nin1=nin1+after
+                        nin2=nin1+atb
+                        nin3=nin2+atb
+                        nin4=nin3+atb
+                        nout1=nout1+atn
+                        nout2=nout1+after
+                        nout3=nout2+after
+                        nout4=nout3+after
+                        do j=1,n1dfft
+                        r1=zin(1,j,nin1)
+                        s1=zin(2,j,nin1)
+                        r=zin(1,j,nin2)
+                        s=zin(2,j,nin2)
+                        r2=(r-s)*rt2i
+                        s2=(r+s)*rt2i
+                        r3=zin(2,j,nin3)
+                        s3=zin(1,j,nin3)
+                        r=zin(1,j,nin4)
+                        s=zin(2,j,nin4)
+                        r4=(r + s)*rt2i
+                        s4=(r - s)*rt2i
+                        r=r1 - r3
+                        s=r2 - r4
+                        zout(1,j,nout1) = r + s
+                        zout(1,j,nout3) = r - s
+                        r=r1 + r3
+                        s=s2 - s4
+                        zout(1,j,nout2) = r - s
+                        zout(1,j,nout4) = r + s
+                        r=s1 + s3
+                        s=s2 + s4
+                        zout(2,j,nout1) = r + s
+                        zout(2,j,nout3) = r - s
+                        r=s1 - s3
+                        s=r2 + r4
+                        zout(2,j,nout2) = r + s
+                        zout(2,j,nout4) = r - s
+                        enddo
+                        enddo
+                else
+                        itt=ias*before
+                        itrig=itt+1
+                        cr2=trig(1,itrig)
+                        ci2=trig(2,itrig)
+                        itrig=itrig+itt
+                        cr3=trig(1,itrig)
+                        ci3=trig(2,itrig)
+                        itrig=itrig+itt
+                        cr4=trig(1,itrig)
+                        ci4=trig(2,itrig)
+                        nin1=ia-after
+                        nout1=ia-atn
+                        do ib=1,before
+                        nin1=nin1+after
+                        nin2=nin1+atb
+                        nin3=nin2+atb
+                        nin4=nin3+atb
+                        nout1=nout1+atn
+                        nout2=nout1+after
+                        nout3=nout2+after
+                        nout4=nout3+after
+                        do j=1,n1dfft
+                        r1=zin(1,j,nin1)
+                        s1=zin(2,j,nin1)
+                        r=zin(1,j,nin2)
+                        s=zin(2,j,nin2)
+                        r2=r*cr2 - s*ci2
+                        s2=r*ci2 + s*cr2
+                        r=zin(1,j,nin3)
+                        s=zin(2,j,nin3)
+                        r3=r*cr3 - s*ci3
+                        s3=r*ci3 + s*cr3
+                        r=zin(1,j,nin4)
+                        s=zin(2,j,nin4)
+                        r4=r*cr4 - s*ci4
+                        s4=r*ci4 + s*cr4
+                        r=r1 + r3
+                        s=r2 + r4
+                        zout(1,j,nout1) = r + s
+                        zout(1,j,nout3) = r - s
+                        r=r1 - r3
+                        s=s2 - s4
+                        zout(1,j,nout2) = r - s
+                        zout(1,j,nout4) = r + s
+                        r=s1 + s3
+                        s=s2 + s4
+                        zout(2,j,nout1) = r + s
+                        zout(2,j,nout3) = r - s
+                        r=s1 - s3
+                        s=r2 - r4
+                        zout(2,j,nout2) = r + s
+                        zout(2,j,nout4) = r - s
+                        enddo
+                        enddo
+                end if
+4000                continue
+        else
+                ia=1
+                nin1=ia-after
+                nout1=ia-atn
+                do ib=1,before
+                nin1=nin1+after
+                nin2=nin1+atb
+                nin3=nin2+atb
+                nin4=nin3+atb
+                nout1=nout1+atn
+                nout2=nout1+after
+                nout3=nout2+after
+                nout4=nout3+after
+                do j=1,n1dfft
+                r1=zin(1,j,nin1)
+                s1=zin(2,j,nin1)
+                r2=zin(1,j,nin2)
+                s2=zin(2,j,nin2)
+                r3=zin(1,j,nin3)
+                s3=zin(2,j,nin3)
+                r4=zin(1,j,nin4)
+                s4=zin(2,j,nin4)
+                r=r1 + r3
+                s=r2 + r4
+                zout(1,j,nout1) = r + s
+                zout(1,j,nout3) = r - s
+                r=r1 - r3
+                s=s2 - s4
+                zout(1,j,nout2) = r + s
+                zout(1,j,nout4) = r - s
+                r=s1 + s3
+                s=s2 + s4
+                zout(2,j,nout1) = r + s
+                zout(2,j,nout3) = r - s
+                r=s1 - s3
+                s=r2 - r4
+                zout(2,j,nout2) = r - s
+                zout(2,j,nout4) = r + s
+                enddo
+                enddo
+                do 4100,ia=2,after
+                ias=ia-1
+                if (2*ias.eq.after) then
+                        nin1=ia-after
+                        nout1=ia-atn
+                        do ib=1,before
+                        nin1=nin1+after
+                        nin2=nin1+atb
+                        nin3=nin2+atb
+                        nin4=nin3+atb
+                        nout1=nout1+atn
+                        nout2=nout1+after
+                        nout3=nout2+after
+                        nout4=nout3+after
+                        do j=1,n1dfft
+                        r1=zin(1,j,nin1)
+                        s1=zin(2,j,nin1)
+                        r=zin(1,j,nin2)
+                        s=zin(2,j,nin2)
+                        r2=(r + s)*rt2i
+                        s2=(s - r)*rt2i
+                        r3=zin(2,j,nin3)
+                        s3=zin(1,j,nin3)
+                        r=zin(1,j,nin4)
+                        s=zin(2,j,nin4)
+                        r4=(s - r)*rt2i
+                        s4=(r + s)*rt2i
+                        r=r1 + r3
+                        s=r2 + r4
+                        zout(1,j,nout1) = r + s
+                        zout(1,j,nout3) = r - s
+                        r=r1 - r3
+                        s=s2 + s4
+                        zout(1,j,nout2) = r + s
+                        zout(1,j,nout4) = r - s
+                        r=s1 - s3
+                        s=s2 - s4
+                        zout(2,j,nout1) = r + s
+                        zout(2,j,nout3) = r - s
+                        r=s1 + s3
+                        s=r2 - r4
+                        zout(2,j,nout2) = r - s
+                        zout(2,j,nout4) = r + s
+                        enddo
+                        enddo
+                else
+                        itt=ias*before
+                        itrig=itt+1
+                        cr2=trig(1,itrig)
+                        ci2=trig(2,itrig)
+                        itrig=itrig+itt
+                        cr3=trig(1,itrig)
+                        ci3=trig(2,itrig)
+                        itrig=itrig+itt
+                        cr4=trig(1,itrig)
+                        ci4=trig(2,itrig)
+                        nin1=ia-after
+                        nout1=ia-atn
+                        do ib=1,before
+                        nin1=nin1+after
+                        nin2=nin1+atb
+                        nin3=nin2+atb
+                        nin4=nin3+atb
+                        nout1=nout1+atn
+                        nout2=nout1+after
+                        nout3=nout2+after
+                        nout4=nout3+after
+                        do j=1,n1dfft
+                        r1=zin(1,j,nin1)
+                        s1=zin(2,j,nin1)
+                        r=zin(1,j,nin2)
+                        s=zin(2,j,nin2)
+                        r2=r*cr2 - s*ci2
+                        s2=r*ci2 + s*cr2
+                        r=zin(1,j,nin3)
+                        s=zin(2,j,nin3)
+                        r3=r*cr3 - s*ci3
+                        s3=r*ci3 + s*cr3
+                        r=zin(1,j,nin4)
+                        s=zin(2,j,nin4)
+                        r4=r*cr4 - s*ci4
+                        s4=r*ci4 + s*cr4
+                        r=r1 + r3
+                        s=r2 + r4
+                        zout(1,j,nout1) = r + s
+                        zout(1,j,nout3) = r - s
+                        r=r1 - r3
+                        s=s2 - s4
+                        zout(1,j,nout2) = r + s
+                        zout(1,j,nout4) = r - s
+                        r=s1 + s3
+                        s=s2 + s4
+                        zout(2,j,nout1) = r + s
+                        zout(2,j,nout3) = r - s
+                        r=s1 - s3
+                        s=r2 - r4
+                        zout(2,j,nout2) = r - s
+                        zout(2,j,nout4) = r + s
+                        enddo
+                        enddo
+                end if
+4100                continue
+        end if
+        else if (now.eq.8) then
+        if (isign.eq.-1) then
+                ia=1
+                        nin1=ia-after
+                        nout1=ia-atn
+                        do ib=1,before
+                        nin1=nin1+after
+                        nin2=nin1+atb
+                        nin3=nin2+atb
+                        nin4=nin3+atb
+                        nin5=nin4+atb
+                        nin6=nin5+atb
+                        nin7=nin6+atb
+                        nin8=nin7+atb
+                        nout1=nout1+atn
+                        nout2=nout1+after
+                        nout3=nout2+after
+                        nout4=nout3+after
+                        nout5=nout4+after
+                        nout6=nout5+after
+                        nout7=nout6+after
+                        nout8=nout7+after
+                        do j=1,n1dfft
+                        r1=zin(1,j,nin1)
+                        s1=zin(2,j,nin1)
+                        r2=zin(1,j,nin2)
+                        s2=zin(2,j,nin2)
+                        r3=zin(1,j,nin3)
+                        s3=zin(2,j,nin3)
+                        r4=zin(1,j,nin4)
+                        s4=zin(2,j,nin4)
+                        r5=zin(1,j,nin5)
+                        s5=zin(2,j,nin5)
+                        r6=zin(1,j,nin6)
+                        s6=zin(2,j,nin6)
+                        r7=zin(1,j,nin7)
+                        s7=zin(2,j,nin7)
+                        r8=zin(1,j,nin8)
+                        s8=zin(2,j,nin8)
+                        r=r1 + r5
+                        s=r3 + r7
+                        ap=r + s
+                        am=r - s
+                        r=r2 + r6
+                        s=r4 + r8
+                        bp=r + s
+                        bm=r - s
+                        r=s1 + s5
+                        s=s3 + s7
+                        cp=r + s
+                        cm=r - s
+                        r=s2 + s6
+                        s=s4 + s8
+                        dpp=r + s
+                        dm=r - s
+                        zout(1,j,nout1) = ap + bp
+                        zout(2,j,nout1) = cp + dpp
+                        zout(1,j,nout5) = ap - bp
+                        zout(2,j,nout5) = cp - dpp
+                        zout(1,j,nout3) = am + dm
+                        zout(2,j,nout3) = cm - bm
+                        zout(1,j,nout7) = am - dm
+                        zout(2,j,nout7) = cm + bm
+                        r=r1 - r5
+                        s=s3 - s7
+                        ap=r + s
+                        am=r - s
+                        r=s1 - s5
+                        s=r3 - r7
+                        bp=r + s
+                        bm=r - s
+                        r=s4 - s8
+                        s=r2 - r6
+                        cp=r + s
+                        cm=r - s
+                        r=s2 - s6
+                        s=r4 - r8
+                        dpp=r + s
+                        dm=r - s
+                        r = ( cp + dm)*rt2i
+                        s = ( dm - cp)*rt2i
+                        cp= ( cm + dpp)*rt2i
+                        dpp = ( cm - dpp)*rt2i
+                        zout(1,j,nout2) = ap + r
+                        zout(2,j,nout2) = bm + s
+                        zout(1,j,nout6) = ap - r
+                        zout(2,j,nout6) = bm - s
+                        zout(1,j,nout4) = am + cp
+                        zout(2,j,nout4) = bp + dpp
+                        zout(1,j,nout8) = am - cp
+                        zout(2,j,nout8) = bp - dpp
+                        enddo
+                        enddo
+                do 8000,ia=2,after
+                ias=ia-1
+                        itt=ias*before
+                        itrig=itt+1
+                        cr2=trig(1,itrig)
+                        ci2=trig(2,itrig)
+                        itrig=itrig+itt
+                        cr3=trig(1,itrig)
+                        ci3=trig(2,itrig)
+                        itrig=itrig+itt
+                        cr4=trig(1,itrig)
+                        ci4=trig(2,itrig)
+                        itrig=itrig+itt
+                        cr5=trig(1,itrig)
+                        ci5=trig(2,itrig)
+                        itrig=itrig+itt
+                        cr6=trig(1,itrig)
+                        ci6=trig(2,itrig)
+                        itrig=itrig+itt
+                        cr7=trig(1,itrig)
+                        ci7=trig(2,itrig)
+                        itrig=itrig+itt
+                        cr8=trig(1,itrig)
+                        ci8=trig(2,itrig)
+                        nin1=ia-after
+                        nout1=ia-atn
+                        do ib=1,before
+                        nin1=nin1+after
+                        nin2=nin1+atb
+                        nin3=nin2+atb
+                        nin4=nin3+atb
+                        nin5=nin4+atb
+                        nin6=nin5+atb
+                        nin7=nin6+atb
+                        nin8=nin7+atb
+                        nout1=nout1+atn
+                        nout2=nout1+after
+                        nout3=nout2+after
+                        nout4=nout3+after
+                        nout5=nout4+after
+                        nout6=nout5+after
+                        nout7=nout6+after
+                        nout8=nout7+after
+                        do j=1,n1dfft
+                        r1=zin(1,j,nin1)
+                        s1=zin(2,j,nin1)
+                        r=zin(1,j,nin2)
+                        s=zin(2,j,nin2)
+                        r2=r*cr2 - s*ci2
+                        s2=r*ci2 + s*cr2
+                        r=zin(1,j,nin3)
+                        s=zin(2,j,nin3)
+                        r3=r*cr3 - s*ci3
+                        s3=r*ci3 + s*cr3
+                        r=zin(1,j,nin4)
+                        s=zin(2,j,nin4)
+                        r4=r*cr4 - s*ci4
+                        s4=r*ci4 + s*cr4
+                        r=zin(1,j,nin5)
+                        s=zin(2,j,nin5)
+                        r5=r*cr5 - s*ci5
+                        s5=r*ci5 + s*cr5
+                        r=zin(1,j,nin6)
+                        s=zin(2,j,nin6)
+                        r6=r*cr6 - s*ci6
+                        s6=r*ci6 + s*cr6
+                        r=zin(1,j,nin7)
+                        s=zin(2,j,nin7)
+                        r7=r*cr7 - s*ci7
+                        s7=r*ci7 + s*cr7
+                        r=zin(1,j,nin8)
+                        s=zin(2,j,nin8)
+                        r8=r*cr8 - s*ci8
+                        s8=r*ci8 + s*cr8
+                        r=r1 + r5
+                        s=r3 + r7
+                        ap=r + s
+                        am=r - s
+                        r=r2 + r6
+                        s=r4 + r8
+                        bp=r + s
+                        bm=r - s
+                        r=s1 + s5
+                        s=s3 + s7
+                        cp=r + s
+                        cm=r - s
+                        r=s2 + s6
+                        s=s4 + s8
+                        dpp=r + s
+                        dm=r - s
+                        zout(1,j,nout1) = ap + bp
+                        zout(2,j,nout1) = cp + dpp
+                        zout(1,j,nout5) = ap - bp
+                        zout(2,j,nout5) = cp - dpp
+                        zout(1,j,nout3) = am + dm
+                        zout(2,j,nout3) = cm - bm
+                        zout(1,j,nout7) = am - dm
+                        zout(2,j,nout7) = cm + bm
+                        r=r1 - r5
+                        s=s3 - s7
+                        ap=r + s
+                        am=r - s
+                        r=s1 - s5
+                        s=r3 - r7
+                        bp=r + s
+                        bm=r - s
+                        r=s4 - s8
+                        s=r2 - r6
+                        cp=r + s
+                        cm=r - s
+                        r=s2 - s6
+                        s=r4 - r8
+                        dpp=r + s
+                        dm=r - s
+                        r = ( cp + dm)*rt2i
+                        s = ( dm - cp)*rt2i
+                        cp= ( cm + dpp)*rt2i
+                        dpp = ( cm - dpp)*rt2i
+                        zout(1,j,nout2) = ap + r
+                        zout(2,j,nout2) = bm + s
+                        zout(1,j,nout6) = ap - r
+                        zout(2,j,nout6) = bm - s
+                        zout(1,j,nout4) = am + cp
+                        zout(2,j,nout4) = bp + dpp
+                        zout(1,j,nout8) = am - cp
+                        zout(2,j,nout8) = bp - dpp
+                        enddo
+                        enddo
+8000                continue
+
+        else
+                ia=1
+                        nin1=ia-after
+                        nout1=ia-atn
+                        do ib=1,before
+                        nin1=nin1+after
+                        nin2=nin1+atb
+                        nin3=nin2+atb
+                        nin4=nin3+atb
+                        nin5=nin4+atb
+                        nin6=nin5+atb
+                        nin7=nin6+atb
+                        nin8=nin7+atb
+                        nout1=nout1+atn
+                        nout2=nout1+after
+                        nout3=nout2+after
+                        nout4=nout3+after
+                        nout5=nout4+after
+                        nout6=nout5+after
+                        nout7=nout6+after
+                        nout8=nout7+after
+                        do j=1,n1dfft
+                        r1=zin(1,j,nin1)
+                        s1=zin(2,j,nin1)
+                        r2=zin(1,j,nin2)
+                        s2=zin(2,j,nin2)
+                        r3=zin(1,j,nin3)
+                        s3=zin(2,j,nin3)
+                        r4=zin(1,j,nin4)
+                        s4=zin(2,j,nin4)
+                        r5=zin(1,j,nin5)
+                        s5=zin(2,j,nin5)
+                        r6=zin(1,j,nin6)
+                        s6=zin(2,j,nin6)
+                        r7=zin(1,j,nin7)
+                        s7=zin(2,j,nin7)
+                        r8=zin(1,j,nin8)
+                        s8=zin(2,j,nin8)
+                        r=r1 + r5
+                        s=r3 + r7
+                        ap=r + s
+                        am=r - s
+                        r=r2 + r6
+                        s=r4 + r8
+                        bp=r + s
+                        bm=r - s
+                        r=s1 + s5
+                        s=s3 + s7
+                        cp=r + s
+                        cm=r - s
+                        r=s2 + s6
+                        s=s4 + s8
+                        dpp=r + s
+                        dm=r - s
+                        zout(1,j,nout1) = ap + bp
+                        zout(2,j,nout1) = cp + dpp
+                        zout(1,j,nout5) = ap - bp
+                        zout(2,j,nout5) = cp - dpp
+                        zout(1,j,nout3) = am - dm
+                        zout(2,j,nout3) = cm + bm
+                        zout(1,j,nout7) = am + dm
+                        zout(2,j,nout7) = cm - bm
+                        r= r1 - r5
+                        s=-s3 + s7
+                        ap=r + s
+                        am=r - s
+                        r=s1 - s5
+                        s=r7 - r3
+                        bp=r + s
+                        bm=r - s
+                        r=-s4 + s8
+                        s= r2 - r6
+                        cp=r + s
+                        cm=r - s
+                        r=-s2 + s6
+                        s= r4 - r8
+                        dpp=r + s
+                        dm=r - s
+                        r = ( cp + dm)*rt2i
+                        s = ( cp - dm)*rt2i
+                        cp= ( cm + dpp)*rt2i
+                        dpp= ( dpp - cm)*rt2i
+                        zout(1,j,nout2) = ap + r
+                        zout(2,j,nout2) = bm + s
+                        zout(1,j,nout6) = ap - r
+                        zout(2,j,nout6) = bm - s
+                        zout(1,j,nout4) = am + cp
+                        zout(2,j,nout4) = bp + dpp
+                        zout(1,j,nout8) = am - cp
+                        zout(2,j,nout8) = bp - dpp
+                        enddo
+                        enddo
+
+                do 8001,ia=2,after
+                ias=ia-1
+                        itt=ias*before
+                        itrig=itt+1
+                        cr2=trig(1,itrig)
+                        ci2=trig(2,itrig)
+                        itrig=itrig+itt
+                        cr3=trig(1,itrig)
+                        ci3=trig(2,itrig)
+                        itrig=itrig+itt
+                        cr4=trig(1,itrig)
+                        ci4=trig(2,itrig)
+                        itrig=itrig+itt
+                        cr5=trig(1,itrig)
+                        ci5=trig(2,itrig)
+                        itrig=itrig+itt
+                        cr6=trig(1,itrig)
+                        ci6=trig(2,itrig)
+                        itrig=itrig+itt
+                        cr7=trig(1,itrig)
+                        ci7=trig(2,itrig)
+                        itrig=itrig+itt
+                        cr8=trig(1,itrig)
+                        ci8=trig(2,itrig)
+                        nin1=ia-after
+                        nout1=ia-atn
+                        do ib=1,before
+                        nin1=nin1+after
+                        nin2=nin1+atb
+                        nin3=nin2+atb
+                        nin4=nin3+atb
+                        nin5=nin4+atb
+                        nin6=nin5+atb
+                        nin7=nin6+atb
+                        nin8=nin7+atb
+                        nout1=nout1+atn
+                        nout2=nout1+after
+                        nout3=nout2+after
+                        nout4=nout3+after
+                        nout5=nout4+after
+                        nout6=nout5+after
+                        nout7=nout6+after
+                        nout8=nout7+after
+                        do j=1,n1dfft
+                        r1=zin(1,j,nin1)
+                        s1=zin(2,j,nin1)
+                        r=zin(1,j,nin2)
+                        s=zin(2,j,nin2)
+                        r2=r*cr2 - s*ci2
+                        s2=r*ci2 + s*cr2
+                        r=zin(1,j,nin3)
+                        s=zin(2,j,nin3)
+                        r3=r*cr3 - s*ci3
+                        s3=r*ci3 + s*cr3
+                        r=zin(1,j,nin4)
+                        s=zin(2,j,nin4)
+                        r4=r*cr4 - s*ci4
+                        s4=r*ci4 + s*cr4
+                        r=zin(1,j,nin5)
+                        s=zin(2,j,nin5)
+                        r5=r*cr5 - s*ci5
+                        s5=r*ci5 + s*cr5
+                        r=zin(1,j,nin6)
+                        s=zin(2,j,nin6)
+                        r6=r*cr6 - s*ci6
+                        s6=r*ci6 + s*cr6
+                        r=zin(1,j,nin7)
+                        s=zin(2,j,nin7)
+                        r7=r*cr7 - s*ci7
+                        s7=r*ci7 + s*cr7
+                        r=zin(1,j,nin8)
+                        s=zin(2,j,nin8)
+                        r8=r*cr8 - s*ci8
+                        s8=r*ci8 + s*cr8
+                        r=r1 + r5
+                        s=r3 + r7
+                        ap=r + s
+                        am=r - s
+                        r=r2 + r6
+                        s=r4 + r8
+                        bp=r + s
+                        bm=r - s
+                        r=s1 + s5
+                        s=s3 + s7
+                        cp=r + s
+                        cm=r - s
+                        r=s2 + s6
+                        s=s4 + s8
+                        dpp=r + s
+                        dm=r - s
+                        zout(1,j,nout1) = ap + bp
+                        zout(2,j,nout1) = cp + dpp
+                        zout(1,j,nout5) = ap - bp
+                        zout(2,j,nout5) = cp - dpp
+                        zout(1,j,nout3) = am - dm
+                        zout(2,j,nout3) = cm + bm
+                        zout(1,j,nout7) = am + dm
+                        zout(2,j,nout7) = cm - bm
+                        r= r1 - r5
+                        s=-s3 + s7
+                        ap=r + s
+                        am=r - s
+                        r=s1 - s5
+                        s=r7 - r3
+                        bp=r + s
+                        bm=r - s
+                        r=-s4 + s8
+                        s= r2 - r6
+                        cp=r + s
+                        cm=r - s
+                        r=-s2 + s6
+                        s= r4 - r8
+                        dpp=r + s
+                        dm=r - s
+                        r = ( cp + dm)*rt2i
+                        s = ( cp - dm)*rt2i
+                        cp= ( cm + dpp)*rt2i
+                        dpp= ( dpp - cm)*rt2i
+                        zout(1,j,nout2) = ap + r
+                        zout(2,j,nout2) = bm + s
+                        zout(1,j,nout6) = ap - r
+                        zout(2,j,nout6) = bm - s
+                        zout(1,j,nout4) = am + cp
+                        zout(2,j,nout4) = bp + dpp
+                        zout(1,j,nout8) = am - cp
+                        zout(2,j,nout8) = bp - dpp
+                        enddo
+                        enddo
+8001                continue
+
+        end if
+        else if (now.eq.3) then
+!         .5d0*sqrt(3.d0)
+        bb=isign*0.8660254037844387d0
+        ia=1
+        nin1=ia-after
+        nout1=ia-atn
+        do ib=1,before
+        nin1=nin1+after
+        nin2=nin1+atb
+        nin3=nin2+atb
+        nout1=nout1+atn
+        nout2=nout1+after
+        nout3=nout2+after
+        do j=1,n1dfft
+        r1=zin(1,j,nin1)
+        s1=zin(2,j,nin1)
+        r2=zin(1,j,nin2)
+        s2=zin(2,j,nin2)
+        r3=zin(1,j,nin3)
+        s3=zin(2,j,nin3)
+        r=r2 + r3
+        s=s2 + s3
+        zout(1,j,nout1) = r + r1
+        zout(2,j,nout1) = s + s1
+        r1=r1 - .5d0*r
+        s1=s1 - .5d0*s
+        r2=bb*(r2-r3)
+        s2=bb*(s2-s3)
+        zout(1,j,nout2) = r1 - s2
+        zout(2,j,nout2) = s1 + r2
+        zout(1,j,nout3) = r1 + s2
+        zout(2,j,nout3) = s1 - r2
+        enddo
+        enddo
+        do 3000,ia=2,after
+        ias=ia-1
+        if (4*ias.eq.3*after) then
+        if (isign.eq.1) then
+                nin1=ia-after
+                nout1=ia-atn
+                do ib=1,before
+                nin1=nin1+after
+                nin2=nin1+atb
+                nin3=nin2+atb
+                nout1=nout1+atn
+                nout2=nout1+after
+                nout3=nout2+after
+                do j=1,n1dfft
+                r1=zin(1,j,nin1)
+                s1=zin(2,j,nin1)
+                r2=zin(2,j,nin2)
+                s2=zin(1,j,nin2)
+                r3=zin(1,j,nin3)
+                s3=zin(2,j,nin3)
+                r=r3 + r2
+                s=s2 - s3
+                zout(1,j,nout1) = r1 - r
+                zout(2,j,nout1) = s + s1
+                r1=r1 + .5d0*r
+                s1=s1 - .5d0*s
+                r2=bb*(r2-r3)
+                s2=bb*(s2+s3)
+                zout(1,j,nout2) = r1 - s2
+                zout(2,j,nout2) = s1 - r2
+                zout(1,j,nout3) = r1 + s2
+                zout(2,j,nout3) = s1 + r2
+                enddo
+                enddo
+        else
+                nin1=ia-after
+                nout1=ia-atn
+                do ib=1,before
+                nin1=nin1+after
+                nin2=nin1+atb
+                nin3=nin2+atb
+                nout1=nout1+atn
+                nout2=nout1+after
+                nout3=nout2+after
+                do j=1,n1dfft
+                r1=zin(1,j,nin1)
+                s1=zin(2,j,nin1)
+                r2=zin(2,j,nin2)
+                s2=zin(1,j,nin2)
+                r3=zin(1,j,nin3)
+                s3=zin(2,j,nin3)
+                r=r2 - r3
+                s=s2 + s3
+                zout(1,j,nout1) = r + r1
+                zout(2,j,nout1) = s1 - s
+                r1=r1 - .5d0*r
+                s1=s1 + .5d0*s
+                r2=bb*(r2+r3)
+                s2=bb*(s2-s3)
+                zout(1,j,nout2) = r1 + s2
+                zout(2,j,nout2) = s1 + r2
+                zout(1,j,nout3) = r1 - s2
+                zout(2,j,nout3) = s1 - r2
+                enddo
+                enddo
+        end if
+        else if (8*ias.eq.3*after) then
+        if (isign.eq.1) then
+                nin1=ia-after
+                nout1=ia-atn
+                do ib=1,before
+                nin1=nin1+after
+                nin2=nin1+atb
+                nin3=nin2+atb
+                nout1=nout1+atn
+                nout2=nout1+after
+                nout3=nout2+after
+                do j=1,n1dfft
+                r1=zin(1,j,nin1)
+                s1=zin(2,j,nin1)
+                r=zin(1,j,nin2)
+                s=zin(2,j,nin2)
+                r2=(r - s)*rt2i
+                s2=(r + s)*rt2i
+                r3=zin(2,j,nin3)
+                s3=zin(1,j,nin3)
+                r=r2 - r3
+                s=s2 + s3
+                zout(1,j,nout1) = r + r1
+                zout(2,j,nout1) = s + s1
+                r1=r1 - .5d0*r
+                s1=s1 - .5d0*s
+                r2=bb*(r2+r3)
+                s2=bb*(s2-s3)
+                zout(1,j,nout2) = r1 - s2
+                zout(2,j,nout2) = s1 + r2
+                zout(1,j,nout3) = r1 + s2
+                zout(2,j,nout3) = s1 - r2
+                enddo
+                enddo
+        else
+                nin1=ia-after
+                nout1=ia-atn
+                do ib=1,before
+                nin1=nin1+after
+                nin2=nin1+atb
+                nin3=nin2+atb
+                nout1=nout1+atn
+                nout2=nout1+after
+                nout3=nout2+after
+                do j=1,n1dfft
+                r1=zin(1,j,nin1)
+                s1=zin(2,j,nin1)
+                r=zin(1,j,nin2)
+                s=zin(2,j,nin2)
+                r2=(r + s)*rt2i
+                s2=(s - r)*rt2i
+                r3=zin(2,j,nin3)
+                s3=zin(1,j,nin3)
+                r=r2 + r3
+                s=s2 - s3
+                zout(1,j,nout1) = r + r1
+                zout(2,j,nout1) = s + s1
+                r1=r1 - .5d0*r
+                s1=s1 - .5d0*s
+                r2=bb*(r2-r3)
+                s2=bb*(s2+s3)
+                zout(1,j,nout2) = r1 - s2
+                zout(2,j,nout2) = s1 + r2
+                zout(1,j,nout3) = r1 + s2
+                zout(2,j,nout3) = s1 - r2
+                enddo
+                enddo
+        end if
+        else
+        itt=ias*before
+        itrig=itt+1
+        cr2=trig(1,itrig)
+        ci2=trig(2,itrig)
+        itrig=itrig+itt
+        cr3=trig(1,itrig)
+        ci3=trig(2,itrig)
+        nin1=ia-after
+        nout1=ia-atn
+        do ib=1,before
+        nin1=nin1+after
+        nin2=nin1+atb
+        nin3=nin2+atb
+        nout1=nout1+atn
+        nout2=nout1+after
+        nout3=nout2+after
+        do j=1,n1dfft
+        r1=zin(1,j,nin1)
+        s1=zin(2,j,nin1)
+        r=zin(1,j,nin2)
+        s=zin(2,j,nin2)
+        r2=r*cr2 - s*ci2
+        s2=r*ci2 + s*cr2
+        r=zin(1,j,nin3)
+        s=zin(2,j,nin3)
+        r3=r*cr3 - s*ci3
+        s3=r*ci3 + s*cr3
+        r=r2 + r3
+        s=s2 + s3
+        zout(1,j,nout1) = r + r1
+        zout(2,j,nout1) = s + s1
+        r1=r1 - .5d0*r
+        s1=s1 - .5d0*s
+        r2=bb*(r2-r3)
+        s2=bb*(s2-s3)
+        zout(1,j,nout2) = r1 - s2
+        zout(2,j,nout2) = s1 + r2
+        zout(1,j,nout3) = r1 + s2
+        zout(2,j,nout3) = s1 - r2
+        enddo
+        enddo
+        end if
+3000        continue
+        else if (now==5) then
+!         cos(2.d0*pi/5.d0)
+        cos2=0.3090169943749474d0
+!         cos(4.d0*pi/5.d0)
+        cos4=-0.8090169943749474d0
+!        sin(2.d0*pi/5.d0)
+        sin2=isign*0.9510565162951536d0
+!         sin(4.d0*pi/5.d0)
+        sin4=isign*0.5877852522924731d0
+        ia=1
+        nin1=ia-after
+        nout1=ia-atn
+        do ib=1,before
+        nin1=nin1+after
+        nin2=nin1+atb
+        nin3=nin2+atb
+        nin4=nin3+atb
+        nin5=nin4+atb
+        nout1=nout1+atn
+        nout2=nout1+after
+        nout3=nout2+after
+        nout4=nout3+after
+        nout5=nout4+after
+        do j=1,n1dfft
+        r1=zin(1,j,nin1)
+        s1=zin(2,j,nin1)
+        r2=zin(1,j,nin2)
+        s2=zin(2,j,nin2)
+        r3=zin(1,j,nin3)
+        s3=zin(2,j,nin3)
+        r4=zin(1,j,nin4)
+        s4=zin(2,j,nin4)
+        r5=zin(1,j,nin5)
+        s5=zin(2,j,nin5)
+        r25 = r2 + r5
+        r34 = r3 + r4
+        s25 = s2 - s5
+        s34 = s3 - s4
+        zout(1,j,nout1) = r1 + r25 + r34
+        r = r1 + cos2*r25 + cos4*r34
+        s = sin2*s25 + sin4*s34
+        zout(1,j,nout2) = r - s
+        zout(1,j,nout5) = r + s
+        r = r1 + cos4*r25 + cos2*r34
+        s = sin4*s25 - sin2*s34
+        zout(1,j,nout3) = r - s
+        zout(1,j,nout4) = r + s
+        r25 = r2 - r5
+        r34 = r3 - r4
+        s25 = s2 + s5
+        s34 = s3 + s4
+        zout(2,j,nout1) = s1 + s25 + s34
+        r = s1 + cos2*s25 + cos4*s34
+        s = sin2*r25 + sin4*r34
+        zout(2,j,nout2) = r + s
+        zout(2,j,nout5) = r - s
+        r = s1 + cos4*s25 + cos2*s34
+        s = sin4*r25 - sin2*r34
+        zout(2,j,nout3) = r + s
+        zout(2,j,nout4) = r - s
+        enddo
+        enddo
+        do 5000,ia=2,after
+        ias=ia-1
+        if (8*ias.eq.5*after) then
+                if (isign.eq.1) then
+                        nin1=ia-after
+                        nout1=ia-atn
+                        do ib=1,before
+                        nin1=nin1+after
+                        nin2=nin1+atb
+                        nin3=nin2+atb
+                        nin4=nin3+atb
+                        nin5=nin4+atb
+                        nout1=nout1+atn
+                        nout2=nout1+after
+                        nout3=nout2+after
+                        nout4=nout3+after
+                        nout5=nout4+after
+                        do j=1,n1dfft
+                        r1=zin(1,j,nin1)
+                        s1=zin(2,j,nin1)
+                        r=zin(1,j,nin2)
+                        s=zin(2,j,nin2)
+                        r2=(r - s)*rt2i
+                        s2=(r + s)*rt2i
+                        r3=zin(2,j,nin3)
+                        s3=zin(1,j,nin3)
+                        r=zin(1,j,nin4)
+                        s=zin(2,j,nin4)
+                        r4=(r + s)*rt2i
+                        s4=(r - s)*rt2i
+                        r5=zin(1,j,nin5)
+                        s5=zin(2,j,nin5)
+                        r25 = r2 - r5
+                        r34 = r3 + r4
+                        s25 = s2 + s5
+                        s34 = s3 - s4
+                        zout(1,j,nout1) = r1 + r25 - r34
+                        r = r1 + cos2*r25 - cos4*r34
+                        s = sin2*s25 + sin4*s34
+                        zout(1,j,nout2) = r - s
+                        zout(1,j,nout5) = r + s
+                        r = r1 + cos4*r25 - cos2*r34
+                        s = sin4*s25 - sin2*s34
+                        zout(1,j,nout3) = r - s
+                        zout(1,j,nout4) = r + s
+                        r25 = r2 + r5
+                        r34 = r4 - r3
+                        s25 = s2 - s5
+                        s34 = s3 + s4
+                        zout(2,j,nout1) = s1 + s25 + s34
+                        r = s1 + cos2*s25 + cos4*s34
+                        s = sin2*r25 + sin4*r34
+                        zout(2,j,nout2) = r + s
+                        zout(2,j,nout5) = r - s
+                        r = s1 + cos4*s25 + cos2*s34
+                        s = sin4*r25 - sin2*r34
+                        zout(2,j,nout3) = r + s
+                        zout(2,j,nout4) = r - s
+                        enddo
+                        enddo
+                else
+                        nin1=ia-after
+                        nout1=ia-atn
+                        do ib=1,before
+                        nin1=nin1+after
+                        nin2=nin1+atb
+                        nin3=nin2+atb
+                        nin4=nin3+atb
+                        nin5=nin4+atb
+                        nout1=nout1+atn
+                        nout2=nout1+after
+                        nout3=nout2+after
+                        nout4=nout3+after
+                        nout5=nout4+after
+                        do j=1,n1dfft
+                        r1=zin(1,j,nin1)
+                        s1=zin(2,j,nin1)
+                        r=zin(1,j,nin2)
+                        s=zin(2,j,nin2)
+                        r2=(r + s)*rt2i
+                        s2=(s - r)*rt2i
+                        r3=zin(2,j,nin3)
+                        s3=zin(1,j,nin3)
+                        r=zin(1,j,nin4)
+                        s=zin(2,j,nin4)
+                        r4=(s - r)*rt2i
+                        s4=(r + s)*rt2i
+                        r5=zin(1,j,nin5)
+                        s5=zin(2,j,nin5)
+                        r25 = r2 - r5
+                        r34 = r3 + r4
+                        s25 = s2 + s5
+                        s34 = s4 - s3
+                        zout(1,j,nout1) = r1 + r25 + r34
+                        r = r1 + cos2*r25 + cos4*r34
+                        s = sin2*s25 + sin4*s34
+                        zout(1,j,nout2) = r - s
+                        zout(1,j,nout5) = r + s
+                        r = r1 + cos4*r25 + cos2*r34
+                        s = sin4*s25 - sin2*s34
+                        zout(1,j,nout3) = r - s
+                        zout(1,j,nout4) = r + s
+                        r25 = r2 + r5
+                        r34 = r3 - r4
+                        s25 = s2 - s5
+                        s34 = s3 + s4
+                        zout(2,j,nout1) = s1 + s25 - s34
+                        r = s1 + cos2*s25 - cos4*s34
+                        s = sin2*r25 + sin4*r34
+                        zout(2,j,nout2) = r + s
+                        zout(2,j,nout5) = r - s
+                        r = s1 + cos4*s25 - cos2*s34
+                        s = sin4*r25 - sin2*r34
+                        zout(2,j,nout3) = r + s
+                        zout(2,j,nout4) = r - s
+                        enddo
+                        enddo
+                end if
+        else
+                ias=ia-1
+                itt=ias*before
+                itrig=itt+1
+                cr2=trig(1,itrig)
+                ci2=trig(2,itrig)
+                itrig=itrig+itt
+                cr3=trig(1,itrig)
+                ci3=trig(2,itrig)
+                itrig=itrig+itt
+                cr4=trig(1,itrig)
+                ci4=trig(2,itrig)
+                itrig=itrig+itt
+                cr5=trig(1,itrig)
+                ci5=trig(2,itrig)
+                nin1=ia-after
+                nout1=ia-atn
+                do ib=1,before
+                nin1=nin1+after
+                nin2=nin1+atb
+                nin3=nin2+atb
+                nin4=nin3+atb
+                nin5=nin4+atb
+                nout1=nout1+atn
+                nout2=nout1+after
+                nout3=nout2+after
+                nout4=nout3+after
+                nout5=nout4+after
+                do j=1,n1dfft
+                r1=zin(1,j,nin1)
+                s1=zin(2,j,nin1)
+                r=zin(1,j,nin2)
+                s=zin(2,j,nin2)
+                r2=r*cr2 - s*ci2
+                s2=r*ci2 + s*cr2
+                r=zin(1,j,nin3)
+                s=zin(2,j,nin3)
+                r3=r*cr3 - s*ci3
+                s3=r*ci3 + s*cr3
+                r=zin(1,j,nin4)
+                s=zin(2,j,nin4)
+                r4=r*cr4 - s*ci4
+                s4=r*ci4 + s*cr4
+                r=zin(1,j,nin5)
+                s=zin(2,j,nin5)
+                r5=r*cr5 - s*ci5
+                s5=r*ci5 + s*cr5
+                r25 = r2 + r5
+                r34 = r3 + r4
+                s25 = s2 - s5
+                s34 = s3 - s4
+                zout(1,j,nout1) = r1 + r25 + r34
+                r = r1 + cos2*r25 + cos4*r34
+                s = sin2*s25 + sin4*s34
+                zout(1,j,nout2) = r - s
+                zout(1,j,nout5) = r + s
+                r = r1 + cos4*r25 + cos2*r34
+                s = sin4*s25 - sin2*s34
+                zout(1,j,nout3) = r - s
+                zout(1,j,nout4) = r + s
+                r25 = r2 - r5
+                r34 = r3 - r4
+                s25 = s2 + s5
+                s34 = s3 + s4
+                zout(2,j,nout1) = s1 + s25 + s34
+                r = s1 + cos2*s25 + cos4*s34
+                s = sin2*r25 + sin4*r34
+                zout(2,j,nout2) = r + s
+                zout(2,j,nout5) = r - s
+                r = s1 + cos4*s25 + cos2*s34
+                s = sin4*r25 - sin2*r34
+                zout(2,j,nout3) = r + s
+                zout(2,j,nout4) = r - s
+                enddo
+                enddo
+        end if
+5000        continue
+       else if (now.eq.6) then
+!         .5d0*sqrt(3.d0)
+        bb=isign*0.8660254037844387d0
+
+        ia=1
+        nin1=ia-after
+        nout1=ia-atn
+        do ib=1,before
+        nin1=nin1+after
+        nin2=nin1+atb
+        nin3=nin2+atb
+        nin4=nin3+atb
+        nin5=nin4+atb
+        nin6=nin5+atb
+        nout1=nout1+atn
+        nout2=nout1+after
+        nout3=nout2+after
+        nout4=nout3+after
+        nout5=nout4+after
+        nout6=nout5+after
+        do j=1,n1dfft
+        r2=zin(1,j,nin3)
+        s2=zin(2,j,nin3)
+        r3=zin(1,j,nin5)
+        s3=zin(2,j,nin5)
+        r=r2 + r3
+        s=s2 + s3
+        r1=zin(1,j,nin1)
+        s1=zin(2,j,nin1)
+        ur1 = r + r1
+        ui1 = s + s1
+        r1=r1 - .5d0*r
+        s1=s1 - .5d0*s
+        r=r2-r3
+        s=s2-s3
+        ur2 = r1 - s*bb
+        ui2 = s1 + r*bb
+        ur3 = r1 + s*bb
+        ui3 = s1 - r*bb
+
+        r2=zin(1,j,nin6)
+        s2=zin(2,j,nin6)
+        r3=zin(1,j,nin2)
+        s3=zin(2,j,nin2)
+        r=r2 + r3
+        s=s2 + s3
+        r1=zin(1,j,nin4)
+        s1=zin(2,j,nin4)
+        vr1 = r + r1
+        vi1 = s + s1
+        r1=r1 - .5d0*r
+        s1=s1 - .5d0*s
+        r=r2-r3
+        s=s2-s3
+        vr2 = r1 - s*bb
+        vi2 = s1 + r*bb
+        vr3 = r1 + s*bb
+        vi3 = s1 - r*bb
+
+        zout(1,j,nout1)=ur1+vr1
+        zout(2,j,nout1)=ui1+vi1
+        zout(1,j,nout5)=ur2+vr2
+        zout(2,j,nout5)=ui2+vi2
+        zout(1,j,nout3)=ur3+vr3
+        zout(2,j,nout3)=ui3+vi3
+        zout(1,j,nout4)=ur1-vr1
+        zout(2,j,nout4)=ui1-vi1
+        zout(1,j,nout2)=ur2-vr2
+        zout(2,j,nout2)=ui2-vi2
+        zout(1,j,nout6)=ur3-vr3
+        zout(2,j,nout6)=ui3-vi3
+        enddo
+        enddo
+
+        else
+          LIBPAW_ERROR('error fftstp')
+        end if
+
+end subroutine fftstp
+!!***
+
+end module m_sg2002
+!!***

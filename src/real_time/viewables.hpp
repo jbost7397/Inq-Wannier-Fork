@@ -73,7 +73,7 @@ public:
 	}
 
 	auto forces() {
-		if(forces_.size() == 0) forces_ = observables::forces_stress{ions_, electrons_, ham_}.forces;
+		if(forces_.size() == 0) forces_ = observables::forces_stress{ions_, electrons_, ham_, energy_}.forces;
 		return forces_;
 	}
 
@@ -108,8 +108,8 @@ public:
 		for(int ilot = 0; ilot < gs.kpin_size(); ilot++) {
 
 			auto ortho = matrix::all_gather(operations::overlap(electrons_.kpin()[ilot], gs.kpin()[ilot]));
-			
-			for (int it = 0; it < std::get<0>(sizes(ortho)); it++) {
+
+			for (int it = 0; it < get<0>(sizes(ortho)); it++) {
 				auto start = electrons_.kpin()[ilot].set_part().start();
 				auto finish = electrons_.kpin()[ilot].set_part().end();
 				occ[ilot + gs.kpin_part().start()][it] = operations::sum(electrons_.occupations()[ilot], ortho[it]({start, finish}), calc)/electrons_.kpin_weights()[ilot];

@@ -38,9 +38,9 @@ auto diagonalize_raw(gpu::array<double, 2, Alloc>& matrix){
 	CALI_CXX_MARK_FUNCTION;
 
 	// the matrix must be square
-	assert(std::get<0>(sizes(matrix)) == std::get<1>(sizes(matrix)));
+	assert(get<0>(sizes(matrix)) == get<1>(sizes(matrix)));
 
-	int nn = std::get<0>(sizes(matrix));
+	int nn = get<0>(sizes(matrix));
     
 	gpu::array<double, 1> eigenvalues(nn);
 
@@ -101,12 +101,12 @@ template<class Alloc>
 auto diagonalize_raw(gpu::array<complex, 2, Alloc>& matrix){
 
 	CALI_CXX_MARK_FUNCTION;
-	
-	// the matrix must be square
-	assert(std::get<0>(sizes(matrix)) == std::get<1>(sizes(matrix)));
 
-	int nn = std::get<0>(sizes(matrix));
-    
+	// the matrix must be square
+	assert(get<0>(sizes(matrix)) == get<1>(sizes(matrix)));
+
+	int nn = get<0>(sizes(matrix));
+
 	gpu::array<double, 1> eigenvalues(nn);
 
 #ifdef ENABLE_CUDA
@@ -187,18 +187,6 @@ auto diagonalize(DistributedMatrix & matrix) {
   
   return eigenvalues;
 }
-
-/*template <typename Matrix>
-auto diagonalize_wann(Matrix & matrix) {
-
-  assert(matrix.sizex() == matrix.sizey());
-  gpu::array<double, 1> eigenvalues;
-
-  eigenvalues = diagonalize_raw(matrix);
-
-  assert(eigenvalues.size() == matrix.sizex());
-  return eigenvalues;
-}*/
 
 }
 }
@@ -292,25 +280,14 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		array[2][0] = 1.191946;
 		array[2][1] = 0.705297;
 		array[2][2] = 0.392459;
+
+		matrix::distributed matrix = matrix::scatter(cart_comm, array, /* root = */ 0);
 		
-		//matrix::distributed matrix = matrix::scatter(cart_comm, array, /* root = */ 0);
-		//CS quick check for non-distributed matrix
-		/*auto evalues = matrix::diagonalize_wann(array);
+		auto evalues = matrix::diagonalize(matrix);
 		
 		CHECK(evalues[0] == -1.0626903983_a);
 		CHECK(evalues[1] == 0.1733844724_a);
 		CHECK(evalues[2] == 2.7426069258_a);
-
-                CHECK(array[0][0] == -1.0626903983_a);
-                CHECK(array[0][1] == 0.1733844724_a);
-                CHECK(array[0][2] == 2.7426069258_a);
-                CHECK(array[1][0] == -1.0626903983_a);
-                CHECK(array[1][1] == 0.1733844724_a);
-                CHECK(array[1][2] == 2.7426069258_a);
-                CHECK(array[2][0] == -1.0626903983_a);
-                CHECK(array[2][1] == 0.1733844724_a);
-                CHECK(array[2][2] == 2.7426069258_a);*/
-
 	}
 
 	SECTION("Complex dense 3x3"){

@@ -17,10 +17,16 @@ int main(int argc, char ** argv){
         sys.insert(ionic::species("He").pseudo_file(inq::config::path::pseudo() + "He_ONCV_PBE-1.2.upf.gz"), {3.0_b, 3.0_b, 3.0_b});
         sys.insert(ionic::species("He").pseudo_file(inq::config::path::pseudo() + "He_ONCV_PBE-1.2.upf.gz"), {18.0_b, 18.0_b, 18.0_b});
 	inq::systems::electrons el(sys, options::electrons{}.cutoff(30.0_Ry));
-	inq::ground_state::initial_guess(sys, el);
-	
-	inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha));
-	real_time::propagate(sys, el, [](auto){}, options::theory{}.pbe(), options::real_time{}.num_steps(100).dt(0.0565_atomictime).tdmlwf());
+        
+	std::string restart_dir = "helium_restart";
+        auto not_found_gs = not el.try_load(restart_dir);
+        if(not_found_gs){
+                inq::ground_state::initial_guess(sys, el);
+                try { inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha)); }
+                catch(...){ }
+                el.save(restart_dir);
+        }
+	real_time::propagate(sys, el, [](auto){}, options::theory{}.pbe(), options::real_time{}.num_steps(10).dt(0.0565_atomictime).tdmlwf());
 	
 	return 1;
 	

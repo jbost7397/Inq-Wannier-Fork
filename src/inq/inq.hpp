@@ -19,6 +19,7 @@
 #include <perturbations/kick.hpp>
 #include <perturbations/laser.hpp>
 #include <perturbations/ramplaser.hpp>
+#include <perturbations/simple_electric_field.hpp>
 #include <perturbations/sum.hpp>
 #include <observables/kinetic_energy_density.hpp>
 #include <observables/magnetization.hpp>
@@ -39,6 +40,7 @@
 #include <interface/run.hpp>
 #include <interface/species.hpp>
 #include <interface/spectrum.hpp>
+#include <interface/status.hpp>
 #include <interface/theory.hpp>
 #include <interface/units.hpp>
 #include <interface/util.hpp>

@@ -49,7 +49,6 @@ namespace hamiltonian {
 		std::unordered_map<std::string, pseudopotential_type> pseudopotential_list_;
 		bool has_nlcc_;
 		basis::double_grid double_grid_;
-		bool fourier_pseudo_;
 
 	public:
 
@@ -57,8 +56,7 @@ namespace hamiltonian {
 		atomic_potential(SpeciesList const & species_list, double gcutoff, options::electrons const & conf = {}):
 			sep_(0.625), //this is the default from octopus
 			default_pseudo_set_(species_list.pseudopotentials()),
-			double_grid_(conf.double_grid_value()),
-			fourier_pseudo_(conf.fourier_pseudo_value())
+			double_grid_(conf.double_grid_value())
 		{
 
 			CALI_CXX_MARK_FUNCTION;
@@ -302,6 +300,60 @@ namespace hamiltonian {
 			density.all_reduce(comm);
 			return density;			
 		}
+
+		////////////////////////////////////////////////////////////////////////////////////
+
+		template <class Comm, class Ions>
+		gpu::array<vector3<double>, 1> nlcc_forces(Comm & comm, basis::field_set<basis::real_space, double> const & vxc, Ions const & ions) const {
+			CALI_CXX_MARK_FUNCTION;
+
+			// NLCC Forces from Kronik et al., J. Chem. Phys. 115, 4322 (2001): Eq. 9
+
+			gpu::array<vector3<double>, 1> forces(ions.size(), {0.0, 0.0, 0.0});
+
+			auto && basis = vxc.basis();
+			
+			parallel::partition part(ions.size(), comm);
+			
+			for(auto iatom = part.start(); iatom < part.end(); iatom++){
+				
+				auto atom_position = ions.positions()[iatom];
+				
+				auto & ps = pseudo_for_element(ions.species(iatom));
+				
+				if(not ps.has_nlcc_density()) continue;
+
+				assert(has_nlcc());
+				
+				basis::spherical_grid sphere(basis, atom_position, 1.1*ps.nlcc_density_radius());
+
+				auto ff = gpu::run(gpu::reduce(sphere.size()), zero<vector3<double, contravariant>>(),
+													 [vx = begin(vxc.hypercubic()), nspin = std::min(2l, vxc.local_set_size()), sph = sphere.ref(), spline = ps.nlcc_density().function()]
+													 GPU_LAMBDA (auto ipoint){
+														 auto vv = 0.0;
+														 for(int ispin = 0; ispin < nspin; ispin++) vv += vx[sph.grid_point(ipoint)[0]][sph.grid_point(ipoint)[1]][sph.grid_point(ipoint)[2]][ispin];
+														 auto rr = sph.distance(ipoint);
+														 if(rr < 1e-15) return zero<vector3<double, contravariant>>();
+														 auto grad = spline.derivative(rr)*sph.point_pos(ipoint)/rr;
+														 return vv*grad;
+													 });
+
+				forces[iatom] = basis.volume_element()*basis.cell().metric().to_cartesian(ff);
+			}
+
+			if(basis.comm().size() > 1) {
+				basis.comm().all_reduce_n(reinterpret_cast<double *>(raw_pointer_cast(forces.data_elements())), 3*forces.size());
+			}
+
+			//we should use allgather here
+			if(comm.size() > 1) {
+				comm.all_reduce_n(reinterpret_cast<double *>(raw_pointer_cast(forces.data_elements())), 3*forces.size());
+			}
+			
+			return forces;
+		}
+
+		////////////////////////////////////////////////////////////////////////////////////
 		
 		template <class output_stream>
 		void info(output_stream & out) const {
@@ -318,10 +370,6 @@ namespace hamiltonian {
 			return double_grid_;
 		}
 
-		auto & fourier_pseudo() const {
-			return fourier_pseudo_;
-		}
-		
 	};
 
 }

@@ -22,6 +22,7 @@
 #include <solvers/poisson.hpp>
 #include <states/index.hpp>
 #include <states/orbital_set.hpp>
+#include <wannier/tdmlwf_trans.hpp>
 
 #include <optional>
 
@@ -34,18 +35,30 @@ namespace hamiltonian {
 		gpu::array<int, 1> kpoint_indices_;
 		std::optional<basis::field_set<basis::real_space, complex, parallel::arbitrary_partition>> orbitals_;
 		std::vector<states::orbital_set<basis::real_space, complex>> ace_orbitals_;
-		solvers::poisson poisson_solver_;
 		double exchange_coefficient_;
 		bool use_ace_;
+		bool use_cutoff_;
 		singularity_correction sing_;
 		states::index orbital_index_;
+		std::optional<wannier::tdmlwf_trans> mlwf_;
+		double epsilon_;
 		
   public:
 
 		exchange_operator(systems::cell const & cell, ionic::brillouin const & bzone, double const exchange_coefficient, bool const use_ace):
 			exchange_coefficient_(exchange_coefficient),
 			use_ace_(use_ace),
+			use_cutoff_(false),
 			sing_(cell, bzone){
+		}
+
+		exchange_operator(systems::cell const & cell, ionic::brillouin const & bzone, double const exchange_coefficient, wannier::tdmlwf_trans mlwf, bool const use_ace, bool const use_cutoff, double const epsilon):
+			exchange_coefficient_(exchange_coefficient),
+			use_ace_(use_ace),
+			use_cutoff_(use_cutoff),
+			sing_(cell, bzone),
+	  		epsilon_(epsilon),
+	  		mlwf_(mlwf){
 		}
 
 		//////////////////////////////////////////////////////////////////////////////////
@@ -142,7 +155,7 @@ namespace hamiltonian {
 									 });
 				}
 
-				poisson_solver_.in_place(rhoij, -phi.kpoint() + kpt[jj], sing_(idx[jj]));
+				solvers::poisson::in_place(rhoij, -phi.kpoint() + kpt[jj], sing_(idx[jj]));
 				
 				{ CALI_CXX_MARK_SCOPE("exchange_operator::mulitplication");
 					gpu::run(nst, exxphi.basis().local_size(),
@@ -150,6 +163,47 @@ namespace hamiltonian {
 									 GPU_LAMBDA (auto ist, auto ipoint){
 										 exph[ipoint][ist] += scal*hfo[ipoint][jj]*pot[ipoint][ist];
 									 });
+				}
+			}
+		}
+
+		//////////////////////////////////////////////////////////////////////////////////
+		
+		template <class HFType, class HFOccType, class KptType, class IdxType, class PhiType, class ExxphiType>
+		void block_exchange_cut(double factor, HFType const & hf, HFOccType const & hfocc, KptType const & kpt, IdxType const & idx, PhiType const & phi, ExxphiType & exxphi, int offset) const {
+
+			auto nst = phi.local_set_size();
+			auto nhf = (~hf).size();
+			auto rank_offset = (offset + orbitals_->set_comm().rank()) % orbitals_->set_comm().size();
+			/*auto pair_frac = mlwf->pair_fraction(epsilon, phi.basis().cell());
+			std::cout << "Pair fraction = " << pair_frac << std::endl;*/
+			
+			for(int jj = 0; jj < nhf; jj++){
+
+				if(fabs(hfocc[jj]) < 1e-10) continue;
+
+				auto olaps_j = mlwf_->get_overlaps_of_j(epsilon_, jj, phi.basis().cell(), rank_offset);
+
+				if(olaps_j.size() > 0){
+					basis::field_set<basis::real_space, complex> rhoij(phi.basis(), olaps_j.size());
+				
+					{ CALI_CXX_MARK_SCOPE("exchange_operator::generate_density");
+						gpu::run(olaps_j.size(), phi.basis().local_size(),
+									 [rho = begin(rhoij.matrix()), hfo = begin(hf), ph = begin(phi.matrix()), oj = begin(olaps_j), jj] GPU_LAMBDA (auto ist, auto ipoint){ 
+										 rho[ipoint][ist] = conj(hfo[ipoint][jj])*ph[ipoint][oj[ist]];
+									 });
+					}
+
+					solvers::poisson::in_place(rhoij, -phi.kpoint() + kpt[jj], sing_(idx[jj]));
+				
+					{ CALI_CXX_MARK_SCOPE("exchange_operator::mulitplication");
+						gpu::run(olaps_j.size(), exxphi.basis().local_size(),
+									 [pot = begin(rhoij.matrix()), hfo = begin(hf), exph = begin(exxphi.matrix()), scal = factor*hfocc[jj], jj, oj = begin(olaps_j)]
+									 GPU_LAMBDA (auto ist, auto ipoint){
+										 exph[ipoint][oj[ist]] += scal*hfo[ipoint][jj]*pot[ipoint][ist];
+									 });
+					}
+
 				}
 			}
 		}
@@ -164,17 +218,39 @@ namespace hamiltonian {
 			double factor = -0.5*scale*exchange_coefficient_;
 
 			if(not orbitals_->set_part().parallel()){
-				block_exchange(factor, orbitals_->matrix(), occupations_, kpoints_, kpoint_indices_, phi, exxphi);
+				if(use_cutoff_){
+					//auto full_olaps_j = mlwf_->get_overlaps_of_all_j(epsilon_, orbitals_->set_comm(), phi.basis().cell());
+					block_exchange_cut(factor, orbitals_->matrix(), occupations_, kpoints_, kpoint_indices_, phi, exxphi, 0);
+				}
+				else block_exchange(factor, orbitals_->matrix(), occupations_, kpoints_, kpoint_indices_, phi, exxphi);
 			} else {
-				auto occ_it = parallel::array_iterator(orbitals_->set_part(), orbitals_->set_comm(), occupations_);
-				auto kpt_it = parallel::array_iterator(orbitals_->set_part(), orbitals_->set_comm(), kpoints_);
-				auto idx_it = parallel::array_iterator(orbitals_->set_part(), orbitals_->set_comm(), kpoint_indices_);
-				auto hfo_it = parallel::block_array_iterator(orbitals_->basis().local_size(), orbitals_->set_part(), orbitals_->set_comm(), orbitals_->matrix());
-				for(; hfo_it != hfo_it.end(); ++hfo_it){
-					block_exchange(factor, *hfo_it, *occ_it, *kpt_it, *idx_it, phi, exxphi);
-					++occ_it;
-					++kpt_it;
-					++idx_it;
+				if(use_cutoff_){
+					//auto full_olaps_j = mlwf_->get_overlaps_of_all_j(epsilon_, orbitals_->set_comm(), phi.basis().cell());
+					//auto olap_it = parallel::block_array_iterator(phi.local_set_size(), orbitals_->set_part(), orbitals_->set_comm(), full_olaps_j);
+					auto occ_it = parallel::array_iterator(orbitals_->set_part(), orbitals_->set_comm(), occupations_);
+					auto kpt_it = parallel::array_iterator(orbitals_->set_part(), orbitals_->set_comm(), kpoints_);
+					auto idx_it = parallel::array_iterator(orbitals_->set_part(), orbitals_->set_comm(), kpoint_indices_);
+					auto hfo_it = parallel::block_array_iterator(orbitals_->basis().local_size(), orbitals_->set_part(), orbitals_->set_comm(), orbitals_->matrix());
+					auto offset_counter = 0;
+					for(; hfo_it != hfo_it.end(); ++hfo_it){
+						block_exchange_cut(factor, *hfo_it, *occ_it, *kpt_it, *idx_it, phi, exxphi, offset_counter);
+						++occ_it;
+						++kpt_it;
+						++idx_it;
+						++offset_counter;
+					}
+				}
+				else{
+					auto occ_it = parallel::array_iterator(orbitals_->set_part(), orbitals_->set_comm(), occupations_);
+					auto kpt_it = parallel::array_iterator(orbitals_->set_part(), orbitals_->set_comm(), kpoints_);
+					auto idx_it = parallel::array_iterator(orbitals_->set_part(), orbitals_->set_comm(), kpoint_indices_);
+					auto hfo_it = parallel::block_array_iterator(orbitals_->basis().local_size(), orbitals_->set_part(), orbitals_->set_comm(), orbitals_->matrix());
+					for(; hfo_it != hfo_it.end(); ++hfo_it){
+						block_exchange(factor, *hfo_it, *occ_it, *kpt_it, *idx_it, phi, exxphi);
+						++occ_it;
+						++kpt_it;
+						++idx_it;
+					}
 				}
 			}
 		}

@@ -15,7 +15,7 @@
 #include <hamiltonian/exchange_operator.hpp>
 #include <hamiltonian/projector.hpp>
 #include <hamiltonian/projector_all.hpp>
-#include <hamiltonian/projector_fourier.hpp>
+#include <hamiltonian/relativistic_projector.hpp>
 #include <hamiltonian/scalar_potential.hpp>
 #include <input/environment.hpp>
 #include <operations/transform.hpp>
@@ -23,6 +23,7 @@
 #include <operations/gradient.hpp>
 #include <states/ks_states.hpp>
 #include <states/orbital_set.hpp>
+#include <wannier/tdmlwf_trans.hpp>
 
 #include <utils/profiling.hpp>
 
@@ -42,14 +43,27 @@ public:
 private:
 
 	exchange_operator exchange_;
+	basis::field_set<basis::real_space, double> vxc_;
 	basis::field_set<basis::real_space, PotentialType> scalar_potential_;
 	vector3<double, covariant> uniform_vector_potential_;
 	projector_all projectors_all_;		
-	bool non_local_in_fourier_;
-	std::unordered_map<std::string, projector_fourier> projectors_fourier_map_;
-	std::vector<std::unordered_map<std::string, projector_fourier>::iterator> projectors_fourier_;
+	std::list<relativistic_projector> projectors_rel_;
 	states::ks_states states_;
-	
+
+#ifdef ENABLE_CUDA
+public:
+#endif
+		
+		template <typename OccType, typename ArrayType>
+		static double occ_sum(OccType const & occupations, ArrayType const & array) {
+			CALI_CXX_MARK_FUNCTION;
+			
+			assert(occupations.size() == array.size());
+			return gpu::run(gpu::reduce(array.size()), 0.0, [occ = begin(occupations), arr = begin(array)] GPU_LAMBDA (auto ip) {
+				return occ[ip]*real(arr[ip]);
+			});
+		}
+
 public:
 	
 	void update_projectors(const basis::real_space & basis, const atomic_potential & pot, systems::ions const & ions){
@@ -58,15 +72,15 @@ public:
 
 		std::list<projector> projectors;
 			
-		projectors_fourier_map_.clear();			
-			
 		for(int iatom = 0; iatom < ions.size(); iatom++){
-			if(non_local_in_fourier_){
-				auto insert = projectors_fourier_map_.emplace(ions.symbol(iatom), projector_fourier(basis, pot.pseudo_for_element(ions.species(iatom))));
-				insert.first->second.add_coord(basis.cell().metric().to_contravariant(ions.positions()[iatom]));
+			auto && ps = pot.pseudo_for_element(ions.species(iatom));
+
+			if(ps.has_total_angular_momentum()){
+				projectors_rel_.emplace_back(basis, pot.double_grid(), ps, ions.positions()[iatom], iatom);
+				if(projectors_rel_.back().empty()) projectors_rel_.pop_back();
 			} else {
-				projectors.emplace_back(basis, pot.double_grid(), pot.pseudo_for_element(ions.species(iatom)), ions.positions()[iatom], iatom);
-				if(projectors.back().empty()) projectors.pop_back(); 
+				projectors.emplace_back(basis, pot.double_grid(), ps, ions.positions()[iatom], iatom);
+				if(projectors.back().empty()) projectors.pop_back();
 			}
 		}
 
@@ -79,9 +93,9 @@ public:
 	ks_hamiltonian(const basis::real_space & basis, ionic::brillouin const & bzone, states::ks_states const & states, atomic_potential const & pot, systems::ions const & ions,
 								 const double exchange_coefficient, bool use_ace = false):
 		exchange_(basis.cell(), bzone, exchange_coefficient, use_ace),
+		vxc_(basis, states.num_density_components()),
 		scalar_potential_(basis, states.num_density_components()),
 		uniform_vector_potential_({0.0, 0.0, 0.0}),
-		non_local_in_fourier_(pot.fourier_pseudo()),
 		states_(states)
 	{
 		scalar_potential_.fill(0.0);
@@ -90,43 +104,49 @@ public:
 
 	////////////////////////////////////////////////////////////////////////////////////////////
 		
-	void non_local(const states::orbital_set<basis::fourier_space, complex> & phi, states::orbital_set<basis::fourier_space, complex> & vnlphi) const {
-
-		if(not non_local_in_fourier_) return;
-			
-		for(auto it = projectors_fourier_map_.cbegin(); it != projectors_fourier_map_.cend(); ++it){
-			it->second(phi, vnlphi);
-		}
+	ks_hamiltonian(const basis::real_space & basis, ionic::brillouin const & bzone, states::ks_states const & states, atomic_potential const & pot, systems::ions const & ions,
+								 const double exchange_coefficient, wannier::tdmlwf_trans mlwf, bool use_ace = false, bool use_cutoff = false, double const epsilon = 0.0):
+		exchange_(basis.cell(), bzone, exchange_coefficient, mlwf, use_ace, use_cutoff, epsilon),
+		vxc_(basis, states.num_density_components()),
+		scalar_potential_(basis, states.num_density_components()),
+		uniform_vector_potential_({0.0, 0.0, 0.0}),
+		states_(states)
+	{
+		scalar_potential_.fill(0.0);
+		update_projectors(basis, pot, ions);
 	}
-		
+
 	////////////////////////////////////////////////////////////////////////////////////////////
 		
 	auto non_local(const states::orbital_set<basis::real_space, complex> & phi) const {
 
 		CALI_CXX_MARK_FUNCTION;
  
-		if(non_local_in_fourier_) {
-
-			auto phi_fs = operations::transform::to_fourier(phi);
-			states::orbital_set<basis::fourier_space, complex> vnlphi_fs(phi_fs.skeleton());
-
-			vnlphi_fs.fill(0.0);
-			non_local(phi_fs, vnlphi_fs);
-			return operations::transform::to_real(vnlphi_fs);
-					
-		} else {
-				
-			auto proj = projectors_all_.project(phi, phi.kpoint());
-				
-			states::orbital_set<basis::real_space, complex> vnlphi(phi.skeleton());
-			vnlphi.fill(0.0);
-
-			projectors_all_.apply(proj, vnlphi, phi.kpoint());
-			
-			return vnlphi;
-		}
+		auto proj = projectors_all_.project(phi, phi.kpoint() + uniform_vector_potential_);
+		
+		states::orbital_set<basis::real_space, complex> vnlphi(phi.skeleton());
+		vnlphi.fill(0.0);
+		
+		projectors_all_.apply(proj, vnlphi, phi.kpoint() + uniform_vector_potential_);
+		
+		for(auto & pr : projectors_rel_) pr.apply(phi, vnlphi, phi.kpoint() + uniform_vector_potential_);
+		
+		return vnlphi;
 	}
 
+	////////////////////////////////////////////////////////////////////////////////////////////
+
+	template <typename Occupations>
+	auto non_local_energy(states::orbital_set<basis::real_space, complex> const & phi, Occupations const & occupations, bool const reduce_states = true) const {
+
+		CALI_CXX_MARK_FUNCTION;
+
+		auto en = projectors_all_.energy(phi, phi.kpoint() + uniform_vector_potential_, occupations, reduce_states);
+		for(auto & pr : projectors_rel_) en += pr.energy(phi, occupations, phi.kpoint() + uniform_vector_potential_);
+		return en;
+		
+	}
+	
 	////////////////////////////////////////////////////////////////////////////////////////////
 
 	auto operator()(const states::orbital_set<basis::real_space, complex> & phi) const {
@@ -138,14 +158,13 @@ public:
 		auto phi_fs = operations::transform::to_fourier(phi);
 		
 		auto hphi_fs = operations::laplacian(phi_fs, -0.5, -2.0*phi.basis().cell().metric().to_contravariant(phi.kpoint() + uniform_vector_potential_));
-
-		non_local(phi_fs, hphi_fs);
 			
 		auto hphi = operations::transform::to_real(hphi_fs);
 
 		hamiltonian::scalar_potential_add(scalar_potential_, phi.spin_index(), 0.5*phi.basis().cell().metric().norm(phi.kpoint() + uniform_vector_potential_), phi, hphi);
 		exchange_(phi, hphi);
 
+		for(auto & pr : projectors_rel_) pr.apply(phi, hphi, phi.kpoint() + uniform_vector_potential_);
 		projectors_all_.apply(proj, hphi, phi.kpoint() + uniform_vector_potential_);
 
 		return hphi;
@@ -164,13 +183,13 @@ public:
 		auto hphi_rs = hamiltonian::scalar_potential(scalar_potential_, phi.spin_index(), 0.5*phi.basis().cell().metric().norm(phi.kpoint() + uniform_vector_potential_), phi_rs);
 		
 		exchange_(phi_rs, hphi_rs);
- 
+
+		for(auto & pr : projectors_rel_) pr.apply(phi_rs, hphi_rs, phi.kpoint() + uniform_vector_potential_);
 		projectors_all_.apply(proj, hphi_rs, phi.kpoint() + uniform_vector_potential_);
 			
 		auto hphi = operations::transform::to_fourier(hphi_rs);
 
 		operations::laplacian_add(phi, hphi, -0.5, -2.0*phi.basis().cell().metric().to_contravariant(phi.kpoint() + uniform_vector_potential_));
-		non_local(phi, hphi);
 
 		return hphi;
 	}
@@ -187,6 +206,12 @@ public:
 		
 	auto & projectors_all() const {
 		return projectors_all_;
+	}
+
+	////////////////////////////////////////////////////////////////////////////////////////////
+	
+	auto & projectors_rel() const {
+		return projectors_rel_;
 	}
 
 	////////////////////////////////////////////////////////////////////////////////////////////
@@ -218,6 +243,12 @@ public:
 	}
 	auto & uniform_vector_potential() {
 		return uniform_vector_potential_;
+	}
+
+	////////////////////////////////////////////////////////////////////////////////////////////
+
+	auto & vxc() const {
+		return vxc_;
 	}
 
 	////////////////////////////////////////////////////////////////////////////////////////////
