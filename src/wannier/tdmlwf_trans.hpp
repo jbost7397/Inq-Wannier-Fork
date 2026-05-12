@@ -97,7 +97,7 @@ void normalize(CommType & comm) {
 }//normalize 
 ////////////////////////////////////////////////////////////////////////////////
 template <class CommType>
-void update(const states::orbital_set<basis::real_space, complex>& wavefunctions, CommType & comm) {
+void update(const states::orbital_set<basis::real_space, complex>& wavefunctions, CommType & comm, const systems::cell & cell_) {
   wavefunctions_ = wavefunctions;
   CALI_CXX_MARK_SCOPE("wannier_update");
   int n_states_global = wavefunctions_.set_size();
@@ -130,7 +130,7 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
 
   gpu::array<double, 2> trig_array({6, nbas});
 	
-  gpu::run(nbas, [cpx, cpy, cpz, point_op, ta = begin(trig_array), lx, ly, lz, nx, ny, nz] GPU_LAMBDA (auto ibas) {
+  gpu::run(nbas, [cpx, cpy, cpz, point_op, tb = begin(trig_array), lx, ly, lz, nx, ny, nz] GPU_LAMBDA (auto ibas) {
     int ix = ibas / (ny * nz);
     int remainder_1 = ibas % (ny * nz);
     int iy = remainder_1 / nz;
@@ -139,12 +139,12 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
     auto iyg = cpy.local_to_global(iy);
     auto izg = cpz.local_to_global(iz);
     auto coords = point_op.rvector_cartesian(ixg, iyg, izg);
-    ta[0][ibas] = cos(2.0 * M_PI * coords[0] / lx);
-    ta[1][ibas] = sin(2.0 * M_PI * coords[0] / lx);
-    ta[2][ibas] = cos(2.0 * M_PI * coords[1] / ly);
-    ta[3][ibas] = sin(2.0 * M_PI * coords[1] / ly);
-    ta[4][ibas] = cos(2.0 * M_PI * coords[2] / lz);
-    ta[5][ibas] = sin(2.0 * M_PI * coords[2] / lz);
+    tb[0][ibas] = cos(2.0 * M_PI * coords[0] / lx);
+    tb[1][ibas] = sin(2.0 * M_PI * coords[0] / lx);
+    tb[2][ibas] = cos(2.0 * M_PI * coords[1] / ly);
+    tb[3][ibas] = sin(2.0 * M_PI * coords[1] / ly);
+    tb[4][ibas] = cos(2.0 * M_PI * coords[2] / lz);
+    tb[5][ibas] = sin(2.0 * M_PI * coords[2] / lz);
   });
 
   if (wavefunctions_.set_part().parallel()) {
@@ -155,20 +155,32 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
 	for (; hypercubic_it != hypercubic_it.end(); ++hypercubic_it){
 		auto mat_it = begin(*hypercubic_it);
 		auto l_offset = cur_rank * n_states_local;
-    		gpu::run(n_states_local, n_states_local, [loc_mat = begin(mat), mat_it, ta = begin(trig_array), nbas, l_offset, k_offset, a = begin(a_)] GPU_LAMBDA (auto l_wf, auto k_wf) {
+
+//VS: Cell matrix entries... done to be vompatible w gpu::run(...)
+const double c00 = cell_[0][0];
+const double c01 = cell_[0][1];
+const double c02 = cell_[0][2];
+const double c10 = cell_[1][0];
+const double c11 = cell_[1][1];
+const double c12 = cell_[1][2];
+const double c20 = cell_[2][0];
+const double c21 = cell_[2][1];
+const double c22 = cell_[2][2];
+
+    		gpu::run(n_states_local, n_states_local, [loc_mat = begin(mat), mat_it, tb = begin(trig_array), nbas, l_offset, k_offset, a = begin(a_), c00, c01, c02, c10, c11, c12, c20, c21, c22] GPU_LAMBDA (auto l_wf, auto k_wf) {
     		  for (int ibas = 0; ibas < nbas; ibas++){
     		        complex c_ik = loc_mat[ibas][k_wf];
         	        auto conj_ik = conj_cplx(c_ik);
         		complex c_jl = mat_it[ibas][l_wf];
 			auto cur_k = k_offset + k_wf;
 			auto cur_l = l_offset + l_wf;
-        		a[0][cur_k][cur_l] += conj_ik * c_jl * ta[0][ibas];
-        		a[1][cur_k][cur_l] += conj_ik * c_jl * ta[1][ibas];
-        		a[2][cur_k][cur_l] += conj_ik * c_jl * ta[2][ibas];
-        		a[3][cur_k][cur_l] += conj_ik * c_jl * ta[3][ibas];
-        		a[4][cur_k][cur_l] += conj_ik * c_jl * ta[4][ibas];
-        		a[5][cur_k][cur_l] += conj_ik * c_jl * ta[5][ibas];
-
+          a[0][cur_k][cur_l] += conj_ik * c_jl * (tb[0][ibas]*c00 + tb[2][ibas]*c10 + tb[4][ibas]*c20);
+          a[1][cur_k][cur_l] += conj_ik * c_jl * (tb[1][ibas]*c00 + tb[3][ibas]*c10 + tb[5][ibas]*c20);
+          a[2][cur_k][cur_l] += conj_ik * c_jl * (tb[0][ibas]*c01 + tb[2][ibas]*c11 + tb[4][ibas]*c21);
+          a[3][cur_k][cur_l] += conj_ik * c_jl * (tb[1][ibas]*c01 + tb[3][ibas]*c11 + tb[5][ibas]*c21);
+          a[4][cur_k][cur_l] += conj_ik * c_jl * (tb[0][ibas]*c02 + tb[2][ibas]*c12 + tb[4][ibas]*c22);
+          a[5][cur_k][cur_l] += conj_ik * c_jl * (tb[1][ibas]*c02 + tb[3][ibas]*c12 + tb[5][ibas]*c22);
+          
       		  }
       		});
 		cur_rank += 1;
@@ -181,18 +193,30 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
   }
   
   else {
-    gpu::run(n_states_global, n_states_global, [mat = begin(wavefunctions_.matrix()), ta = begin(trig_array), nbas, a = begin(a_)] GPU_LAMBDA (auto l_wf, auto k_wf) {
+    //VS: Cell matrix entries... done to be vompatible w gpu::run(...)
+const double c00 = cell_[0][0];
+const double c01 = cell_[0][1];
+const double c02 = cell_[0][2];
+const double c10 = cell_[1][0];
+const double c11 = cell_[1][1];
+const double c12 = cell_[1][2];
+const double c20 = cell_[2][0];
+const double c21 = cell_[2][1];
+const double c22 = cell_[2][2];
+    gpu::run(n_states_global, n_states_global, [mat = begin(wavefunctions_.matrix()), tb = begin(trig_array), nbas, a = begin(a_), c00, c01, c02, c10, c11, c12, c20, c21, c22] GPU_LAMBDA (auto l_wf, auto k_wf) {
       for (int ibas = 0; ibas < nbas; ibas++){
             complex c_ik = mat[ibas][k_wf];
             auto conj_ik = conj_cplx(c_ik);
             complex c_jl = mat[ibas][l_wf];
-            a[0][k_wf][l_wf] += conj_ik * c_jl * ta[0][ibas];
-            a[1][k_wf][l_wf] += conj_ik * c_jl * ta[1][ibas];
-            a[2][k_wf][l_wf] += conj_ik * c_jl * ta[2][ibas];
-            a[3][k_wf][l_wf] += conj_ik * c_jl * ta[3][ibas];
-            a[4][k_wf][l_wf] += conj_ik * c_jl * ta[4][ibas];
-            a[5][k_wf][l_wf] += conj_ik * c_jl * ta[5][ibas];
-	  }
+
+            a[0][k_wf][l_wf] += conj_ik * c_jl * (tb[0][ibas]*c00 + tb[2][ibas]*c10 + tb[4][ibas]*c20);
+            a[1][k_wf][l_wf] += conj_ik * c_jl * (tb[1][ibas]*c00 + tb[3][ibas]*c10 + tb[5][ibas]*c20);
+            a[2][k_wf][l_wf] += conj_ik * c_jl * (tb[0][ibas]*c01 + tb[2][ibas]*c11 + tb[4][ibas]*c21);
+            a[3][k_wf][l_wf] += conj_ik * c_jl * (tb[1][ibas]*c01 + tb[3][ibas]*c11 + tb[5][ibas]*c21);
+            a[4][k_wf][l_wf] += conj_ik * c_jl * (tb[0][ibas]*c02 + tb[2][ibas]*c12 + tb[4][ibas]*c22);
+            a[5][k_wf][l_wf] += conj_ik * c_jl * (tb[1][ibas]*c02 + tb[3][ibas]*c12 + tb[5][ibas]*c22);
+            
+          }
     	});
 
     if(comm.size() > 1){
@@ -216,12 +240,28 @@ const states::orbital_set<basis::real_space, complex>& get_wavefunctions() const
 template <typename T>
 auto center(T i, const systems::cell & cell_) const {
   assert(i >= 0 && i < wavefunctions_.set_size());
-  const double cx = real(adiag_[0][i]);
-  const double sx = real(adiag_[1][i]);
-  const double cy = real(adiag_[2][i]);
-  const double sy = real(adiag_[3][i]);
-  const double cz = real(adiag_[4][i]);
-  const double sz = real(adiag_[5][i]);
+  const auto b0 = cell_.reciprocal(0);
+  const auto b1 = cell_.reciprocal(1);
+  const auto b2 = cell_.reciprocal(2);
+  const double cx = b0[0] * real(adiag_[0][i]) +
+                    b0[1] * real(adiag_[2][i]) +
+                    b0[2] * real(adiag_[4][i]);
+  const double sx = b0[0] * real(adiag_[1][i]) +
+                    b0[1] * real(adiag_[3][i]) +
+                    b0[2] * real(adiag_[5][i]);
+  const double cy = b1[0] * real(adiag_[0][i]) +
+                    b1[1] * real(adiag_[2][i]) +
+                    b1[2] * real(adiag_[4][i]);
+  const double sy = b1[0] * real(adiag_[1][i]) +
+                    b1[1] * real(adiag_[3][i]) +
+                    b1[2] * real(adiag_[5][i]);
+  const double cz = b2[0] * real(adiag_[0][i]) +
+                    b2[1] * real(adiag_[2][i]) +
+                    b2[2] * real(adiag_[4][i]);
+  const double sz = b2[0] * real(adiag_[1][i]) +
+                    b2[1] * real(adiag_[3][i]) +
+                    b2[2] * real(adiag_[5][i]);
+
   // Ratios for inputs into atan functions below
   //const complex<double> sxcx = sx / cx;
   //const complex<double> sycy = sy / cy;
@@ -230,9 +270,9 @@ auto center(T i, const systems::cell & cell_) const {
   const double t0 = (itwopi * atan2(sx,cx));
   const double t1 = (itwopi * atan2(sy,cy));
   const double t2 = (itwopi * atan2(sz,cz));
-  const double x = (t0*cell_[0][0] + t1*cell_[0][1] + t2*cell_[0][2]);
-  const double y = (t0*cell_[1][0] + t1*cell_[1][1] + t2*cell_[1][2]);
-  const double z = (t0*cell_[2][0] + t1*cell_[2][1] + t2*cell_[2][2]);
+  const double x = (t0*cell_[0][0] + t1*cell_[1][0] + t2*cell_[2][0]);
+  const double y = (t0*cell_[0][1] + t1*cell_[1][1] + t2*cell_[2][1]);
+  const double z = (t0*cell_[0][2] + t1*cell_[1][2] + t2*cell_[2][2]);
   vector3<double> center_d3{x,y,z};
 
   return center_d3;
@@ -322,20 +362,27 @@ double pair_fraction(T epsilon, CommType & comm, const systems::cell & cell) con
 }
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
-double spread2(T i, T j, const systems::cell & cell) {
+double spread2(T i, T j, const systems::cell & cell_) {
   assert(i >= 0 && i < wavefunctions_.set_size());
   assert(j >= 0 && j < 3);
-  const complex c = adiag_[2*j][i]; //DCY
-  const complex s = adiag_[2*j+1][i]; //DCY
-  auto recip = cell.reciprocal(j);
-  double length = sqrt(recip[0]*recip[0]+ recip[1]*recip[1] + recip[2]*recip[2]);
+  const double itwopi = 1.0 / ( 2.0 * M_PI );
+  const auto bj = cell_.reciprocal(j);
+  const complex c = itwopi * ( bj[0] * adiag_[0][i] +
+                               bj[1] * adiag_[2][i] +
+                               bj[2] * adiag_[4][i] );
+
+  const complex s = itwopi * ( bj[0] * adiag_[1][i] +
+                               bj[1] * adiag_[3][i] +
+                               bj[2] * adiag_[5][i] );
+
+  double length = sqrt(bj[0]*bj[0]+ bj[1]*bj[1] + bj[2]*bj[2]);
   const double fac = 1.0 / length;
   return fac*fac * ( 1.0 - norm(c) - norm(s) );
 }
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 double spread2(T i, const systems::cell & cell) {
-  assert(i >= 0 & i < wavefunctions_.set_size());
+  assert(i >= 0 && i < wavefunctions_.set_size());
   return spread2(i,0,cell) + spread2(i,1,cell) + spread2(i,2,cell);
 }
 ////////////////////////////////////////////////////////////////////////////////
@@ -396,7 +443,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 	inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha));
 
 	wannier::tdmlwf_trans mlwf_transformer(el.kpin()[0]);
-        mlwf_transformer.update(el.kpin()[0], comm);
+        mlwf_transformer.update(el.kpin()[0], comm, el.states_basis().cell());
 	mlwf_transformer.compute_transform(1e-8);
 
 	int i = 0;
