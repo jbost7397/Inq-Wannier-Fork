@@ -264,7 +264,7 @@ public:
 
                 if (solver_.wf_diag_value() == options::ground_state::wavefunction_diag::MLWF) { //CS use to get Wannier ground state 
                 	wannier::tdmlwf_trans mlwf_transformer(electrons.kpin()[0]);
-                        mlwf_transformer.update(electrons.kpin()[0], electrons.full_comm());
+                        mlwf_transformer.update(electrons.kpin()[0], electrons.full_comm(), electrons.kpin()[0].basis().cell());
                         mlwf_transformer.compute_transform(1e-8);
 		        if (console && electrons.full_comm().rank() == 0) {
 

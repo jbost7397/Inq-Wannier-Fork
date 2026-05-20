@@ -33,12 +33,12 @@ public:
     parallel::communicator comm{boost::mpi3::environment::get_world_instance()};
     if (phi.set_part().parallel()){
 	     auto mlwf_comm = phi.set_comm();
-	     mlwf_transformer_->update(phi, mlwf_comm);
+	     mlwf_transformer_->update(phi, mlwf_comm, phi.basis().cell());
     }
 
     else {
 	     auto mlwf_comm = phi.basis().comm();
-    	     mlwf_transformer_->update(phi, mlwf_comm);
+    	     mlwf_transformer_->update(phi, mlwf_comm, phi.basis().cell());
     }	     
     	if (time_step < 1) {
 	    double set_tol = 1e-7;
