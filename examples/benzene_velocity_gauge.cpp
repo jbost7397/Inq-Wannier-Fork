@@ -13,7 +13,6 @@ int main(int argc, char ** argv){
 	using namespace inq;
 	using namespace inq::magnitude;
 	int pardomains = 1;
-	int mlwf_freq = 0;
 	auto functional = options::theory{}.pbe();
 
 	{
@@ -23,16 +22,12 @@ int main(int argc, char ** argv){
                         case 'p':
                                 pardomains = atoi(optarg);
                                 break;
-			case 'm':
-				mlwf_freq = atoi(optarg);
-				break;
                         case 'y':
                                 functional = options::theory{}.pbe0();
                                 break;
                         case '?':
                                 std::cerr << "usage is " << std::endl;
                                 std::cerr << "-p N to set the number of processors in the domain partition (1 by default)." << std::endl;
-				std::cerr << "-m MLWF_FREQUENCY: Set the frequency for printing MLWF properties (0 = never, default = 0)." << std::endl;
                                 std::cerr << "-y use the PBE0 hybrid functional (the default is PBE)." << std::endl;
                                 exit(1);
                         default:

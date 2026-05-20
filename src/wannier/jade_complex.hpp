@@ -34,11 +34,10 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
 
     assert(tol > std::numeric_limits<double>::epsilon());
 
-    int n = get<0>(sizes(a)); // 6 for all wannier
+    int n = get<0>(sizes(a));
     int nloc = get<1>(sizes(a)); 
-    int mloc = get<2>(sizes(a)); //always equals nloc  
+    int mloc = get<2>(sizes(a));   
 
-    // Initialize u as identity
     u.reextent({mloc, mloc});
     gpu::run(mloc, mloc, [u_int=begin(u)] GPU_LAMBDA (auto jj, auto ii) {
       u_int[ii][jj] = (ii == jj) ? complex(1.0,0.0) : complex(0.0,0.0);
@@ -381,8 +380,8 @@ void jade_complex(T maxsweep, T1 tol, MatrixType1& a, MatrixType2& u, MatrixType
     });
 
 } //jade_complex
-} // namespace wannier
-} // namespace inq
+} //wannier
+} //inq
 
 #endif
 ///////////////////////////////////////////////////////////////////
@@ -430,13 +429,8 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
       a[5][0][1] = complex(0.00727207,0.68256246);
       a[5][1][1] = complex(-0.11860233,-0.00000030);
 
-      // Create matrix u (initially identity)
       gpu::array<complex,2> u({2,2});
-
-      // Prepare adiag to hold diagonal elements (size should match number of a matrices and their dimensions)
       gpu::array<complex,2> adiag({six,2});
-
-      // Call the jade_complex function
       wannier::jade_complex(maxsweep, tol, a, u, adiag);
 
 
@@ -480,7 +474,6 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
       // Create a vector of 6 3x3 matrices (3He, 3 centers test case) coresponds to gs in a 20x20x20 cell
       gpu::array<complex,3> a({six,3,3});
 
-      // Fill the 6 a matrices 
       a[0][0][0] = complex(0.52756279,0.00000025);
       a[0][0][1] = complex(0.61712854,0.03799883);
       a[0][0][2] = complex(0.41610786,0.00450980);
@@ -536,13 +529,8 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
       a[5][2][1] = complex(0.12669985,0.55715171);
       a[5][2][2] = complex(-0.24165874,-0.00000019);
 
-      // Create matrix u (initially identity)
       gpu::array<complex,2> u({3,3});
-
-      // Prepare adiag to hold diagonal elements (size should match number of a matrices and their dimensions)
       gpu::array<complex,2> adiag({six,3});
-
-      // Call the jade_complex function
       wannier::jade_complex(maxsweep, tol, a, u, adiag);
 
 	  //Check that data is initalized correctly 
