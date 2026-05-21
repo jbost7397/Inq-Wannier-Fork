@@ -133,6 +133,17 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
     		tb[5][ibas] = sin(2.0 * M_PI * coords[2]);
 	});
 
+	gpu::array<double,2> cell_array({6, nbas}); 
+
+	gpu::run(nbas, [tb=begin(trig_array), cell=begin(cell_dim), ta=begin(cell_array)] GPU_LAMBDA (auto ibas) {
+		ta[0][ibas] = tb[0][ibas]*cell[0] + tb[2][ibas]*cell[3] + tb[4][ibas]*cell[6];
+		ta[1][ibas] = tb[1][ibas]*cell[0] + tb[3][ibas]*cell[3] + tb[5][ibas]*cell[6];
+		ta[2][ibas] = tb[0][ibas]*cell[1] + tb[2][ibas]*cell[4] + tb[4][ibas]*cell[7];
+		ta[3][ibas] = tb[1][ibas]*cell[1] + tb[3][ibas]*cell[4] + tb[5][ibas]*cell[7]; 
+		ta[4][ibas] = tb[0][ibas]*cell[2] + tb[2][ibas]*cell[5] + tb[4][ibas]*cell[8];		
+		ta[5][ibas] = tb[1][ibas]*cell[2] + tb[3][ibas]*cell[5] + tb[5][ibas]*cell[8];
+	});
+
 	if (wavefunctions_.set_part().parallel()) {
   		auto loc_mat = wavefunctions_.matrix();
 		auto hypercubic_it = parallel::block_array_iterator(nbas, wavefunctions_.set_part(), wavefunctions_.set_comm(), wavefunctions_.matrix());
@@ -144,7 +155,7 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
   			auto cur_local = gmat[0].size();
 			auto l_offset = wavefunctions_.set_part().start(cur_rank);
 
-    			gpu::run(cur_local, n_states_local, [lmat=begin(loc_mat), gmat, tb=begin(trig_array), nbas, l_offset, k_offset, a=begin(a_), cell=begin(cell_dim)] 
+    			gpu::run(cur_local, n_states_local, [lmat=begin(loc_mat), gmat, ta=begin(cell_array), nbas, l_offset, k_offset, a=begin(a_)] 
 										GPU_LAMBDA (auto l_wf, auto k_wf) {
 	    			for (int ibas = 0; ibas < nbas; ibas++){
     		        		complex c_ik = lmat[ibas][k_wf];
@@ -152,13 +163,12 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
         				complex c_jl = gmat[ibas][l_wf];
 					auto cur_k = k_offset + k_wf;
 					auto cur_l = l_offset + l_wf;
-	                		a[0][cur_k][cur_l] += conj_ik * c_jl * (tb[0][ibas]*cell[0] + tb[2][ibas]*cell[3] + tb[4][ibas]*cell[6]);
-          				a[1][cur_k][cur_l] += conj_ik * c_jl * (tb[1][ibas]*cell[0] + tb[3][ibas]*cell[3] + tb[5][ibas]*cell[6]);
-          				a[2][cur_k][cur_l] += conj_ik * c_jl * (tb[0][ibas]*cell[1] + tb[2][ibas]*cell[4] + tb[4][ibas]*cell[7]);
-		        		a[3][cur_k][cur_l] += conj_ik * c_jl * (tb[1][ibas]*cell[1] + tb[3][ibas]*cell[4] + tb[5][ibas]*cell[7]);
-		        		a[4][cur_k][cur_l] += conj_ik * c_jl * (tb[0][ibas]*cell[2] + tb[2][ibas]*cell[5] + tb[4][ibas]*cell[8]);
-          				a[5][cur_k][cur_l] += conj_ik * c_jl * (tb[1][ibas]*cell[2] + tb[3][ibas]*cell[5] + tb[5][ibas]*cell[8]);
-          
+	                		a[0][cur_k][cur_l] += conj_ik * c_jl * ta[0][ibas];
+		            		a[1][cur_k][cur_l] += conj_ik * c_jl * ta[1][ibas];
+            				a[2][cur_k][cur_l] += conj_ik * c_jl * ta[2][ibas];
+            				a[3][cur_k][cur_l] += conj_ik * c_jl * ta[3][ibas];
+            				a[4][cur_k][cur_l] += conj_ik * c_jl * ta[4][ibas];
+            				a[5][cur_k][cur_l] += conj_ik * c_jl * ta[5][ibas];          
       		  		}
       			});
 			cur_rank += 1;
@@ -172,19 +182,18 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
   	} 
         else {
 
-    		gpu::run(n_states_global, n_states_global, [mat = begin(wavefunctions_.matrix()), tb = begin(trig_array), nbas, a = begin(a_), cell=begin(cell_dim)] 
+    		gpu::run(n_states_global, n_states_global, [mat = begin(wavefunctions_.matrix()), ta = begin(cell_array), nbas, a = begin(a_)] 
 											GPU_LAMBDA (auto l_wf, auto k_wf) {
       			for (int ibas = 0; ibas < nbas; ibas++){
             			complex c_ik = mat[ibas][k_wf];
 		                auto conj_ik = conj_cplx(c_ik);
 		                complex c_jl = mat[ibas][l_wf];
-		                a[0][k_wf][l_wf] += conj_ik * c_jl * (tb[0][ibas]*cell[0] + tb[2][ibas]*cell[3] + tb[4][ibas]*cell[6]);
-            			a[1][k_wf][l_wf] += conj_ik * c_jl * (tb[1][ibas]*cell[0] + tb[3][ibas]*cell[3] + tb[5][ibas]*cell[6]);
-            			a[2][k_wf][l_wf] += conj_ik * c_jl * (tb[0][ibas]*cell[1] + tb[2][ibas]*cell[4] + tb[4][ibas]*cell[7]);
-            			a[3][k_wf][l_wf] += conj_ik * c_jl * (tb[1][ibas]*cell[1] + tb[3][ibas]*cell[4] + tb[5][ibas]*cell[7]);
-            			a[4][k_wf][l_wf] += conj_ik * c_jl * (tb[0][ibas]*cell[2] + tb[2][ibas]*cell[5] + tb[4][ibas]*cell[8]);
-            			a[5][k_wf][l_wf] += conj_ik * c_jl * (tb[1][ibas]*cell[2] + tb[3][ibas]*cell[5] + tb[5][ibas]*cell[8]);
-            
+		            	a[0][k_wf][l_wf] += conj_ik * c_jl * ta[0][ibas];
+            			a[1][k_wf][l_wf] += conj_ik * c_jl * ta[1][ibas];
+         		   	a[2][k_wf][l_wf] += conj_ik * c_jl * ta[2][ibas];
+       			     	a[3][k_wf][l_wf] += conj_ik * c_jl * ta[3][ibas];
+            			a[4][k_wf][l_wf] += conj_ik * c_jl * ta[4][ibas];
+            			a[5][k_wf][l_wf] += conj_ik * c_jl * ta[5][ibas]; 
           		}
     		});
 
