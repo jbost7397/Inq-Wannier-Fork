@@ -53,9 +53,18 @@ public:
     if(comm.rank() == 0 && mlwf_freq > 0 && ((time_step + 1) % mlwf_freq == 0)){
     	output_file << "Time step: " << time_step + 1 << "\n";
     	output_file << "MLWFs:\n";
+	auto const cell = phi.basis().cell();
     	for (int i = 0; i < phi.set_size(); ++i) {
        		auto center = mlwf_transformer_->center(i, phi.basis().cell());
        		auto spread = mlwf_transformer_->spread(i, phi.basis().cell());
+
+		//CS print centers in cell 0 to L instead of -L/2 to L/2 			
+		auto frac = cell.metric().to_contravariant(center);
+		for (int c = 0; c < 3; c++) {	
+			if(frac[c] < 0.0) frac[c] +=1.0;
+		}
+		center = cell.metric().to_cartesian(frac);
+
        		output_file << "  WF " << i + 1 << ": " << center[0] << "     " << center[1] << "     " << center[2] << "     Spread: " << spread << std::endl;
     	}
         auto dipole = mlwf_transformer_->dipole(phi.basis().cell());
