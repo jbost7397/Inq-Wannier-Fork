@@ -109,14 +109,6 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
         	a_int[i][j][k] = complex(0.0);
 	});
 
-  	gpu::run(n_states_global, n_states_global, [u_int=begin(u_)] GPU_LAMBDA (auto j, auto i) {
-  		u_int[i][j] = (i == j) ? complex(1.0,0.0) : complex(0.0,0.0);
-  	});
-
-  	gpu::run(n_states_global, 6, [adiag_int=begin(adiag_)] GPU_LAMBDA (auto j, auto i) {
-  		adiag_int[i][j] = complex(0.0);
-  	});
-
   	gpu::array<double, 2> trig_array({6, nbas});
 
 	gpu::array<double,1> cell_dim({9});
@@ -308,7 +300,7 @@ auto get_overlaps_of_j(T epsilon, int j, const systems::cell & cell_, int rank_o
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T, class CommType>
 double pair_fraction(T epsilon, CommType & comm, const systems::cell & cell) const {
-	 CALI_CXX_MARK_SCOPE("wannier_update::pair_frac");
+	CALI_CXX_MARK_SCOPE("wannier_update::pair_frac");
   	int n = wavefunctions_.set_size();
   	gpu::array<int,1> sum({1}, 0);
   	for(int i = 0; i < n; i++){
@@ -357,19 +349,6 @@ double spread2(T i, const systems::cell & cell) {
 template <typename T>
 double spread(T i, const systems::cell & cell) {
   	return sqroot(spread2(i,cell));
-}
-
-////////////////////////////////////////////////////////////////////////////////
-double spread2(const systems::cell & cell) {
-  	double sum = 0.0;
-  	for (int i = 0; i < wavefunctions_.set_size(); i++ )
-    		sum += spread2(i, cell);
-  	return sum;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-double spread(const systems::cell & cell) {
-  	return sqroot(spread2(cell));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
