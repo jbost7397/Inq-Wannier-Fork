@@ -157,19 +157,31 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
 
     			gpu::run(cur_local, n_states_local, [lmat=begin(loc_mat), gmat, ta=begin(cell_array), nbas, l_offset, k_offset, a=begin(a_)] 
 										GPU_LAMBDA (auto l_wf, auto k_wf) {
+				complex a0 = 0.0;
+				complex a1 = 0.0;
+				complex a2 = 0.0;
+                                complex a3 = 0.0;
+                                complex a4 = 0.0;
+                                complex a5 = 0.0;
+				auto cur_k = k_offset + k_wf;
+				auto cur_l = l_offset + l_wf;
 	    			for (int ibas = 0; ibas < nbas; ibas++){
     		        		complex c_ik = lmat[ibas][k_wf];
-        	        		auto conj_ik = conj_cplx(c_ik);
         				complex c_jl = gmat[ibas][l_wf];
-					auto cur_k = k_offset + k_wf;
-					auto cur_l = l_offset + l_wf;
-	                		a[0][cur_k][cur_l] += conj_ik * c_jl * ta[0][ibas];
-		            		a[1][cur_k][cur_l] += conj_ik * c_jl * ta[1][ibas];
-            				a[2][cur_k][cur_l] += conj_ik * c_jl * ta[2][ibas];
-            				a[3][cur_k][cur_l] += conj_ik * c_jl * ta[3][ibas];
-            				a[4][cur_k][cur_l] += conj_ik * c_jl * ta[4][ibas];
-            				a[5][cur_k][cur_l] += conj_ik * c_jl * ta[5][ibas];          
+					complex c = conj_cplx(c_ik) * c_jl;
+					a0 += c * ta[0][ibas];
+	                                a1 += c * ta[1][ibas];
+        	                        a2 += c * ta[2][ibas];
+                	                a3 += c * ta[3][ibas];
+                        	        a4 += c * ta[4][ibas];
+                                	a5 += c * ta[5][ibas];
       		  		}
+				a[0][cur_k][cur_l] += a0;
+				a[1][cur_k][cur_l] += a1;
+				a[2][cur_k][cur_l] += a2;
+				a[3][cur_k][cur_l] += a3;
+				a[4][cur_k][cur_l] += a4;
+				a[5][cur_k][cur_l] += a5;
       			});
 			cur_rank += 1;
 			cur_rank = cur_rank % comm.size();
