@@ -184,17 +184,29 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
 
     		gpu::run(n_states_global, n_states_global, [mat = begin(wavefunctions_.matrix()), ta = begin(cell_array), nbas, a = begin(a_)] 
 											GPU_LAMBDA (auto l_wf, auto k_wf) {
+			complex a0 = 0.0;
+			complex a1 = 0.0;
+			complex a2 = 0.0;
+                        complex a3 = 0.0;
+                        complex a4 = 0.0;
+                        complex a5 = 0.0;
       			for (int ibas = 0; ibas < nbas; ibas++){
             			complex c_ik = mat[ibas][k_wf];
-		                auto conj_ik = conj_cplx(c_ik);
 		                complex c_jl = mat[ibas][l_wf];
-		            	a[0][k_wf][l_wf] += conj_ik * c_jl * ta[0][ibas];
-            			a[1][k_wf][l_wf] += conj_ik * c_jl * ta[1][ibas];
-         		   	a[2][k_wf][l_wf] += conj_ik * c_jl * ta[2][ibas];
-       			     	a[3][k_wf][l_wf] += conj_ik * c_jl * ta[3][ibas];
-            			a[4][k_wf][l_wf] += conj_ik * c_jl * ta[4][ibas];
-            			a[5][k_wf][l_wf] += conj_ik * c_jl * ta[5][ibas]; 
+				complex c = conj_cplx(c_ik) * c_jl;
+				a0 += c * ta[0][ibas];
+				a1 += c * ta[1][ibas];
+				a2 += c * ta[2][ibas];
+                                a3 += c * ta[3][ibas];
+                                a4 += c * ta[4][ibas];
+                                a5 += c * ta[5][ibas];	 
           		}
+			a[0][k_wf][l_wf] += a0;
+			a[1][k_wf][l_wf] += a1;
+			a[2][k_wf][l_wf] += a2;
+                        a[3][k_wf][l_wf] += a3;
+                        a[4][k_wf][l_wf] += a4;
+                        a[5][k_wf][l_wf] += a5; 
     		});
 
     		if(comm.size() > 1){
