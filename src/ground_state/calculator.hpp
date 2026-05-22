@@ -153,13 +153,6 @@ public:
 				electrons.update_occupations(electrons.eigenvalues());
 			}
 		
-			/*if (solver_.wf_diag_value() == options::ground_state::wavefunction_diag::MLWF && solver_.update_hf()) { //CS should run only with cutoff method
-			        wannier::tdmlwf_trans mlwf_transformer(electrons.kpin()[0]);
-				mlwf_transformer.update(electrons.kpin()[0], electrons.full_comm());
-			        mlwf_transformer.compute_transform(1e-8);
-                	}*/
-				
-			//if(update_hf){
 			if(solver_.update_hf()) {
 				auto exe = ham_.exchange().update(electrons);
 				exe_diff = fabs(exe - old_exe);

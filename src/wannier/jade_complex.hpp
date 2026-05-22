@@ -400,10 +400,8 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
       double tol = 1e-6;
       int six = 6;
 
-      // Create a vector of 6 2x2 matrices (2He, 2 center test case) //coressponds to gs in a 20x20x20 cell
       gpu::array<complex,3> a({six,2,2});
 
-      // Fill a matricies 
       a[0][0][0] = complex(-0.68433137,-0.00000000);
       a[0][1][0] = complex(-0.00103429,0.10810869);
       a[0][0][1] = complex(-0.00103429,-0.10810876);
@@ -433,13 +431,6 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
       gpu::array<complex,2> adiag({six,2});
       wannier::jade_complex(maxsweep, tol, a, u, adiag);
 
-
-	  //Inital checks of matrices 
-    	  CHECK(u.size() == 2);
-    	  CHECK(adiag.size() == 6);
-    	  CHECK(adiag[0].size() == 2);
-
-          //Check the diagonal elements of the amats upon return
           CHECK(real(adiag[0][0]) == -0.79081263_a);
           CHECK(real(adiag[0][1]) == -0.57456037_a);
           CHECK(real(adiag[1][0]) == 0.57455456_a);
@@ -452,11 +443,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
           CHECK(real(adiag[4][1]) == -0.57456043_a);
           CHECK(real(adiag[5][0]) == 0.57455453_a);
           CHECK(real(adiag[5][1]) == -0.79080836_a); 
-          //imag values are correct, but so close to zero they fail in make check 
-	  //also only real values needed for wannier
 
-          //Check the transform matrix u that is returned
-          //only values that are greater than 1e-7
           CHECK(real(u[0][0]) == 0.71250999_a);
           CHECK(real(u[0][1]) == 0.00745655_a);
           CHECK(imag(u[0][1]) == 0.70162234_a);
@@ -471,7 +458,6 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
       double tol = 1e-8;
       int six = 6;
 
-      // Create a vector of 6 3x3 matrices (3He, 3 centers test case) coresponds to gs in a 20x20x20 cell
       gpu::array<complex,3> a({six,3,3});
 
       a[0][0][0] = complex(0.52756279,0.00000025);
@@ -533,12 +519,6 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
       gpu::array<complex,2> adiag({six,3});
       wannier::jade_complex(maxsweep, tol, a, u, adiag);
 
-	  //Check that data is initalized correctly 
-          CHECK(u.size() == 3);
-          CHECK(adiag.size() == 6);
-          CHECK(adiag[0].size() == 3);
-
-	  //Check the transform matrix u that is returned 
           CHECK(real(u[0][0]) == 0.85542060_a);
           CHECK(real(u[0][1]) == 0.42645081_a);
           CHECK(real(u[0][2]) == 0.29206758_a);
@@ -558,7 +538,6 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
           CHECK(imag(u[2][1]) == 0.70053600_a);
           CHECK(imag(u[2][2]) == 0.06100488_a);
 
-          //Check the diagonal elements of the amats upon return 
           CHECK(real(adiag[0][0]) == 0.97749613_a);
           CHECK(real(adiag[0][1]) == -0.57455995_a);
           CHECK(real(adiag[0][2]) == -0.79081233_a);

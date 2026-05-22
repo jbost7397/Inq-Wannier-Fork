@@ -416,38 +416,57 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
         using namespace inq;
         using namespace Catch::literals;
         using Catch::Approx;
+        parallel::communicator comm{boost::mpi3::environment::get_world_instance()};
 
-  	parallel::communicator comm{boost::mpi3::environment::get_world_instance()};
-	inq::systems::ions sys(inq::systems::cell::cubic(20.0_b).periodic());
-        sys.insert(ionic::species("He"), {-7.0_b, -7.0_b, -7.0_b});
-        sys.insert(ionic::species("He"), {8.0_b, 8.0_b, 8.0_b});
-	inq::systems::electrons el(sys, options::electrons{}.cutoff(30.0_Ry));
-	inq::ground_state::initial_guess(sys, el);
+	SECTION("Single Atom"){
 
-	inq::ground_state::calculate(sys, el, inq::options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha));
+		systems::ions sys(inq::systems::cell::cubic(20.0_b).periodic());
+                sys.insert(ionic::species("He"), {8.0_b, 8.0_b, 8.0_b});
+        	sys.species_list().pseudopotentials() = pseudo::set_id::sg15();
+		systems::electrons el(sys, options::electrons{}.cutoff(30.0_Ry));
+		ground_state::initial_guess(sys, el);
 
-	wannier::tdmlwf_trans mlwf_transformer(el.kpin()[0]);
-        mlwf_transformer.update(el.kpin()[0], comm, el.states_basis().cell());
-	mlwf_transformer.compute_transform(1e-8);
+		ground_state::calculate(sys, el, options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha));
 
-	int i = 0;
-        auto center = mlwf_transformer.center(i, el.states_basis().cell());
+		wannier::tdmlwf_trans mlwf_transformer(el.kpin()[0]);
+	        mlwf_transformer.update(el.kpin()[0], comm, el.states_basis().cell());
+		mlwf_transformer.compute_transform(1e-8);
 
-        CHECK(center[0] == Approx(8.0_a));
-        CHECK(center[1] == Approx(8.0_a));
-        CHECK(center[2] == Approx(8.0_a));
+	        auto center = mlwf_transformer.center(0, el.states_basis().cell());
 
-	double spread = mlwf_transformer.spread(i, el.states_basis().cell());
-        CHECK(spread == Approx(1.16_a));
+	        CHECK(center[0] == Approx(8.0_a));
+	        CHECK(center[1] == Approx(8.0_a));
+	        CHECK(center[2] == Approx(8.0_a));
 
-	i = 1;
-        auto center2 = mlwf_transformer.center(i, el.states_basis().cell());
+		double spread = mlwf_transformer.spread(0, el.states_basis().cell());
+	        CHECK(spread == Approx(1.13316_a).epsilon(1e-3));
+	}
 
-        CHECK(center2[0] == Approx(-7.0_a));
-        CHECK(center2[1] == Approx(-7.0_a));
-        CHECK(center2[2] == Approx(-7.0_a));
+	SECTION("Water Molecule"){
 
-	double spread2 = mlwf_transformer.spread(i, el.states_basis().cell());
-        CHECK(spread2 == Approx(1.16_a));
+		auto ions = systems::ions::parse(config::path::unit_tests_data() + "water.xyz", systems::cell::cubic(30.0_b).periodic());
+		systems::electrons el(ions, options::electrons{}.cutoff(30.0_Ry));
+		ions.species_list().pseudopotentials() = pseudo::set_id::sg15();
+		ground_state::initial_guess(ions, el);
+
+                auto scf_options = options::ground_state{}.energy_tolerance(1.0e-6_Ha);
+                auto result = ground_state::calculate(ions, el, options::theory{}.lda(), scf_options);		
+
+		wannier::tdmlwf_trans mlwf_transformer(el.kpin()[0]);
+                mlwf_transformer.update(el.kpin()[0], comm, el.states_basis().cell());
+                mlwf_transformer.compute_transform(1e-8);
+		
+		int i = 0; 
+		auto center = mlwf_transformer.center(i, el.states_basis().cell());
+		CHECK(center[0] == Approx(0.000_a).margin(1e-6));
+                CHECK(center[1] == Approx(-0.777_a).epsilon(1e-3));
+                CHECK(center[2] == Approx(-0.498_a).epsilon(1e-3));
+
+		i = 1;
+                center = mlwf_transformer.center(i, el.states_basis().cell());
+                CHECK(center[0] == Approx(-0.750_a).epsilon(1e-3));
+                CHECK(center[1] == Approx(0.084_a).epsilon(1e-3));
+                CHECK(center[2] == Approx(0.000_a).margin(1e-6));
+	}
 }
 #endif
