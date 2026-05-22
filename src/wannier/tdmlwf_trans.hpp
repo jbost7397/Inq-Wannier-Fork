@@ -286,24 +286,32 @@ double wannier_distance(T i, T j, const systems::cell & cell_) const {
   	assert(j >=0 && j < wavefunctions_.set_size());
   	vector3<double>ctr_i = center(i, cell_);
   	vector3<double>ctr_j = center(j, cell_);
-  	double x_dist = ctr_i[0] - ctr_j[0];
-  	double y_dist = ctr_i[1] - ctr_j[1];
-  	double z_dist = ctr_i[2] - ctr_j[2];
-  	double dist_root = sqroot(x_dist*x_dist + y_dist*y_dist + z_dist*z_dist);
-  	return abs(dist_root);
+
+	//CS new generalized min image dist search, needs check and move to a gpu run loop?
+	double min_dist = std::numeric_limits<double>::max();
+	for (int nx = -1; nx <= 1; nx++) {
+        	for (int ny = -1; ny <= 1; ny++) {
+            		for (int nz = -1; nz <= 1; nz++) {
+            	   	 	vector3<double> ctr_j_image = ctr_j
+                   	 	+ nx*cell_[0]
+                    		+ ny*cell_[1]
+                    		+ nz*cell_[2];
+
+	                	double dx = ctr_i[0] - ctr_j_image[0];
+    		            	double dy = ctr_i[1] - ctr_j_image[1];
+       		         	double dz = ctr_i[2] - ctr_j_image[2];
+            		    	double dist = sqroot(dx*dx + dy*dy + dz*dz);
+	            	        min_dist = dist < min_dist ? dist : min_dist;
+            		}
+        	}
+    	}
+    	return min_dist;	 
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T1, typename T2>
 bool overlap(T1 epsilon, T2 i, T2 j, const systems::cell & cell_) const {
-	//CS this needs to be updated for non orthorombic cells (generalize min image convention)
-  	double x = cell_[0][0]*cell_[0][0] + cell_[0][1]*cell_[0][1] + cell_[0][2]*cell_[0][2];
-  	double y = cell_[1][0]*cell_[1][0] + cell_[1][1]*cell_[1][1] + cell_[1][2]*cell_[1][2];
-  	double z = cell_[2][0]*cell_[2][0] + cell_[2][1]*cell_[2][1] + cell_[2][2]*cell_[2][2];
-  	double len = sqrt(x+y+z);
-  	auto dist = wannier_distance(i, j, cell_);
-  	if (dist <= epsilon || dist >= (len - epsilon) ) return true;  
-  	return false;
+	return wannier_distance(i, j, cell_) <= epsilon;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
