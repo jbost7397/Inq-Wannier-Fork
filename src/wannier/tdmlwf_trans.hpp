@@ -48,55 +48,42 @@ tdmlwf_trans(states::orbital_set<basis::real_space, complex> const & wavefunctio
 ////////////////////////////////////////////////////////////////////////////////
 template <class CommType>
 void normalize(CommType & comm) {
-  	CALI_CXX_MARK_SCOPE("wannier_normalize");
+	CALI_CXX_MARK_SCOPE("wannier_normalize");
 	int n_states_local = wavefunctions_.local_set_size();
 	int n_states_global = wavefunctions_.set_size();
 	int nx = wavefunctions_.basis().local_sizes()[0];
 	int ny = wavefunctions_.basis().local_sizes()[1];
 	int nz = wavefunctions_.basis().local_sizes()[2];
-	auto rank = comm.rank();
-	int offset = rank * n_states_local;
-	if(n_states_local == n_states_global) {
-        	offset = 0;
-        }
 
-	gpu::array<double, 1> norm_squared_per_state({n_states_global}, 0.0);
+	int offset = wavefunctions_.set_part().start();
+	gpu::array<double, 1> norm_sq_per_state({n_states_global}, 0.0);
 
-	gpu::run(n_states_local, [hypercubic = begin(wavefunctions_.hypercubic()), offset, nx, ny, nz, nsp = begin(norm_squared_per_state)] GPU_LAMBDA (auto k_wf) {
-  		for (int ix = 0; ix < nx; ++ix) {
-      			for (int iy = 0; iy < ny; ++iy) {
-        			for (int iz = 0; iz < nz; ++iz) {
-          				complex wf_component = hypercubic[ix][iy][iz][k_wf];
-          				nsp[k_wf + offset] += norm(wf_component);
-        			}
-      			}
-    		}
-  	});
+	auto norm_sq_per_state_local = gpu::run(n_states_local, gpu::reduce(nx), gpu::reduce(ny), gpu::reduce(nz), 0.0, [hypercubic_ =begin(wavefunctions_.hypercubic())] GPU_LAMBDA (auto k_wf, auto ix, auto iy, auto iz) {
+		return norm(hypercubic_[ix][iy][iz][k_wf]);
+	});
 
-	comm.barrier();
-	comm.all_reduce_in_place_n(raw_pointer_cast(norm_squared_per_state.data_elements()), norm_squared_per_state.num_elements(), std::plus<>());
+	gpu::run(n_states_local, [norm_sq_per_state_ = begin(norm_sq_per_state), norm_sq_per_state_local_ = begin(norm_sq_per_state_local), offset] GPU_LAMBDA (auto k_wf) {
+		norm_sq_per_state_[k_wf + offset] = norm_sq_per_state_local_[k_wf];
+	});
 
-  	gpu::run(n_states_local, [hypercubic = begin(wavefunctions_.hypercubic()), offset, nx, ny, nz, nsp = begin(norm_squared_per_state)] GPU_LAMBDA (auto k_wf) {
-  		double norm_factor = 1.0 / sqroot(nsp[k_wf + offset]);
-    		for (int ix = 0; ix < nx; ++ix) {
-    			for (int iy = 0; iy < ny; ++iy) {
-        			for (int iz = 0; iz < nz; ++iz) {
-          				hypercubic[ix][iy][iz][k_wf] *= norm_factor;
-        			}
-      			}
-    		}
-  	});
+	comm.all_reduce_in_place_n(raw_pointer_cast(norm_sq_per_state.data_elements()), norm_sq_per_state.num_elements(), std::plus<>());
+
+	gpu::run(n_states_local, nx, ny, nz, [hypercubic_ = begin(wavefunctions_.hypercubic()), offset, norm_sq_per_state_ = begin(norm_sq_per_state)] GPU_LAMBDA (auto k_wf, auto ix, auto iy, auto iz) {
+		auto factor = 1.0/sqrt(norm_sq_per_state_[k_wf + offset]);
+		hypercubic_[ix][iy][iz][k_wf] *= factor;
+	});
+
+
 }//normalize
 
 ////////////////////////////////////////////////////////////////////////////////
 template <class CommType>
-void update(const states::orbital_set<basis::real_space, complex>& wavefunctions, CommType & comm, const systems::cell & cell_) {
-  	wavefunctions_ = wavefunctions;
+void update(const states::orbital_set<basis::real_space, complex>& wavefunctions, CommType & comm) {
+	wavefunctions_ = wavefunctions;
 	CALI_CXX_MARK_SCOPE("wannier_update");
 	int n_states_global = wavefunctions_.set_size();
 	int n_states_local = wavefunctions_.local_set_size();
- 	int nbas = wavefunctions_.basis().local_size();
-	int nx = wavefunctions_.basis().local_sizes()[0];
+	int nbas = wavefunctions_.basis().local_size();
 	int ny = wavefunctions_.basis().local_sizes()[1];
 	int nz = wavefunctions_.basis().local_sizes()[2];
 	auto point_op = wavefunctions_.basis().point_op();
@@ -105,127 +92,98 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
 	auto cpz = wavefunctions_.basis().cubic_part(2);
 	normalize(comm);
 
-	gpu::run(n_states_global, n_states_global, 6, [a_int=begin(a_)] GPU_LAMBDA (auto k, auto j, auto i) {
-        	a_int[i][j][k] = complex(0.0);
+	gpu::run(n_states_global, n_states_global, 6, [a=begin(a_)] GPU_LAMBDA (auto k, auto j, auto i) {
+		a[i][j][k] = complex(0.0);
 	});
 
-  	gpu::array<double, 2> trig_array({6, nbas});
+	gpu::array<double, 2> trig_array({6, nbas});
+	auto const& cell_tmp = wavefunctions_.basis().cell();
 
-	gpu::array<double,1> cell_dim({9});
-        for (int i = 0; i < 9; i++) {
-        	cell_dim[i] = cell_[i / 3][i % 3];
-	}
+	
+	gpu::array<double, 2> cell({3, 3});
 
-	gpu::run(nbas, [cpx, cpy, cpz, point_op, tb = begin(trig_array), nx, ny, nz] GPU_LAMBDA (auto ibas) {
-		int ix = ibas / (ny * nz);
-    		int remainder_1 = ibas % (ny * nz);
-    		int iy = remainder_1 / nz;
-    		int iz = remainder_1 % nz;
+	for (int i = 0; i < 3; ++i)
+		for (int j = 0; j < 3; ++j)
+			cell[i][j] = cell_tmp.lattice(i)[j];
+
+	gpu::run(nbas, [cpx, cpy, cpz, point_op, ny, nz, cell_=begin(cell), trig_array_ = begin(trig_array)] GPU_LAMBDA (auto ibas) {
+		int ix = ibas/(ny*nz);
+		int remainder_1 = ibas%(ny*nz);
+		int iy = remainder_1/nz;
+		int iz = remainder_1%nz;
 		auto ixg = cpx.local_to_global(ix);
 		auto iyg = cpy.local_to_global(iy);
-    		auto izg = cpz.local_to_global(iz);
+		auto izg = cpz.local_to_global(iz);
+
 		auto coords = point_op.rvector(ixg, iyg, izg);
-    		tb[0][ibas] = cos(2.0 * M_PI * coords[0]);
-    		tb[1][ibas] = sin(2.0 * M_PI * coords[0]);
-    		tb[2][ibas] = cos(2.0 * M_PI * coords[1]);
-    		tb[3][ibas] = sin(2.0 * M_PI * coords[1]);
-    		tb[4][ibas] = cos(2.0 * M_PI * coords[2]);
-    		tb[5][ibas] = sin(2.0 * M_PI * coords[2]);
-	});
-
-	gpu::array<double,2> cell_array({6, nbas}); 
-
-	gpu::run(nbas, [tb=begin(trig_array), cell=begin(cell_dim), ta=begin(cell_array)] GPU_LAMBDA (auto ibas) {
-		ta[0][ibas] = tb[0][ibas]*cell[0] + tb[2][ibas]*cell[3] + tb[4][ibas]*cell[6];
-		ta[1][ibas] = tb[1][ibas]*cell[0] + tb[3][ibas]*cell[3] + tb[5][ibas]*cell[6];
-		ta[2][ibas] = tb[0][ibas]*cell[1] + tb[2][ibas]*cell[4] + tb[4][ibas]*cell[7];
-		ta[3][ibas] = tb[1][ibas]*cell[1] + tb[3][ibas]*cell[4] + tb[5][ibas]*cell[7]; 
-		ta[4][ibas] = tb[0][ibas]*cell[2] + tb[2][ibas]*cell[5] + tb[4][ibas]*cell[8];		
-		ta[5][ibas] = tb[1][ibas]*cell[2] + tb[3][ibas]*cell[5] + tb[5][ibas]*cell[8];
+		auto x = coords[0];
+		auto y = coords[1];
+		auto z = coords[2];
+		auto cx = cos(2.0*M_PI*x);
+		auto sx = sin(2.0*M_PI*x);
+		auto cy = cos(2.0*M_PI*y);
+		auto sy = sin(2.0*M_PI*y);
+		auto cz = cos(2.0*M_PI*z);
+		auto sz = sin(2.0*M_PI*z);
+		trig_array_[0][ibas] = cx*cell_[0][0] + cy*cell_[0][1] + cz*cell_[0][2];
+		trig_array_[1][ibas] = sx*cell_[0][0] + sy*cell_[0][1] + sz*cell_[0][2];
+		trig_array_[2][ibas] = cx*cell_[1][0] + cy*cell_[1][1] + cz*cell_[1][2];
+		trig_array_[3][ibas] = sx*cell_[1][0] + sy*cell_[1][1] + sz*cell_[1][2];
+		trig_array_[4][ibas] = cx*cell_[2][0] + cy*cell_[2][1] + cz*cell_[2][2];
+		trig_array_[5][ibas] = sx*cell_[2][0] + sy*cell_[2][1] + sz*cell_[2][2];
 	});
 
 	if (wavefunctions_.set_part().parallel()) {
-  		auto loc_mat = wavefunctions_.matrix();
+		auto loc_mat = wavefunctions_.matrix();
 		auto hypercubic_it = parallel::block_array_iterator(nbas, wavefunctions_.set_part(), wavefunctions_.set_comm(), wavefunctions_.matrix());
-		auto init_rank = comm.rank();
 		auto cur_rank = comm.rank();
-		auto k_offset = wavefunctions_.set_part().start(init_rank);
+		auto k_offset = wavefunctions_.set_part().start(cur_rank);
 		for(; hypercubic_it != hypercubic_it.end(); ++hypercubic_it){
 			auto gmat = begin(*hypercubic_it);
-  			auto cur_local = gmat[0].size();
+			auto cur_local = gmat[0].size();
 			auto l_offset = wavefunctions_.set_part().start(cur_rank);
 
-    			gpu::run(cur_local, n_states_local, [lmat=begin(loc_mat), gmat, ta=begin(cell_array), nbas, l_offset, k_offset, a=begin(a_)] 
-										GPU_LAMBDA (auto l_wf, auto k_wf) {
-				complex a0 = 0.0;
-				complex a1 = 0.0;
-				complex a2 = 0.0;
-                                complex a3 = 0.0;
-                                complex a4 = 0.0;
-                                complex a5 = 0.0;
+			gpu::run(cur_local, n_states_local, [loc_mat_=begin(loc_mat), gmat, trig_array_=begin(trig_array), nbas, l_offset, k_offset, a=begin(a_)] GPU_LAMBDA (auto l_wf, auto k_wf) {
+				complex a_tmp[6] = {0.0};
+				for (int ibas = 0; ibas < nbas; ibas++){
+					const complex c = conj(loc_mat_[ibas][k_wf])*gmat[ibas][l_wf];
+					for (int k = 0; k < 6; k++) {
+						a_tmp[k] += c*trig_array_[k][ibas];
+					}
+				}
 				auto cur_k = k_offset + k_wf;
 				auto cur_l = l_offset + l_wf;
-	    			for (int ibas = 0; ibas < nbas; ibas++){
-    		        		complex c_ik = lmat[ibas][k_wf];
-        				complex c_jl = gmat[ibas][l_wf];
-					complex c = conj_cplx(c_ik) * c_jl;
-					a0 += c * ta[0][ibas];
-	                                a1 += c * ta[1][ibas];
-        	                        a2 += c * ta[2][ibas];
-                	                a3 += c * ta[3][ibas];
-                        	        a4 += c * ta[4][ibas];
-                                	a5 += c * ta[5][ibas];
-      		  		}
-				a[0][cur_k][cur_l] += a0;
-				a[1][cur_k][cur_l] += a1;
-				a[2][cur_k][cur_l] += a2;
-				a[3][cur_k][cur_l] += a3;
-				a[4][cur_k][cur_l] += a4;
-				a[5][cur_k][cur_l] += a5;
-      			});
+				for (int k = 0; k < 6; k++) {
+					a[k][cur_k][cur_l] += a_tmp[k];
+				}
+			});
 			cur_rank += 1;
 			cur_rank = cur_rank % comm.size();
-  		}	
-    		comm.barrier();
-    
-    		CALI_CXX_MARK_SCOPE("wannier_update::reduce_a");
-    		comm.all_reduce_in_place_n(raw_pointer_cast(a_.data_elements()), a_.num_elements(), std::plus<>());
+		}
+ 
+		CALI_CXX_MARK_SCOPE("wannier_update::reduce_a");
+		comm.all_reduce_in_place_n(raw_pointer_cast(a_.data_elements()), a_.num_elements(), std::plus<>());
 
-  	} 
-        else {
+	} else {
 
-    		gpu::run(n_states_global, n_states_global, [mat = begin(wavefunctions_.matrix()), ta = begin(cell_array), nbas, a = begin(a_)] 
-											GPU_LAMBDA (auto l_wf, auto k_wf) {
-			complex a0 = 0.0;
-			complex a1 = 0.0;
-			complex a2 = 0.0;
-                        complex a3 = 0.0;
-                        complex a4 = 0.0;
-                        complex a5 = 0.0;
-      			for (int ibas = 0; ibas < nbas; ibas++){
-            			complex c_ik = mat[ibas][k_wf];
-		                complex c_jl = mat[ibas][l_wf];
-				complex c = conj_cplx(c_ik) * c_jl;
-				a0 += c * ta[0][ibas];
-				a1 += c * ta[1][ibas];
-				a2 += c * ta[2][ibas];
-                                a3 += c * ta[3][ibas];
-                                a4 += c * ta[4][ibas];
-                                a5 += c * ta[5][ibas];	 
-          		}
-			a[0][k_wf][l_wf] += a0;
-			a[1][k_wf][l_wf] += a1;
-			a[2][k_wf][l_wf] += a2;
-                        a[3][k_wf][l_wf] += a3;
-                        a[4][k_wf][l_wf] += a4;
-                        a[5][k_wf][l_wf] += a5; 
-    		});
+		gpu::run(n_states_global, n_states_global, [mat_ = begin(wavefunctions_.matrix()), trig_array_= begin(trig_array), nbas, a = begin(a_)] GPU_LAMBDA (auto l_wf, auto k_wf) {
+			complex a_tmp[6] = {0.0};
+			for (int ibas = 0; ibas < nbas; ibas++){
+				complex c = conj(mat_[ibas][k_wf])*mat_[ibas][l_wf];
+				for (int k = 0; k < 6; k++) {
+					a_tmp[k] += c*trig_array_[k][ibas];
+				}
+			}
+			for (int k = 0; k < 6; k++) {
+				a[k][k_wf][l_wf] += a_tmp[k];
+			}
+		});
 
-    		if(comm.size() > 1){
-        		CALI_CXX_MARK_SCOPE("wannier_update::reduce_a_basis");
+		if(comm.size() > 1){
+		CALI_CXX_MARK_SCOPE("wannier_update::reduce_a_basis");
 			comm.all_reduce_in_place_n(raw_pointer_cast(a_.data_elements()), a_.num_elements(), std::plus<>());
 		}
-  	}
+	}
 }//update
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -437,7 +395,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
 		ground_state::calculate(sys, el, options::theory{}.pbe(), inq::options::ground_state{}.energy_tolerance(1e-10_Ha));
 
 		wannier::tdmlwf_trans mlwf_transformer(el.kpin()[0]);
-	        mlwf_transformer.update(el.kpin()[0], comm, el.states_basis().cell());
+	        mlwf_transformer.update(el.kpin()[0], comm);
 		mlwf_transformer.compute_transform(1e-8);
 
 	        auto center = mlwf_transformer.center(0, el.states_basis().cell());
@@ -461,7 +419,7 @@ TEST_CASE(INQ_TEST_FILE, INQ_TEST_TAG) {
                 auto result = ground_state::calculate(ions, el, options::theory{}.lda(), scf_options);		
 
 		wannier::tdmlwf_trans mlwf_transformer(el.kpin()[0]);
-                mlwf_transformer.update(el.kpin()[0], comm, el.states_basis().cell());
+                mlwf_transformer.update(el.kpin()[0], comm);
                 mlwf_transformer.compute_transform(1e-8);
 		
 		int i = 0; 
