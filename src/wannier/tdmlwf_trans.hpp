@@ -73,7 +73,6 @@ void normalize(CommType & comm) {
 		hypercubic_[ix][iy][iz][k_wf] *= factor;
 	});
 
-
 }//normalize
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -125,12 +124,12 @@ void update(const states::orbital_set<basis::real_space, complex>& wavefunctions
 		auto sy = sin(2.0*M_PI*y);
 		auto cz = cos(2.0*M_PI*z);
 		auto sz = sin(2.0*M_PI*z);
-		trig_array_[0][ibas] = cx*cell_[0][0] + cy*cell_[0][1] + cz*cell_[0][2];
-		trig_array_[1][ibas] = sx*cell_[0][0] + sy*cell_[0][1] + sz*cell_[0][2];
-		trig_array_[2][ibas] = cx*cell_[1][0] + cy*cell_[1][1] + cz*cell_[1][2];
-		trig_array_[3][ibas] = sx*cell_[1][0] + sy*cell_[1][1] + sz*cell_[1][2];
-		trig_array_[4][ibas] = cx*cell_[2][0] + cy*cell_[2][1] + cz*cell_[2][2];
-		trig_array_[5][ibas] = sx*cell_[2][0] + sy*cell_[2][1] + sz*cell_[2][2];
+		trig_array_[0][ibas] = cx*cell_[0][0] + cy*cell_[1][0] + cz*cell_[2][0];
+		trig_array_[1][ibas] = sx*cell_[0][0] + sy*cell_[1][0] + sz*cell_[2][0];
+		trig_array_[2][ibas] = cx*cell_[0][1] + cy*cell_[1][1] + cz*cell_[2][1];
+		trig_array_[3][ibas] = sx*cell_[0][1] + sy*cell_[1][1] + sz*cell_[2][1];
+		trig_array_[4][ibas] = cx*cell_[0][2] + cy*cell_[1][2] + cz*cell_[2][2];
+		trig_array_[5][ibas] = sx*cell_[0][2] + sy*cell_[1][2] + sz*cell_[2][2];
 	});
 
 	if (wavefunctions_.set_part().parallel()) {

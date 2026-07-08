@@ -191,7 +191,7 @@ namespace hamiltonian {
 									 });
 					}
 
-					solvers::poisson::in_place(rhoij, -phi.kpoint() + kpt[jj], sing_(idx[jj]));
+					solvers::poisson::in_place(rhoij, -phi.kpoint() + kpt[jj], sing_(idx[jj]), exchange_coefficients_);
 				
 					{ CALI_CXX_MARK_SCOPE("exchange_operator::mulitplication");
 						gpu::run(olaps_j.size(), exxphi.basis().local_size(),
